@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.1
+
+**v0.5.0 の Haiku spawn が初呼び出し時点で落ちていたバグの hot-fix**。
+
+### 事の発端
+
+v0.5.0 リリース直後の実セッションで、Stop hook の Haiku 判定が毎回失敗して daemon ログに `--session-id cannot be used with --resume unless --fork-session is also passed` が出ていた。claude CLI は `--session-id` と `--resume` の併用を `--fork-session` なしでは拒否する仕様で、v0.5.0 の `buildSpawnArgs` が resume 時に両方渡していたのが原因。v0.5.0 は起動はするが監査は 1 度も成立していなかった (role collapse 回復も永遠に triggering しない状態)。
+
+### 変更点
+
+- **[src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: resume 時は `--session-id` を外して `--resume <uuid>` のみを渡す形に修正。初回は従来どおり `--session-id <uuid>` で新規セッション確立。
+- **[test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `buildSpawnArgs: subsequent call` のアサーションを「`--session-id` が含まれない / `--resume <uuid>` が正しく渡る」に書き換え。
+
+### 残る既知課題
+
+v0.5.0 の既知課題 (resume の spawn 削減量未検証、カタログ毎ターン再送コスト、role collapse 実発生頻度の観測) は引き続き持ち越し。v0.5.1 でようやく session-scoped の効果測定が可能になる。
+
 ## 0.5.0
 
 **Session-scoped Haiku 復活 + role-collapse 回復機構 (UX 改善)**。

@@ -168,12 +168,14 @@ function truncate(s, n = 300) {
 // without going through the shell. We use cmd.exe /c explicitly rather than spawn({ shell:
 // true }) because the latter triggers DEP0190 on Node 24+.
 //
-// v0.5.0: session-scoped. First call of a given session id uses --session-id only; every
-// subsequent call adds --resume so claude -p re-attaches to that session, skipping cold
-// start. buildSpawnArgs is exported so tests can assert the flag wiring without spawning.
+// v0.5.1: claude CLI rejects `--session-id` together with `--resume` unless `--fork-session`
+// is present (fork would create a new id, defeating the point). So first call uses
+// `--session-id <uuid>` to pin the id; every subsequent call uses `--resume <uuid>` alone to
+// re-attach. buildSpawnArgs is exported so tests can assert flag wiring without spawning.
 export function buildSpawnArgs({ claudeBin, model, sessionId, resume }) {
-  const args = ['-p', '--session-id', sessionId, '--model', model];
-  if (resume) args.push('--resume', sessionId);
+  const args = resume
+    ? ['-p', '--resume', sessionId, '--model', model]
+    : ['-p', '--session-id', sessionId, '--model', model];
   if (process.platform === 'win32') {
     return { cmd: 'cmd.exe', cmdArgs: ['/c', claudeBin, ...args] };
   }

@@ -159,17 +159,16 @@ test('buildSpawnArgs: first call uses --session-id without --resume', () => {
   assert.ok(!cmdArgs.includes('--resume'));
 });
 
-test('buildSpawnArgs: subsequent call adds --resume with the same session-id', () => {
-  // v0.5.0: --resume makes claude -p attach to the existing session, eliminating
-  // the per-turn cold-start that stateless v0.4.x paid.
+test('buildSpawnArgs: subsequent call uses --resume alone (no --session-id)', () => {
+  // v0.5.1: claude CLI rejects --session-id + --resume without --fork-session, so the
+  // resume path drops --session-id and passes the id to --resume instead.
   const { cmdArgs } = buildSpawnArgs({
     claudeBin: 'claude',
     model: 'haiku',
     sessionId: 'abc-123',
     resume: true,
   });
-  const idIdx = cmdArgs.indexOf('--session-id');
-  assert.equal(cmdArgs[idIdx + 1], 'abc-123');
+  assert.ok(!cmdArgs.includes('--session-id'));
   const resumeIdx = cmdArgs.indexOf('--resume');
   assert.ok(resumeIdx > -1);
   assert.equal(cmdArgs[resumeIdx + 1], 'abc-123');
