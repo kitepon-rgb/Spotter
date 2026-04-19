@@ -440,7 +440,9 @@ Bell が応答を出力した後、Stop hook で Spotter が「見落としあ�
 
 ## 9. MVP スコープと段階設計
 
-### v0.1 (最小動作版)
+### v0.1 (最小動作版) — ⚠️ 2026-04-19 deprecate 済
+
+**v0.1.0 / v0.1.1 は実環境で daemon 増殖事故を起こしたため npm 上で deprecate** (詳細は §18)。以下は歴史記録として残す。
 
 - **セッション単位デーモン実装** (SessionStart で起動、SessionEnd で shutdown)
   - `SessionStart` hook で daemon を spawn し、**socket readiness ping が通るまで最大 3 秒ブロック**。通らなければ §14.3 に従い exit code 2 + stderr で throw
@@ -787,6 +789,62 @@ Throughline と同じく:
 - 結果を元に v0.2 設計 (孤児プロセス cleanup、リトライ、リソース計測) に進む
 
 ---
+
+## 18. v0.1 実運用事故と設計見直し (2026-04-19 追記)
+
+v0.1.0 / v0.1.1 を npm 公開後、実 Claude Code 環境で動作検証したところ、**プラン §5.4 の中核前提が破綻していることが判明**した。両バージョンとも npm 上で **deprecate 済** (`npm deprecate claude-spotter@0.1.x`)。
+
+### 18.1 観測された事故
+
+手元の Claude Code セッションで `npm install -g claude-spotter` 後 41 秒以内に:
+
+- **daemon プロセスが 213 個 spawn** — プラン §5.4 の「セッション中 1 プロセス常駐」前提に対して桁違いの実数
+- 各 daemon は独立した UUID session_id で起動、1 回の UserPromptSubmit を受け取った後 **Haiku 28s タイムアウトで終了**
+- 同時並走による Anthropic API saturation で Haiku 呼び出しが全滅
+- `npm uninstall -g` では **preuninstall ライフスクリプトが走らず**、hook が `~/.claude/settings.json` に残存
+
+### 18.2 根本原因
+
+Claude Code の `SessionStart` hook は、**トップレベルセッション開始時の 1 回だけではなく、subagent (Task tool) 呼び出し毎にも発火**する。session_id はその subagent セッション固有の新 UUID になる。
+
+プランは「SessionStart = ユーザーが claude を立ち上げた瞬間の 1 回」という単純化モデルを採用していたが、現実は:
+
+- トップレベルセッション: 1 件の session_id (source=`startup`)
+- 各 subagent: 独自の session_id (source は subagent 種別に依存)
+- `/compact` / `/clear` / `resume`: それぞれ SessionStart 発火
+
+v0.1 のように「session_id をキーに daemon を立てる」と、subagent 使用回数に比例して daemon が増殖する。cleanup 機構は v0.2 送り (§9.2) だったため、孤児累積が直撃した。
+
+### 18.3 v0.2 の設計見直し方針
+
+プラン §5.4 で却下していた**都度起動型**を再評価する:
+
+| 観点 | 維持型 (v0.1) | 都度起動型 (v0.2 候補) |
+|---|---|---|
+| daemon 管理 | セッション単位プロセス | プロセスなし (hook 毎に `claude -p`) |
+| ツールカタログ送信 | 1 回ロード後メモリ常駐 | 毎回 stdin で送信 |
+| token コスト | 低 (カタログ非再送) | 高 (毎回送信) |
+| subagent 問題 | **破綻** (daemon 増殖) | 起こらない (状態なし) |
+| 孤児プロセス | 発生 | 発生しない |
+| 実装複雑度 | 高 (socket / pipe / PID 管理) | 低 |
+
+「維持型 10 倍の経済性」という §5.4 の試算は **subagent 非発生前提** の値。現実は subagent 数 × 維持型コスト で計算が逆転する可能性がある。
+
+**代替案**: subagent session を検出したら daemon 起動を **スキップ** する条件分岐 (hook input の `source` や `agent_id` フィールドで判定) を入れる。ただしこれは subagent の発話を監査対象から外すことを意味し、設計目的とトレードオフ。
+
+### 18.4 決定事項
+
+- **v0.1.0 / v0.1.1 は npm 上で deprecate 済**。新規ユーザーに警告が表示される
+- **v0.2 は都度起動型にリデザイン** — 維持型は subagent 問題が解けない限り採用しない
+- `preuninstall` ではなく `postinstall` 内で **uninstall 用 shim スクリプト** (`~/.spotter/uninstall.mjs` 等) を配置し、ユーザーが明示的に `spotter uninstall --user` を呼ぶ運用にする
+- カタログ実呼び lint (§11) で合格した test_cases は v0.1 で検証済み → カタログ・Haiku プロンプトの設計は健全。書き換えは daemon 層のみ
+
+### 18.5 作業ログ
+
+- 2026-04-19 02:18 UTC: v0.1.0 publish
+- 2026-04-19 02:30 UTC: v0.1.1 publish (postinstall 追加)
+- 2026-04-19 02:40 UTC: 手元で `npm install -g` 実行 → 41 秒で 213 daemon 累積、Haiku 全滅を確認
+- 2026-04-19 02:55 UTC: 全 daemon kill、settings.json 手動修復、`npm deprecate` 実施
 
 ## Appendix A: 参考資料
 

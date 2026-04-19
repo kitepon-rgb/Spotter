@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.1
+## 0.1.1 — ⚠️ DEPRECATED 2026-04-19
+
+**Do not install this version.** Real-world testing against a live Claude Code session revealed that the "one daemon per session" model is based on a wrong assumption — `SessionStart` hooks fire per subagent (Task tool invocation), not only at top-level session startup. Within 41 seconds of install, 213 orphan daemons accumulated and Haiku API calls uniformly timed out. `npm uninstall -g` also did not execute `preuninstall`, leaving hook entries in `~/.claude/settings.json`. See [docs/spotter-plan.md §18](https://github.com/kitepon-rgb/Spotter/blob/main/docs/spotter-plan.md#18) for details and the v0.2 redesign plan.
+
+## 0.1.1 (pre-deprecation notes)
 
 - `npm install -g claude-spotter` now registers hooks at user level automatically via the `postinstall` lifecycle — no separate `spotter install` step needed
 - `npm uninstall -g claude-spotter` removes hook entries from `~/.claude/settings.json` via `preuninstall`

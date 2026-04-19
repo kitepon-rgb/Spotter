@@ -4,9 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**設計確定、実装未着手** (as of 2026-04-18). 現時点で存在するのは [docs/spotter-plan.md](docs/spotter-plan.md) (設計仕様書) と [.vscode/tasks.json](.vscode/tasks.json) (Throughline monitor 自動起動) のみ。ソースコード、`package.json`、テスト、ビルドスクリプトは**まだ存在しない**。
+**v0.1.0 / v0.1.1 を npm に公開したが、実 Claude Code 環境で daemon 増殖事故を起こし両バージョンとも deprecate 済** (2026-04-19)。現状は v0.2 設計見直し待ち。詳細はプラン [§18 v0.1 実運用事故と設計見直し](docs/spotter-plan.md#18-v01-実運用事故と設計見直し-2026-04-19-追記) を必読。
 
-実装を始める前に、必ず [docs/spotter-plan.md](docs/spotter-plan.md) を通読すること。この CLAUDE.md はその要約ではなく、**プラン本文を読んだ後に効く操作規範**を記述する。
+**v0.2 に着手する前に理解しておくべき核心**: プラン §5.4 が前提にしていた「SessionStart = トップレベル 1 回」は間違い。Claude Code は **subagent (Task tool) 毎にも SessionStart を発火**し、session_id も subagent 毎に新 UUID になる。従って v0.1 の「session_id 単位で daemon を立てる」モデルは破綻する。
+
+v0.2 の主な選択肢:
+- **都度起動型** (§18.3) — daemon を完全に廃止、各 hook で `claude -p` を毎回叩く
+- **subagent スキップ型** — trivially subagent セッションでは daemon 起動しない条件分岐を入れる
+- どちらにせよ **preuninstall は使えない** (npm global install は走らせない) — uninstall は `spotter uninstall --user` を明示呼びする設計に戻す
 
 ## Product Concept (一行)
 
