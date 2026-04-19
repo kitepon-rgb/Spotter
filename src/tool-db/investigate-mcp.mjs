@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { listToolsHttp } from './investigate-mcp-http.mjs';
+import { readMcpServers, describeServer } from './mcp-config.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -53,11 +54,30 @@ export async function listMcpToolsAll({ logFn = () => {}, claudeBin = 'claude' }
   return out;
 }
 
-// Parse `claude mcp list` output. Returns array of {name, transport, command, url}.
-// stdio servers have command, http/sse servers have url.
+// Returns the list of MCP servers to investigate. Merges two sources:
+//   - `claude mcp list` — authoritative for *which* servers exist in this session
+//     (covers all scopes: user, project, local, enterprise)
+//   - `~/.claude/.mcp.json` — authoritative for transport details + auth secrets
+//     (stdio env, http headers). The CLI hides these on purpose.
+//
+// For each server named by the CLI, if `.mcp.json` has a matching entry we use that
+// full descriptor (with env/headers). Otherwise we fall back to the parsed CLI line,
+// which at minimum gives us name + transport + url (or triggers `claude mcp get` for
+// stdio command tokenisation).
 export async function listMcpServers({ claudeBin = 'claude' } = {}) {
-  const { stdout } = await execClaude(claudeBin, ['mcp', 'list'], { encoding: 'utf8' });
-  return parseMcpListOutput(stdout);
+  const [{ stdout }, mcpServers] = await Promise.all([
+    execClaude(claudeBin, ['mcp', 'list'], { encoding: 'utf8' }),
+    readMcpServers(),
+  ]);
+  const cliList = parseMcpListOutput(stdout);
+  return cliList.map((cliEntry) => {
+    const configEntry = mcpServers[cliEntry.name];
+    if (configEntry) {
+      const described = describeServer(cliEntry.name, configEntry);
+      if (described) return described;
+    }
+    return cliEntry;
+  });
 }
 
 // `claude mcp list` output lines look like:
@@ -92,21 +112,24 @@ export function parseMcpListOutput(text) {
   return out;
 }
 
-// Fetch tools/list from a single MCP server. HTTP/SSE servers are not yet supported here
-// (we'd need to speak the HTTP+SSE MCP transport); we throw so the caller can log+skip.
+// Fetch tools/list from a single MCP server. The `server` descriptor either came
+// from `.mcp.json` (carries env / headers) or from CLI output (bare). For stdio
+// entries without full config we fall back to `claude mcp get`.
 export async function listMcpToolsOne({ server, logFn = () => {}, claudeBin = 'claude' }) {
   if (server.transport === 'stdio') {
-    const config = await getStdioConfig({ name: server.name, claudeBin });
+    const hasFullConfig = server.command !== undefined;
+    const config = hasFullConfig
+      ? { command: server.command, args: server.args ?? [], env: server.env ?? {} }
+      : await getStdioConfig({ name: server.name, claudeBin });
     return spawnAndQuery(config, server.name);
   }
   if (server.transport === 'http' || server.transport === 'sse') {
-    // Streamable HTTP transport. For `claude.ai ...` servers, `claude mcp get` rejects
-    // them (they are not in local .mcp.json) so server.url is unavailable — those are
-    // covered by src/tool-db/claude-ai-baseline.mjs at a higher layer.
+    // For `claude.ai ...` servers, CLI reports http/sse but they are NOT in local
+    // .mcp.json — covered by src/tool-db/claude-ai-baseline.mjs at a higher layer.
     if (!server.url) {
       throw new McpInvestigationError(`no URL available for ${server.transport} server`, server.name);
     }
-    return listToolsHttp({ url: server.url, serverName: server.name });
+    return listToolsHttp({ url: server.url, serverName: server.name, headers: server.headers ?? {} });
   }
   throw new McpInvestigationError(`unknown transport: ${server.transport}`, server.name);
 }
@@ -142,12 +165,13 @@ function buildStdioSpawn(command, args) {
   return { cmd: command, cmdArgs: args };
 }
 
-async function spawnAndQuery({ command, args }, serverName) {
+async function spawnAndQuery({ command, args, env = {} }, serverName) {
   return new Promise((resolve, reject) => {
     const { cmd, cmdArgs } = buildStdioSpawn(command, args);
     const child = spawn(cmd, cmdArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      env: { ...process.env, ...env },
     });
     let buffer = '';
     let nextId = 1;
@@ -223,7 +247,7 @@ async function spawnAndQuery({ command, args }, serverName) {
         await request('initialize', {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: 'spotter', version: '0.8.0' },
+          clientInfo: { name: 'spotter', version: '0.9.0' },
         });
         send({ jsonrpc: '2.0', method: 'notifications/initialized' });
         initializedSent = true;

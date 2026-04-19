@@ -7,6 +7,7 @@ import { loadDb, saveDb, emptyDb, ToolDbSchemaError } from '../src/tool-db/loade
 import { resolveAll } from '../src/tool-db/lookup.mjs';
 import { parseMcpListOutput, bellVisibleName } from '../src/tool-db/investigate-mcp.mjs';
 import { getDeferredDescription, listDeferredNames } from '../src/tool-db/deferred-baseline.mjs';
+import { describeServer } from '../src/tool-db/mcp-config.mjs';
 
 async function setupPaths() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-tooldb-'));
@@ -221,4 +222,48 @@ test('deferred baseline: listDeferredNames returns an array', () => {
   assert.ok(Array.isArray(names));
   assert.ok(names.length > 0);
   assert.ok(names.includes('TodoWrite'));
+});
+
+test('describeServer: stdio entry with env', () => {
+  const desc = describeServer('x-api', {
+    command: 'cmd',
+    args: ['/c', 'node', 'server.js'],
+    env: { X_BEARER_TOKEN: 'secret' },
+  });
+  assert.deepEqual(desc, {
+    name: 'x-api',
+    transport: 'stdio',
+    command: 'cmd',
+    args: ['/c', 'node', 'server.js'],
+    env: { X_BEARER_TOKEN: 'secret' },
+  });
+});
+
+test('describeServer: stdio entry without args/env', () => {
+  const desc = describeServer('foo', { command: 'node' });
+  assert.equal(desc.transport, 'stdio');
+  assert.deepEqual(desc.args, []);
+  assert.deepEqual(desc.env, {});
+});
+
+test('describeServer: http entry with headers', () => {
+  const desc = describeServer('api', {
+    url: 'https://example.com/mcp',
+    headers: { Authorization: 'Bearer xxx' },
+  });
+  assert.deepEqual(desc, {
+    name: 'api',
+    transport: 'http',
+    url: 'https://example.com/mcp',
+    headers: { Authorization: 'Bearer xxx' },
+  });
+});
+
+test('describeServer: sse transport distinguished via type field', () => {
+  const desc = describeServer('s', { url: 'https://x.test/mcp', type: 'sse' });
+  assert.equal(desc.transport, 'sse');
+});
+
+test('describeServer: unrecognised entry returns null', () => {
+  assert.equal(describeServer('weird', { foo: 'bar' }), null);
 });

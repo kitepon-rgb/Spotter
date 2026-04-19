@@ -24,7 +24,7 @@ export class McpHttpError extends Error {
   }
 }
 
-export async function listToolsHttp({ url, serverName }) {
+export async function listToolsHttp({ url, serverName, headers: staticHeaders = {} }) {
   let sessionId = null;
 
   const post = async (body) => {
@@ -34,6 +34,7 @@ export async function listToolsHttp({ url, serverName }) {
       const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/event-stream',
+        ...staticHeaders,
       };
       if (sessionId) headers['Mcp-Session-Id'] = sessionId;
       const res = await fetch(url, {
@@ -86,7 +87,7 @@ export async function listToolsHttp({ url, serverName }) {
     params: {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'spotter', version: '0.8.0' },
+      clientInfo: { name: 'spotter', version: '0.9.0' },
     },
   });
   if (!initResult || initResult.error) {

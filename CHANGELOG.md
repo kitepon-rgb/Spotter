@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.9.0
+
+**`.mcp.json` を真実源として読み込み、user-registered HTTP/stdio MCP の認証情報を live fetch に活用**。v0.8.0 で HTTP transport を実装したが、`claude mcp list` / `claude mcp get` は bearer token や headers を CLI 出力に含めないため、認証が必要な MCP サーバー (x-api) は依然 401 で落ちていた。`~/.claude/.mcp.json` を直接読んで env / headers を取得、stdio なら spawn 時の env に、HTTP なら fetch request header に渡す。
+
+### 事の発端
+
+v0.8.0 の `spotter db refresh` 実測で x-api (HTTP MCP) が 401 Unauthorized で落ちていた。`claude mcp list` では `x-api: https://kitepon.dynv6.net/mcp (HTTP)` と表示され URL は拾えるが、Spotter の refresh プロセスから叩くと認証情報がないため拒否。ユーザーの指摘で `.mcp.json` を直接 cat したところ、実態は **stdio** で `env: {X_BEARER_TOKEN: "..."}` を持つ設定だった。CLI 表示と actual config が食い違っていた (CLI の cache の古さと思われる)。
+
+判明した設計上の転換点:
+
+- **`.mcp.json` はユーザーが自己申告した MCP 設定ファイル** — ここに secrets が書かれているのはユーザーの意思。Anthropic の OAuth token を保持する `.credentials.json` とは性格が違う。`.mcp.json` を読むことは v0.8.0 で引いた境界線 (credentials は触らない) に抵触しない
+- **`claude mcp list` は scope 統合ビュー、`.mcp.json` は user scope の詳細**。前者で名前を取り、後者で詳細を当てる併用が最も抜け漏れない
+
+### 変更点
+
+- **新規 [src/tool-db/mcp-config.mjs](src/tool-db/mcp-config.mjs)**: `~/.claude/.mcp.json` をパース、`describeServer()` で `{command, args, env}` (stdio) または `{url, headers}` (http/sse) のディスクリプタに正規化
+- **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `listMcpServers` を `claude mcp list` + `.mcp.json` の併用へ。CLI で得た name ごとに `.mcp.json` のエントリを優先使用し、なければ CLI 情報にフォールバック。`spawnAndQuery` が `env` を受け取って `{...process.env, ...env}` で spawn 時に merge
+- **編集 [src/tool-db/investigate-mcp-http.mjs](src/tool-db/investigate-mcp-http.mjs)**: `listToolsHttp` が `headers` パラメータを受け取って fetch の HTTP headers に merge
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: `describeServer` の unit test 5 件追加 (stdio + env、stdio 最小、http + headers、sse 判別、未知エントリ)
+
+### 実測
+
+`spotter db rebuild` で x-api の 9 ツール (get_trends / search_tweets / fetch_tweet 等) が **live fetch で投入される** ようになった (`investigated=9`)。手書き baseline は不要。`describeServer` テスト 5 件追加で total 97 tests。
+
+### 残る課題
+
+- **project scope `.mcp.json` 未対応**: プロジェクト直下の `.mcp.json` は読んでいない。v0.9.0 では user scope のみ
+- **claude.ai baseline は維持**: Gmail/Calendar/Drive は `.mcp.json` に登録されない (OAuth proxy 経由) ので hardcoded のまま
+
 ## 0.8.0
 
 **HTTP/SSE MCP transport 対応 + Windows `.cmd` 経路の ENOENT fix + claude.ai 系 MCP の hardcoded baseline**。v0.7.0 を実測したら Windows で `spotter db refresh` が `spawn claude ENOENT` で起動すらせず、fix した上で動かしたら今度は Gmail / Google Calendar / Google Drive / x-api が丸ごと抜け落ちて Haiku の視野に入らない状態だった。この 3 本を同時に潰した。
