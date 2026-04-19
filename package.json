@@ -1,6 +1,6 @@
 {
   "name": "claude-spotter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Audit agent running alongside Claude Code that catches missed tool calls — 気づく役と実行する役の分離",
   "type": "module",
   "bin": {
@@ -10,7 +10,9 @@
     ".": "./src/index.mjs"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "postinstall": "node scripts/postinstall.mjs",
+    "preuninstall": "node scripts/preuninstall.mjs"
   },
   "keywords": [
     "claude",
@@ -40,6 +42,7 @@
   "files": [
     "bin",
     "src",
+    "scripts",
     "templates",
     "README.md",
     "LICENSE",

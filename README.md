@@ -10,10 +10,11 @@ Spotter は、ツールカタログを完全に把握した別エージェント
 
 ```bash
 npm install -g claude-spotter
-spotter install     # .claude/settings.json に hook を登録 (diff を見せて確認)
 ```
 
-次回 Claude Code セッションから自動で有効になります。
+これだけで `~/.claude/settings.json` に hook が自動登録され、次回 Claude Code セッションから全プロジェクトで有効になります (`postinstall` ライフサイクルが `spotter install --user` を自動実行します)。
+
+自動登録を止めたい場合は `CLAUDE_SPOTTER_NO_AUTO_INSTALL=1 npm install -g claude-spotter` と打てばスキップされ、あとから `spotter install` / `spotter install --user` を好きなタイミングで手動実行できます。CI 環境 (`CI=true`) では自動的にスキップされます。
 
 ## 動作要件
 

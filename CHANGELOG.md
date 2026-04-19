@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.1.0 (Unreleased)
+## 0.1.1
+
+- `npm install -g claude-spotter` now registers hooks at user level automatically via the `postinstall` lifecycle — no separate `spotter install` step needed
+- `npm uninstall -g claude-spotter` removes hook entries from `~/.claude/settings.json` via `preuninstall`
+- Opt-out: set `CLAUDE_SPOTTER_NO_AUTO_INSTALL=1` before install, or install in an environment where `CI=true` (CI is auto-skipped)
+
+## 0.1.0
 
 Initial release.
 
