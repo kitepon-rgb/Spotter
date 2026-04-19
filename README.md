@@ -1,22 +1,26 @@
 # Spotter
 
-> **v0.2.0 released 2026-04-19**. v0.1.x had a daemon-proliferation defect caused by hook re-entry from Spotter's own `claude -p` invocations. v0.2 adds five independent gates (env-var PID, `agent_id`, `source=startup`, PID-preexist, 10 s call window) plus session-scoped Haiku via `--session-id` / `--resume` to prevent this. See [CHANGELOG](CHANGELOG.md) and [docs/spotter-plan.md §18](docs/spotter-plan.md) for the full post-mortem.
+> **v0.4.3 released 2026-04-19**. v0.2.0 で追加した session-scoped Haiku は Spotter 本体プロジェクトでの長時間運用中に role collapse (Haiku が Bell 人格に drift) を起こしたため、v0.4.0 で stateless に回帰。v0.4.2 で stateless 化の副作用として発生した cold-start timeout 問題に対処 (timeout 28s→60s + stateless-safe warmup)、v0.4.3 で過剰になっていたプロンプトを 30-40% 削減。詳細は [CHANGELOG](CHANGELOG.md)。
 
 **気づく役と実行する役を分離する。** Spotter は Claude Code の横で静かに並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**に指摘する監査役です。
 
 > Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。現在時刻を推測で答える、web_search を呼ばずに古い情報で応答する、read_file を使わずにファイルの中身を推測する — 「分からないと自覚できない」から、ツールを取りに行けない。
 
-Spotter は、ツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎にプロセスとして常駐させ、Bell の発話予定と応答を並走監査します。見落としを検出すると、透明化された指摘として Bell に届け、補正応答を促します。
+Spotter は、ツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎にプロセスとして常駐させ、Bell の発話予定と応答を並走監査します。見落としを検出すると、透明化された指摘として Bell に届け、補正応答を促します。Haiku 呼び出しは毎ターン stateless (fresh `--session-id`) で実行されるため、長時間運用しても会話履歴による persona drift を構造的に防ぎます。
 
 ## インストール
 
 ```bash
 npm install -g claude-spotter
+cd your-project
+spotter install
 ```
 
-これだけで `~/.claude/settings.json` に hook が自動登録され、次回 Claude Code セッションから全プロジェクトで有効になります (`postinstall` ライフサイクルが `spotter install --user` を自動実行します)。
+v0.3.0 以降は**プロジェクト単位の明示的 install** を採用しています (v0.2 までの `postinstall` 自動登録はデーモン増殖の主因だったため撤回)。各プロジェクトの `.claude/settings.json` に hook を登録し、そのプロジェクトでの Claude Code セッションのみで有効になります。
 
-自動登録を止めたい場合は `CLAUDE_SPOTTER_NO_AUTO_INSTALL=1 npm install -g claude-spotter` と打てばスキップされ、あとから `spotter install` / `spotter install --user` を好きなタイミングで手動実行できます。CI 環境 (`CI=true`) では自動的にスキップされます。
+```bash
+spotter uninstall        # このプロジェクトの hook 登録を解除
+```
 
 ## 動作要件
 
@@ -71,7 +75,7 @@ spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ## 既知の制約
 
 - Stop hook は Bell の最初の応答が**出力された後**に発火するため、Spotter が Stop で差し戻した場合、ユーザーは「最初の応答 + 補正応答」の 2 連続を見ます (Claude Code の hook 仕様による制約)。UserPromptSubmit 段階での先回り検出を精度の軸にしています
-- v0.1 は JSON スキーマ違反時にリトライせず即 throw します (§14.1 silent fallback 禁止の帰結)。遵守率が下振れた場合は v0.2 でリトライ戦略を追加します
+- JSON スキーマ違反・Haiku timeout はリトライせず即 throw します (§14.1 silent fallback 禁止の帰結)。UserPromptSubmit がブロックされユーザー入力が Bell に届かない症状として顕在化します。cold-start 対策として v0.4.2 で timeout 60s + warmup を導入しましたが、fail-open 化 (timeout を pass 扱い) は §0 改訂とセットで今後検討
 
 ## ライセンス
 

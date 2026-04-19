@@ -69,10 +69,11 @@ test('startDaemon: every Haiku invocation receives the full catalog prompt (stat
       timeoutMs: 2_000,
     });
     // v0.4: every call carries the full catalog — no incremental form.
+    // v0.4.3: section header is '## 出力' (minimized from '## 出力スキーマ (厳守)').
     assert.equal(promptsSeen.length, 1);
     assert.ok(promptsSeen[0].includes('current_time'));
     assert.ok(promptsSeen[0].includes('get the current time'));
-    assert.ok(promptsSeen[0].includes('出力スキーマ'));
+    assert.ok(promptsSeen[0].includes('## 出力'));
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });
@@ -252,6 +253,62 @@ test('startDaemon: DaemonAlreadyRunningError when PID file points at live proces
     );
   } finally {
     try { await unlink(pidPath); } catch {}
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: warmup option fires one extra Haiku call without blocking readiness', async () => {
+  // v0.4.2: warmup=true sends a throwaway Haiku call (buildWarmupPrompt) to preload
+  // the Claude CLI / network pool / prompt cache. Must not block startDaemon's
+  // return nor activate the 10s recursion window for subsequent real user_input calls.
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `warmup-${randomUUID()}`;
+  const promptsSeen = [];
+  const haikuCaller = async (prompt) => {
+    promptsSeen.push(prompt);
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller, warmup: true });
+  try {
+    // Allow the fire-and-forget warmup to resolve.
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    // A real user_input within 10s of warmup must still invoke Haiku (NOT silent-passed).
+    // This is the v0.2.1 regression we're explicitly preventing: warmup must bypass
+    // callHaikuTracked so lastHaikuCallAt stays at 0.
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: 'real call' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.notEqual(resp.result.reason, 'within_haiku_call_window');
+    // 1 warmup + 1 real user_input = 2 calls.
+    assert.equal(promptsSeen.length, 2);
+    // Warmup prompt carries the sentinel.
+    assert.ok(promptsSeen[0].includes('__spotter_warmup_ping__'));
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: warmup defaults to off (unit tests should not fire extra Haiku calls)', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `no-warmup-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async (_p) => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  try {
+    // No user_input sent — warmup, if enabled, would have fired here.
+    await new Promise((r) => setImmediate(r));
+    assert.equal(haikuCalls, 0);
+  } finally {
+    await running.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });

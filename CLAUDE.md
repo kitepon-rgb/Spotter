@@ -4,13 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v0.4.0 実装完了** (2026-04-19)。v0.1.x は deprecate 済、v0.2.0 で §18.4 の 5 層防御 + §18.5 session-scoped Haiku を実装、v0.2.1 で §18.6 A-2 Haiku ウォームアップを追加、v0.3.0 で daemon 増殖の主原因だった `postinstall` 自動登録を撤回し project-scoped install に変更。**v0.4.0 で §18.5 session-scoped Haiku を撤回して stateless に戻した** (Spotter 本体プロジェクトで 1 時間運用中に発生した Haiku role collapse 事故が契機)。詳細は [CHANGELOG.md](CHANGELOG.md)。
+**v0.4.3 実装完了** (2026-04-19)。v0.4.2 の prompt hardening が過剰 (自己リポジトリに攻撃者はいない、persona drift は stateless で構造対処済) だったため、攻撃文言リスト・`【最重要】` タグ・末尾の JSON-only 再宣言を削り、プロンプト長を 30-40% 削減。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
-**v0.4 系の核心設計**: daemon は依然として session-scoped (hook イベント集約・used_tools 記録) だが、**Haiku 呼び出しは毎ターン stateless** (`--session-id <fresh UUID>` のみ、`--resume` 不使用)。これは下記 Architecture 節の「Claude 呼び出しは毎回 stateless」原則への回帰であり、session-scoped が引き起こした **Haiku が Bell 会話履歴を聞き続けて persona drift する問題**を構造的に排除する。5 層防御 (`SPOTTER_PARENT_PID` env / `agent_id` gate / `source=startup` 限定 / PID preexist check / 10 秒ウィンドウ) は維持。プラン §18.3 の都度起動型 (daemon レベルでの都度起動) は引き続き棄却、再議論しない。
+**v0.4 系の核心設計** (v0.4.3 でも不変): daemon は依然として session-scoped (hook イベント集約・used_tools 記録) だが、**Haiku 呼び出しは毎ターン stateless** (`--session-id <fresh UUID>` のみ、`--resume` 不使用)。下記 Architecture 節の「Claude 呼び出しは毎回 stateless」原則への回帰であり、session-scoped が引き起こした **Haiku が Bell 会話履歴を聞き続けて persona drift する問題**を構造的に排除する。5 層防御 (`SPOTTER_PARENT_PID` env / `agent_id` gate / `source=startup` 限定 / PID preexist check / 10 秒ウィンドウ) は維持。プラン §18.3 の都度起動型 (daemon レベルでの都度起動) は引き続き棄却、再議論しない。
 
-### v0.4.0 時点の既知課題
-- **cold-start latency の再発リスク**: v0.2.1 で warmup を導入した A-2 問題 (初回 Haiku spawn 44 秒超) が stateless 化で毎ターン発生する可能性。timeout 28s → 40-60s への延長が必要かは実運用観測で判断
-- **カタログ毎ターン再送のコスト**: Anthropic prompt caching に依存。効かない場合は Claude Max plan の quota を圧迫しうる
+### v0.4.2 で投入した対策 (v0.4.3 でも有効)
+- **Haiku timeout 28s → 60s** (`DEFAULT_HAIKU_TIMEOUT_MS` @ [daemon.mjs](src/daemon/daemon.mjs)): stateless 化で毎ターン cold-start を踏むため、実測される spawn 時間 (40〜50 秒台) をカバーできる最悪値に調整。
+- **Stateless-safe warmup** (`buildWarmupPrompt`, `startDaemon({warmup: true})`): SessionStart 直後に fire-and-forget で throwaway Haiku spawn。warmup も実呼び出しも共に fresh `--session-id` + 応答破棄で、会話状態は一切引き継がない。**`callHaikuTracked` を経由させない**ため 10 秒ウィンドウが warmup 直後の合法 user_input を silent-pass しない。system rules + catalog の prefix が実呼び出しと一致するので prompt cache の前倒し効果あり。
+
+### v0.4.3 で投入した対策 — プロンプト最小化
+- **Role-guard の攻撃文言列挙を削除**: 具体的攻撃文言 5 件のリストを撤去。網羅性もなく副作用もあった (モデルに攻撃パターンを教える)。
+- **`【最重要】` タグ撤去・冒頭の役割再宣言を 1 回に**: 強調と反復の過剰を削減。
+- **末尾の JSON-only 再宣言削除**: 冒頭と出力スキーマで既に 2 回宣言済。末尾は `when_to_use` 絞り込みに集中。
+- **維持**: `<user_input>` / `<final_response>` タグ (攻撃対策ではなく**構造マーカー**として)、few-shot 2 例、`Bell = 主役の Claude` 補足、`when_to_use に明確に該当、推測禁止` の絞り込み。
+
+### 残る既知課題
+- **最悪 60s 待ち**: cold-start + warmup 未完の条件下ではユーザーが最長 60 秒待つ。silent-block より遥かにましだが体感は悪い。fail-open 化 (E_HAIKU_TIMEOUT を silent pass に降格) は §0 実装規範の改訂とセットで v0.4.3+ で検討。
+- **カタログ毎ターン再送のコスト**: prompt caching に依存。prefix 固定 (system rules + few-shot + catalog) なので効くはずだが実測未検証。
 - **カタログのツール名抽象**: `current_time` 等のエントリが実環境の `Bash:date` 等とマッピングされていない (持ち越し)。lint 拡張検討中
 
 ### Spotter 本体プロジェクトでの install に関する警告

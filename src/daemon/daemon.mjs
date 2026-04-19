@@ -25,6 +25,7 @@ import { createServer, ensureRuntimeDir, socketPath } from './transport.mjs';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
+  buildWarmupPrompt,
   parseHaikuResponse,
   createHaikuCaller,
 } from './haiku-caller.mjs';
@@ -35,6 +36,11 @@ import { writeFile, unlink } from 'node:fs/promises';
 
 const DEFAULT_CATALOG_PATH = join(homedir(), '.spotter', 'tool-catalog', 'tools.yaml');
 const HAIKU_CALL_WINDOW_MS = 10_000;
+// v0.4.2: bumped 28s → 60s. Stateless calls mean every turn pays cold-start cost
+// (Claude CLI boot, Anthropic round-trip, prompt-cache warm-up). 28s was not enough
+// under observed load — E_HAIKU_TIMEOUT then blocked UserPromptSubmit (exit 2)
+// and silenced Bell. Warmup below also helps but cannot eliminate every cold start.
+const DEFAULT_HAIKU_TIMEOUT_MS = 60_000;
 
 export class DaemonAlreadyRunningError extends Error {
   constructor(sessionId, pid) {
@@ -50,6 +56,7 @@ export async function startDaemon({
   catalogPath = DEFAULT_CATALOG_PATH,
   haikuCaller,
   logFn = () => {},
+  warmup = false,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -65,7 +72,7 @@ export async function startDaemon({
   const catalog = await loadCatalog(catalogPath);
   logFn(`catalog loaded: ${catalog.tools.length} tools from ${catalogPath}`);
 
-  const callHaiku = haikuCaller ?? createHaikuCaller({ timeoutMs: 28_000 });
+  const callHaiku = haikuCaller ?? createHaikuCaller({ timeoutMs: DEFAULT_HAIKU_TIMEOUT_MS });
 
   // Per-turn state, reset on turn_end.
   const state = {
@@ -205,6 +212,35 @@ export async function startDaemon({
   // Write PID file so uninstall/doctor can reason about liveness (§15.3 doctor).
   const pidPath = pidFilePath(sessionId);
   await writeFile(pidPath, String(process.pid), 'utf8');
+
+  // v0.4.2: stateless-safe warmup.
+  // Spawns a single throwaway Haiku call with the full system-prompt + catalog prefix
+  // (same as real calls). Goal: pre-load the Claude CLI binary, warm the Anthropic
+  // connection pool, and populate the prompt cache for the shared prefix, so the
+  // first real user_input does not pay full cold-start cost.
+  //
+  // Important: we bypass callHaikuTracked to avoid setting lastHaikuCallAt. If the
+  // 10-second recursion window activated, a legitimate user_input arriving within
+  // 10s of warmup would be silent-passed (the v0.2.1 bug this mirrors).
+  //
+  // Fire-and-forget: warmup MUST NOT block readiness or real traffic. Failure is
+  // logged but not thrown — at worst, the first real call pays the cold-start cost
+  // we were trying to avoid, same as the pre-warmup baseline.
+  if (warmup) {
+    const warmupPrompt = buildWarmupPrompt({ catalog });
+    callHaiku(warmupPrompt)
+      .then((raw) => {
+        try {
+          parseHaikuResponse(raw);
+          logFn('warmup: ok');
+        } catch (err) {
+          logFn(`warmup: schema failed: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
+        }
+      })
+      .catch((err) => {
+        logFn(`warmup: call failed: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
+      });
+  }
 
   return {
     server,

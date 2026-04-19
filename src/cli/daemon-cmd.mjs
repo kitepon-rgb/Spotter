@@ -34,7 +34,10 @@ export async function runDaemonStart({ argv }) {
 
   let running;
   try {
-    running = await startDaemon({ sessionId, logFn: log });
+    // v0.4.2: warmup=true — fire-and-forget throwaway Haiku call to pre-warm the
+    // Claude CLI / connection pool / prompt cache. Unit tests keep warmup=false
+    // (the default) to avoid spurious haikuCaller calls.
+    running = await startDaemon({ sessionId, logFn: log, warmup: true });
   } catch (err) {
     if (err instanceof DaemonAlreadyRunningError) {
       // v0.2 PID-preexist layer: a sibling daemon already serves this session.
