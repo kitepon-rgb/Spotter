@@ -40,8 +40,8 @@ export class McpInvestigationError extends Error {
 
 // Returns: Map<server-name, Array<{name, description}>>.
 // Skips servers that fail (logs the failure) so one broken server doesn't block the rest.
-export async function listMcpToolsAll({ logFn = () => {}, claudeBin = 'claude' } = {}) {
-  const servers = await listMcpServers({ claudeBin });
+export async function listMcpToolsAll({ logFn = () => {}, claudeBin = 'claude', projectRoot } = {}) {
+  const servers = await listMcpServers({ claudeBin, projectRoot });
   const out = new Map();
   for (const server of servers) {
     try {
@@ -64,10 +64,10 @@ export async function listMcpToolsAll({ logFn = () => {}, claudeBin = 'claude' }
 // full descriptor (with env/headers). Otherwise we fall back to the parsed CLI line,
 // which at minimum gives us name + transport + url (or triggers `claude mcp get` for
 // stdio command tokenisation).
-export async function listMcpServers({ claudeBin = 'claude' } = {}) {
+export async function listMcpServers({ claudeBin = 'claude', projectRoot } = {}) {
   const [{ stdout }, mcpServers] = await Promise.all([
     execClaude(claudeBin, ['mcp', 'list'], { encoding: 'utf8' }),
-    readMcpServers(),
+    readMcpServers({ projectRoot }),
   ]);
   const cliList = parseMcpListOutput(stdout);
   return cliList.map((cliEntry) => {
@@ -247,7 +247,7 @@ async function spawnAndQuery({ command, args, env = {} }, serverName) {
         await request('initialize', {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: 'spotter', version: '0.9.0' },
+          clientInfo: { name: 'spotter', version: '0.10.0' },
         });
         send({ jsonrpc: '2.0', method: 'notifications/initialized' });
         initializedSent = true;

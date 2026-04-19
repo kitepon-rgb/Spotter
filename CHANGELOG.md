@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.0
+
+**project scope `.mcp.json` 対応**。v0.9.0 は `~/.claude/.mcp.json` (user scope) だけを読んでいたため、プロジェクト直下の `.mcp.json` に登録された MCP サーバーの認証情報 (env / headers) を拾えなかった。`<projectRoot>/.mcp.json` も読んで user scope に merge (project 勝ち = Claude Code 本体の precedence と整合) するよう変更。
+
+### 変更点
+
+- **編集 [src/tool-db/mcp-config.mjs](src/tool-db/mcp-config.mjs)**: `readMcpServers({projectRoot})` シグネチャへ変更。`projectRoot` が渡されれば user scope に project scope を merge して返す。missing file は空として扱う
+- **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `listMcpServers` / `listMcpToolsAll` が `projectRoot` を受け取って伝搬
+- **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `buildInvestigationSnapshot` / `refresh` が `projectRoot` を伝搬 (CLI からは既に渡されている、経路が繋がった)
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: project-scope override + missing-file fallback の 2 ケース追加 (total 99 tests)
+
+### 非互換
+
+- `readMcpServers()` → `readMcpServers({projectRoot})`: 引数なしも引き続き動く (user scope のみ) ので既存コードは影響なし
+
 ## 0.9.0
 
 **`.mcp.json` を真実源として読み込み、user-registered HTTP/stdio MCP の認証情報を live fetch に活用**。v0.8.0 で HTTP transport を実装したが、`claude mcp list` / `claude mcp get` は bearer token や headers を CLI 出力に含めないため、認証が必要な MCP サーバー (x-api) は依然 401 で落ちていた。`~/.claude/.mcp.json` を直接読んで env / headers を取得、stdio なら spawn 時の env に、HTTP なら fetch request header に渡す。

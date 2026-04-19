@@ -7,7 +7,7 @@ import { loadDb, saveDb, emptyDb, ToolDbSchemaError } from '../src/tool-db/loade
 import { resolveAll } from '../src/tool-db/lookup.mjs';
 import { parseMcpListOutput, bellVisibleName } from '../src/tool-db/investigate-mcp.mjs';
 import { getDeferredDescription, listDeferredNames } from '../src/tool-db/deferred-baseline.mjs';
-import { describeServer } from '../src/tool-db/mcp-config.mjs';
+import { describeServer, readMcpServers } from '../src/tool-db/mcp-config.mjs';
 
 async function setupPaths() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-tooldb-'));
@@ -266,4 +266,40 @@ test('describeServer: sse transport distinguished via type field', () => {
 
 test('describeServer: unrecognised entry returns null', () => {
   assert.equal(describeServer('weird', { foo: 'bar' }), null);
+});
+
+test('readMcpServers: project scope overrides user scope on name collision', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-mcpcfg-'));
+  try {
+    await writeFile(
+      join(projectRoot, '.mcp.json'),
+      JSON.stringify({
+        mcpServers: {
+          'shared': { command: 'project-node', args: ['p.js'] },
+          'project-only': { command: 'proj-only' },
+        },
+      }),
+      'utf8'
+    );
+    // Note: this test reads the REAL user scope ~/.claude/.mcp.json. We only assert
+    // that project-scope entries override and project-only entries are present —
+    // we do not assert on unrelated user-scope entries.
+    const merged = await readMcpServers({ projectRoot });
+    assert.deepEqual(merged['shared'], { command: 'project-node', args: ['p.js'] });
+    assert.deepEqual(merged['project-only'], { command: 'proj-only' });
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('readMcpServers: missing project file falls back to user only', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-mcpcfg-'));
+  try {
+    const withProject = await readMcpServers({ projectRoot });
+    const withoutProject = await readMcpServers();
+    // The two should be identical when no project .mcp.json exists.
+    assert.deepEqual(Object.keys(withProject).sort(), Object.keys(withoutProject).sort());
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
 });

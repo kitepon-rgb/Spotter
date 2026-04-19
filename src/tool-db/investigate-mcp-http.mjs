@@ -87,7 +87,7 @@ export async function listToolsHttp({ url, serverName, headers: staticHeaders = 
     params: {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'spotter', version: '0.9.0' },
+      clientInfo: { name: 'spotter', version: '0.10.0' },
     },
   });
   if (!initResult || initResult.error) {

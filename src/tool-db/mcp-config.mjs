@@ -6,10 +6,10 @@
 // of `claude mcp list` / `claude mcp get` hides those secrets. Without them, an HTTP
 // MCP server returns 401 and a stdio MCP server spawns without its API key.
 //
-// Scope: reads user-level `~/.claude/.mcp.json`. Project-level `.mcp.json` and
-// `settings.local.json` are not yet consulted — user scope covers the common case
-// (globally-installed MCP servers) and is the scope that Spotter's tool-db is
-// global-first anyway.
+// Scope: merges user-level `~/.claude/.mcp.json` with optional project-level
+// `<projectRoot>/.mcp.json`. Project scope overrides user scope on name collision
+// (matches Claude Code's own precedence — more-specific scope wins).
+// `settings.local.json` (local scope) is not yet consulted.
 //
 // This file does NOT read ~/.claude/.credentials.json (Anthropic OAuth token). That
 // remains off-limits per the v0.8.0 design decision. `.mcp.json` is user-authored
@@ -23,17 +23,29 @@ export function userMcpConfigPath() {
   return join(homedir(), '.claude', '.mcp.json');
 }
 
-// Returns the raw `mcpServers` object from ~/.claude/.mcp.json, or {} if missing.
-// Throws only on malformed JSON (not on missing file).
-export async function readMcpServers() {
+export function projectMcpConfigPath(projectRoot) {
+  return join(projectRoot, '.mcp.json');
+}
+
+async function readOne(path) {
   try {
-    const text = await readFile(userMcpConfigPath(), 'utf8');
+    const text = await readFile(path, 'utf8');
     const data = JSON.parse(text);
     return data.mcpServers ?? {};
   } catch (err) {
     if (err.code === 'ENOENT') return {};
     throw err;
   }
+}
+
+// Returns the merged `mcpServers` object: user scope as base, project scope overrides
+// on name collision. Missing files are treated as empty (not an error). If projectRoot
+// is not supplied, only user scope is read.
+export async function readMcpServers({ projectRoot } = {}) {
+  const user = await readOne(userMcpConfigPath());
+  if (!projectRoot) return user;
+  const project = await readOne(projectMcpConfigPath(projectRoot));
+  return { ...user, ...project };
 }
 
 // Normalise an `.mcp.json` entry into a server descriptor the investigator can use.

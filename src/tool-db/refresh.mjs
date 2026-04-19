@@ -17,7 +17,7 @@ import { localDbPath, globalDbPath } from './loader.mjs';
 // - Deferred: from the hardcoded baseline
 //
 // Returns an in-memory snapshot the caller can use as the investigate() backend.
-export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin = 'claude' } = {}) {
+export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin = 'claude', projectRoot } = {}) {
   const snapshot = new Map();
 
   // Deferred built-ins (Claude Code deferred tools like WebFetch, TodoWrite, etc.).
@@ -32,8 +32,9 @@ export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin =
     snapshot.set(name, getClaudeAiDescription(name));
   }
 
-  // MCP servers (stdio + user-registered HTTP/SSE).
-  const mcp = await listMcpToolsAll({ logFn, claudeBin });
+  // MCP servers (stdio + user-registered HTTP/SSE). projectRoot forwards for
+  // project-scope `.mcp.json` merge (see mcp-config.mjs).
+  const mcp = await listMcpToolsAll({ logFn, claudeBin, projectRoot });
   for (const [serverName, tools] of mcp.entries()) {
     for (const tool of tools) {
       if (!tool.description || tool.description.length === 0) continue;
@@ -47,7 +48,7 @@ export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin =
 // Refresh the tool-db. Discovers all currently available tools, resolves each via the
 // 3-tier lookup, writes through. Returns the resolved Map.
 export async function refresh({ projectRoot, logFn = () => {}, claudeBin = 'claude' }) {
-  const snapshot = await buildInvestigationSnapshot({ logFn, claudeBin });
+  const snapshot = await buildInvestigationSnapshot({ logFn, claudeBin, projectRoot });
   const toolNames = Array.from(snapshot.keys());
   const investigate = async (name) => snapshot.get(name) ?? null;
 
