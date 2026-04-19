@@ -328,6 +328,77 @@ test('startDaemon: turn_end with schema-violating Haiku output → silent pass +
   }
 });
 
+test('startDaemon: user_input log records duration_ms and mode=first', async () => {
+  // The daemon tags each Haiku-invoking log line with duration_ms (measured around the
+  // caller) and mode (first|resumed, read from caller.isFirstCall). This lets us observe
+  // resume-path latency savings and role-collapse recovery frequency from log files alone.
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `log-first-${randomUUID()}`;
+  const logs = [];
+  const haikuCaller = async (_p) => JSON.stringify({ pass: true, missing_tools: [] });
+  haikuCaller.isFirstCall = true;
+  const running = await startDaemon({
+    sessionId,
+    catalogPath,
+    haikuCaller,
+    logFn: (msg) => logs.push(msg),
+  });
+  try {
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '?' },
+      timeoutMs: 2_000,
+    });
+    const line = logs.find((l) => l.startsWith('user_input:'));
+    assert.ok(line, 'user_input log line must exist');
+    assert.match(line, /mode=first/);
+    assert.match(line, /duration_ms=\d+/);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: turn_end log records mode=resumed when caller is past its first call', async () => {
+  // A resumed call happens after the first successful Haiku round-trip. We simulate this by
+  // flipping the stub's isFirstCall between the user_input and turn_end requests.
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `log-resumed-${randomUUID()}`;
+  const logs = [];
+  const haikuCaller = async (_p) => JSON.stringify({ pass: true, missing_tools: [] });
+  haikuCaller.isFirstCall = true;
+  const running = await startDaemon({
+    sessionId,
+    catalogPath,
+    haikuCaller,
+    logFn: (msg) => logs.push(msg),
+    haikuCallWindowMs: 0,
+  });
+  try {
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '?' },
+      timeoutMs: 2_000,
+    });
+    haikuCaller.isFirstCall = false;
+    await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: 'reply', stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    const line = logs.find((l) => l.startsWith('turn_end: pass='));
+    assert.ok(line, 'turn_end log line must exist');
+    assert.match(line, /mode=resumed/);
+    assert.match(line, /duration_ms=\d+/);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('startDaemon: stale PID file (dead process) does not block startup', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `stale-${randomUUID()}`;

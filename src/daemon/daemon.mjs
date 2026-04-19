@@ -88,23 +88,26 @@ export async function startDaemon({
 
   const callHaikuTracked = async (prompt) => {
     lastHaikuCallAt = Date.now();
-    return callHaiku(prompt);
+    const mode = callHaiku.isFirstCall === false ? 'resumed' : 'first';
+    const start = Date.now();
+    const raw = await callHaiku(prompt);
+    return { raw, meta: { durationMs: Date.now() - start, mode } };
   };
 
   // v0.5.0: shared Haiku-invocation + parse helper. On E_HAIKU_SCHEMA (role collapse),
   // rotates the Haiku session-id and silent-passes the turn (reason: role_collapse_reset).
   // Other Haiku errors (timeout, spawn failure) still propagate — §14 unexpected → throw.
   const runHaikuJudgment = async (stage, prompt) => {
-    const raw = await callHaikuTracked(prompt);
+    const { raw, meta } = await callHaikuTracked(prompt);
     try {
-      return parseHaikuResponse(raw);
+      return { parsed: parseHaikuResponse(raw), meta };
     } catch (err) {
       if (err instanceof HaikuError && err.code === 'E_HAIKU_SCHEMA') {
         logFn(`${stage}: role collapse detected, session reset: ${err.message}`);
         if (typeof callHaiku.reset === 'function') {
           callHaiku.reset();
         }
-        return { pass: true, missing_tools: [], reason: 'role_collapse_reset' };
+        return { parsed: { pass: true, missing_tools: [], reason: 'role_collapse_reset' }, meta };
       }
       throw err;
     }
@@ -166,9 +169,9 @@ export async function startDaemon({
     state.lastUserInput = userInput;
     state.usedTools = []; // reset tools for this turn
 
-    const parsed = await runHaikuJudgment('user_input', buildFirstStagePrompt({ catalog, userInput }));
+    const { parsed, meta } = await runHaikuJudgment('user_input', buildFirstStagePrompt({ catalog, userInput }));
     logFn(
-      `user_input: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}${
+      `user_input: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
         parsed.reason ? `, reason=${parsed.reason}` : ''
       }`
     );
@@ -207,7 +210,7 @@ export async function startDaemon({
 
     const savedUserInput = state.lastUserInput;
     const savedUsedTools = state.usedTools.slice();
-    const parsed = await runHaikuJudgment(
+    const { parsed, meta } = await runHaikuJudgment(
       'turn_end',
       buildFinalStagePrompt({
         catalog,
@@ -217,7 +220,7 @@ export async function startDaemon({
       })
     );
     logFn(
-      `turn_end: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}${
+      `turn_end: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
         parsed.reason ? `, reason=${parsed.reason}` : ''
       }`
     );

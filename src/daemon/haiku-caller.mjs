@@ -263,5 +263,10 @@ export function createHaikuCaller({ timeoutMs, claudeBin = 'claude', model = HAI
     enumerable: true,
   });
 
+  Object.defineProperty(callHaiku, 'isFirstCall', {
+    get: () => isFirstCall,
+    enumerable: true,
+  });
+
   return callHaiku;
 }

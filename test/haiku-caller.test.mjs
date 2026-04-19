@@ -145,6 +145,15 @@ test('createHaikuCaller: reset() assigns a new session-id', () => {
   assert.notEqual(before, after);
 });
 
+test('createHaikuCaller: isFirstCall starts true and reset() restores it', () => {
+  // The daemon reads isFirstCall to tag log output with mode=first|resumed. Exposing the
+  // flag also lets tests assert the spawn-arg transition without running claude -p.
+  const caller = createHaikuCaller({ timeoutMs: 1000 });
+  assert.equal(caller.isFirstCall, true);
+  caller.reset();
+  assert.equal(caller.isFirstCall, true);
+});
+
 test('buildSpawnArgs: first call uses --session-id without --resume', () => {
   // v0.5.0: the very first call of a session has no prior claude -p session to resume.
   const { cmdArgs } = buildSpawnArgs({

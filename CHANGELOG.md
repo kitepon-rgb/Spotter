@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.2
+
+**Haiku 呼び出しのレイテンシ可視化 (観測性の改善のみ、機能変更なし)**。
+
+### 事の発端
+
+v0.5.1 の hot-fix で session-scoped Haiku がようやく生きた状態で動き始めた。実セッション観測で `--resume` 経路の Haiku 判定はエラーなく走っているものの、**そこに「cold-start が実際に消えたか」を読み取れる情報が daemon ログに出ていない**。プラン §5.5 が前提としていた「`--resume` で毎ターン 20–50 秒の claude -p spawn コストを消せる」が実効的に効いているかは、呼び出し時間が見えないと判断できない。
+
+### 変更点
+
+- **[src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `createHaikuCaller` の返り値に `isFirstCall` getter を追加。daemon 側が「次の呼び出しが初回かどうか」をスナップショットできる。
+- **[src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `callHaikuTracked` が raw 文字列に加えて `{ durationMs, mode }` を返す構造に変更。`runHaikuJudgment` / `handleUserInput` / `handleTurnEnd` の戻り値構造も合わせて `{ parsed, meta }` に統一。ログ出力に `mode=first|resumed, duration_ms=<N>` を追加。role collapse 回復パスも meta を引き継ぐため silent-pass ログにも duration が残る。
+- **[test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `isFirstCall` の初期値と `reset()` 後の挙動を検証するテストを追加。
+- **[test/daemon.test.mjs](test/daemon.test.mjs)**: `user_input` / `turn_end` のログ行に `mode=first` / `mode=resumed` と `duration_ms=<N>` が含まれることを検証するテストを 2 件追加。
+
+### 観測できるようになったこと
+
+これまでは `user_input: pass=true, missing=` だけだったログ行が `user_input: pass=true, missing=, mode=first, duration_ms=8432` のように出る。次のセッションから:
+
+- **`mode=resumed` の duration_ms が mode=first より有意に短い**なら `--resume` の効果が実測で確認できる
+- **role_collapse_reset が発生しても duration_ms が見える**ので、回復が高速なのか cold-start 待ちなのかが区別できる
+- **timeout 30s に対する余裕**が数値で見える (ギリギリなら延長、余裕なら短縮の判断材料)
+
+これらは v0.5.0 / v0.5.1 の「resume の実効 spawn 削減量未検証」「role collapse 実発生頻度の観測」という既知課題を **観測可能な状態に引き上げる**ための最小変更。判断材料が貯まるまで追加の構造変更は凍結。
+
+### 機能的には非変更
+
+ログフォーマット以外の挙動は一切変わらない。envelope 契約・hook の終了コード・Haiku プロンプト・catalog 形式・回復ロジックのいずれも手付かず。
+
 ## 0.5.1
 
 **v0.5.0 の Haiku spawn が初呼び出し時点で落ちていたバグの hot-fix**。

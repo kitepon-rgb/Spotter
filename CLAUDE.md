@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v0.5.2** (2026-04-19): Haiku 呼び出しレイテンシ可視化。daemon ログに `mode=first|resumed, duration_ms=<N>` を追加し、`--resume` 経路の cold-start 削減効果 / role collapse 回復時間 / timeout 余裕を観測可能にした。機能変更なし、`isFirstCall` getter 追加 + ログフォーマット拡張のみ。これで v0.5.0/v0.5.1 の既知課題 (resume 実効削減量未検証、role collapse 実発生頻度未観測) が数値で判断できる状態になる。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
+**v0.5.1** (2026-04-19): v0.5.0 の `buildSpawnArgs` が `--session-id` と `--resume` を併用していたバグの hot-fix。claude CLI は `--fork-session` なしの両立を拒否するため、resume 時は `--resume <uuid>` 単独に修正。これにより v0.5.0 の session-scoped 機構が実際に生きた状態で動き出した。
+
 **v0.5.0 実装完了** (2026-04-19)。**v0.4.0 で捨てた session-scoped Haiku を事後回復機構付きで復活**。v0.4.x stateless の毎ターン cold-start 問題 (Bell 応答後に 30 秒前後動きが止まる) を解消するため、`claude -p --session-id <uuid> --resume <uuid>` で同一セッション再接続。v0.4.0 で session-scoped を捨てた理由の **Haiku role collapse** (persona drift で JSON 契約破棄) は、構造的予防ではなく **JSON パース失敗検知 → session renew + silent pass** の事後回復で処理する方針へ変更。これは §0 の「想定済み異常 = 記録 + 正常リターン」の分類変更であり、silent fallback 新規導入ではない。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
 **v0.4.4** (2026-04-19): Stop hook が **Bell の最終応答を Haiku に渡していなかったバグ**を修正。`input.final_response` (存在しないフィールド) を廃止し、`input.transcript_path` から JSONL 末尾の assistant text だけを抽出する `getLastAssistantText()` を新設 ([src/hooks/transcript-reader.mjs](src/hooks/transcript-reader.mjs))。thinking / tool_use ブロックは除外、ユーザーが見た最終応答テキストのみ Haiku に渡る。Throughline から移植 (MIT, 同作者)。
