@@ -242,6 +242,16 @@ export function createHaikuCaller({ preamble, timeoutMs, claudeBin = 'claude', m
       let stderr = '';
       let settled = false;
 
+      // v0.13.2: absorb EPIPE/ECONNRESET on stdio streams. We end(prompt) and
+      // then kill() on timeout — if the write hadn't drained yet, the unflushed
+      // stream can emit 'error' after kill. Today's Node doesn't crash on
+      // unhandled stdin errors, but the docs don't guarantee that, and this
+      // listener removes a potential silent-death path.
+      const noop = () => {};
+      child.stdin.on('error', noop);
+      child.stdout.on('error', noop);
+      child.stderr.on('error', noop);
+
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;

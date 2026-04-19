@@ -31,16 +31,17 @@ Spotter で現時点 (v0.13.0 時点, 2026-04-20) に **塞がっていない穴
 
 **次アクション**: v0.13.1 リリース後の daemon ログで `E_HAIKU_TIMEOUT` が 45s でも発生するか集計。発生率が下がらなければ (b) retry or (c) 動的延長を検討。発生率がゼロに近ければこの項目は closable。
 
-### daemon プロセスが shutdown ログなしに死ぬ
+### daemon プロセスが shutdown ログなしに死ぬ (v0.13.2 で診断 handler 投入済み、真因特定は再現待ち)
 
 **背景**: [daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15 (E_HAIKU_TIMEOUT) の 53 秒後、同じ `session_id` で **shutdown ログなしに daemon が再起動** している (line 16-19 の `tool-db loaded` → `daemon listening` → `heartbeat armed` → `started`)。SessionEnd も heartbeat expire も走っていない。
 
 v0.12.0 の UserPromptSubmit auto-resurrect が次のユーザー入力で `E_UNREACHABLE` を拾って spawn し直したと推定されるが、**auto-resurrect で救われている分、sudden death 自体は観測されないまま積もる**。その間の turn_end / PreToolUse が届かない = 見えない欠落ターン。
 
-**次アクション**:
-- daemon の uncaught exception / unhandled rejection を stderr + file にも吐くよう handler 追加 (現状ログに痕跡なしなのは捕捉漏れの可能性大)
-- E_HAIKU_TIMEOUT が daemon 自体を落としていないか haiku-caller.mjs を精読 (timer / child.kill の後処理に穴がないか)
-- auto-resurrect 発動時に daemon 側へ「前プロセス死亡 + 現セッションで N 分 gap」を記録させ、頻度を可視化
+**v0.13.2 で投入済み**:
+- [src/cli/daemon-cmd.mjs](../src/cli/daemon-cmd.mjs) に `process.on('uncaughtException')` / `'unhandledRejection')` handler を登録、**同期 `writeFileSync` で log に書いてから exit**。次回死亡時は stack trace + 種別が必ず残る
+- [src/daemon/haiku-caller.mjs](../src/daemon/haiku-caller.mjs) の `child.stdin/stdout/stderr` に防御的 error listener 追加。実証では Node v24 + Windows でこのパスは現状落ちないと確認済み (= 80b5c0af の死因はこれではない可能性高) だが defensive coding として残置
+
+**残: 真因特定は再現待ち**。次に同セッション内で daemon が死亡したら fatal log を見て対処する。auto-resurrect が頻発する場合は「前プロセス死亡時刻 + 現セッションでの gap」を可視化する仕組みも検討。
 
 ---
 

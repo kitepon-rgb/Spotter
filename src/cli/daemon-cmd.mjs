@@ -4,6 +4,7 @@ import { startDaemon, DaemonAlreadyRunningError } from '../daemon/daemon.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { open } from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
 
 function parseArgs(argv) {
   const out = { sessionId: null, projectRoot: null };
@@ -30,10 +31,32 @@ export async function runDaemonStart({ argv }) {
     process.exit(2);
   }
 
-  const logFile = await open(
-    join(homedir(), '.spotter', 'logs', `daemon-${sessionId}.log`),
-    'a'
-  );
+  const logFilePath = join(homedir(), '.spotter', 'logs', `daemon-${sessionId}.log`);
+
+  // v0.13.2: last-resort fatal handlers. Without these, an uncaughtException or
+  // unhandledRejection silently kills the daemon and the regular logFile.write()
+  // (async) loses the trailing line on sudden death — leaving zero forensic
+  // trace. We do a sync append so the cause is always captured before exit.
+  // See open-issues.md "daemon プロセスが shutdown ログなしに死ぬ".
+  const fatalLog = (kind, err) => {
+    const detail = err && err.stack ? err.stack : String(err);
+    const line = `[${new Date().toISOString()}] FATAL ${kind}: ${detail}\n`;
+    try {
+      writeFileSync(logFilePath, line, { flag: 'a' });
+    } catch {
+      process.stderr.write(line);
+    }
+  };
+  process.on('uncaughtException', (err) => {
+    fatalLog('uncaughtException', err);
+    process.exit(1);
+  });
+  process.on('unhandledRejection', (reason) => {
+    fatalLog('unhandledRejection', reason);
+    process.exit(1);
+  });
+
+  const logFile = await open(logFilePath, 'a');
   const log = (msg) => {
     const line = `[${new Date().toISOString()}] ${msg}\n`;
     logFile.write(line).catch(() => {});

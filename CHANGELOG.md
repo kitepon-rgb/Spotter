@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.13.2
+
+**Daemon の死因を必ずログに残す診断インフラ + Haiku 子プロセス stdio の防御的 error listener**。v0.13.1 までは daemon が `uncaughtException` / `unhandledRejection` で死ぬと痕跡ゼロで消えていた ([daemon-80b5c0af.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15 → line 16 で shutdown ログなしに再起動)。次に同じことが起きた時に真因を必ず捕まえられるよう、診断 handler を導入。
+
+### 監査の経過と結論
+
+[haiku-caller.mjs](src/daemon/haiku-caller.mjs) の `child.stdin.end(prompt)` → timeout で `child.kill()` という流れで、未 flush の stdin が EPIPE を emit → unhandled stream error → daemon 即死、という仮説を立てた。Windows + Node v24.14.0 で repro script を書いて検証したところ、**`child.stdin/stdout/stderr` の error listener 不在でも uncaughtException は発火せず process は生存** (stdin 8KB end → 500ms 後に kill → 4 秒生存して clean exit、EXIT=0)。
+
+つまり 80b5c0af の死因は stdin EPIPE ではなく、別経路。ログには `handler error on turn_end: E_HAIKU_TIMEOUT` (transport の catch + onError まで完了) が残っているので、その後の何かで死んでいる。**真因を確定できる証拠がログにないことが本質的な問題**と判断、診断 handler を先に入れる方針に切替えた。
+
+### 変更点
+
+- **編集 [src/cli/daemon-cmd.mjs](src/cli/daemon-cmd.mjs)**: daemon 起動冒頭で `process.on('uncaughtException')` / `process.on('unhandledRejection')` を登録。**同期 `writeFileSync` で log file に append** してから `process.exit(1)`。async write はバッファ flush 前に exit して line を失うが、sync write なら必ず残る。次回死亡時に stack trace + 種別 (`uncaughtException` か `unhandledRejection` か) が確実に記録される
+- **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `child.stdin/stdout/stderr` に no-op error listener を追加。今の Node v24 では落ちないと実証済みだが、Node 公式 docs はこの edge case を明示保証していない (将来の Node 変更や別 OS で挙動が変わる可能性) ため、defensive coding として投入
+
+### 残課題
+
+- daemon 突然死の真因特定: **次回再現を待つ**。診断 handler が入ったので、次に死亡した時はログに必ず痕跡が残る。それを見て対処する
+- v0.13.1 で 30s → 45s 緩和した Haiku timeout の効果観測は継続: 現セッション [daemon-69bd2b93.log](../../.spotter/logs/daemon-69bd2b93-ffbe-43bc-94e7-1d0ba2bd9e74.log) line 5 で `mode=first, duration_ms=32703` を観測 (30s 設定なら timeout していた値が 45s で生存)。サンプル 1 件で結論はまだ早い
+
 ## 0.13.1
 
 **Haiku timeout 30s → 45s 緩和 + hook 側 IPC timeout を整合**。v0.13.0 以前の実セッション ([daemon-80b5c0af.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15) で `E_HAIKU_TIMEOUT: haiku did not respond within 30000ms` を観測。同ログ line 20 でも `mode=first, duration_ms=20948` と 30s の 70% 域まで達しており、timeout が実測レイテンシに対して狭すぎた。合わせて [src/hooks/stop.mjs](src/hooks/stop.mjs) の IPC timeout が元々 15s で Haiku 側 30s と整合していなかった既存バグ (turn_end で Haiku が 16s 超かかると hook 側が先に諦めていた) も同時解消。
