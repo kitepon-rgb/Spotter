@@ -4,6 +4,7 @@ import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
   parseHaikuResponse,
+  createHaikuCaller,
   HaikuError,
 } from '../src/daemon/haiku-caller.mjs';
 
@@ -15,24 +16,48 @@ const sampleCatalog = {
   ],
 };
 
-test('buildFirstStagePrompt includes user input and tools', () => {
-  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?' });
+test('buildFirstStagePrompt (isFirst=true) includes catalog and rules', () => {
+  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?', isFirst: true });
   assert.ok(prompt.includes('current_time'));
   assert.ok(prompt.includes('今何時?'));
   assert.ok(prompt.includes('pass'));
-  // purpose should be present, but usage/examples should not (first-stage projection)
   assert.ok(prompt.includes('get time'));
 });
 
-test('buildFinalStagePrompt includes used_tools section', () => {
+test('buildFirstStagePrompt (isFirst=false) omits catalog — incremental form', () => {
+  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?', isFirst: false });
+  // Should still include the user input
+  assert.ok(prompt.includes('今何時?'));
+  // But NOT re-send the catalog
+  assert.ok(!prompt.includes('get time'));
+  assert.ok(!prompt.includes('"name":'));
+});
+
+test('buildFinalStagePrompt (isFirst=true) includes used_tools section', () => {
   const prompt = buildFinalStagePrompt({
     catalog: sampleCatalog,
     userInput: '今何時?',
     usedTools: ['read_file'],
     finalResponse: '深夜ですね',
+    isFirst: true,
   });
   assert.ok(prompt.includes('read_file'));
   assert.ok(prompt.includes('深夜ですね'));
+  assert.ok(prompt.includes('get time'));
+});
+
+test('buildFinalStagePrompt (isFirst=false) omits catalog — incremental form', () => {
+  const prompt = buildFinalStagePrompt({
+    catalog: sampleCatalog,
+    userInput: '今何時?',
+    usedTools: ['read_file'],
+    finalResponse: '深夜ですね',
+    isFirst: false,
+  });
+  assert.ok(prompt.includes('read_file'));
+  assert.ok(prompt.includes('深夜ですね'));
+  // Catalog shouldn't be resent
+  assert.ok(!prompt.includes('get time'));
 });
 
 test('buildFinalStagePrompt handles empty used_tools', () => {
@@ -41,8 +66,23 @@ test('buildFinalStagePrompt handles empty used_tools', () => {
     userInput: '?',
     usedTools: [],
     finalResponse: 'r',
+    isFirst: true,
   });
   assert.ok(prompt.includes('なし'));
+});
+
+test('createHaikuCaller throws without haikuSessionId', () => {
+  assert.throws(
+    () => createHaikuCaller({ timeoutMs: 1000 }),
+    TypeError
+  );
+});
+
+test('createHaikuCaller throws on invalid timeout', () => {
+  assert.throws(
+    () => createHaikuCaller({ haikuSessionId: 'abc', timeoutMs: 0 }),
+    TypeError
+  );
 });
 
 test('parseHaikuResponse: accepts valid pass=true', () => {

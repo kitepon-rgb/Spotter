@@ -1,12 +1,16 @@
 // PreToolUse hook — record tool usage in daemon (lightweight, no Haiku call). §9.1 v0.1.
+// v0.2 gates: see src/hooks/session-start.mjs comment.
 
-import { readStdinJson, requireString, exitCodeFor, die } from './lib.mjs';
+import { readStdinJson, requireString, exitCodeFor, die, isChildCall, isSubagentCall } from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 
 const TIMEOUT_MS = 1_000;
 
 export async function runPreToolUse() {
+  if (isChildCall()) return;
   const input = await readStdinJson();
+  if (isSubagentCall(input)) return;
+
   const sessionId = requireString(input, 'session_id');
   const toolName = requireString(input, 'tool_name');
 

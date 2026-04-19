@@ -6,6 +6,24 @@
 //   2 = unexpected (propagate to Claude Code transcript)
 //
 // Silent fallback (exit 0 with missing behaviour) is forbidden. See §14.1.
+//
+// v0.2 gate helpers (plan §18 / C:\Users\kite_\.claude\plans\10-cuddly-codd.md):
+// - isChildCall(): env-var gate for Spotter's own claude -p invocations
+// - isSubagentCall(input): agent_id gate for Bell's Task subagent hooks
+// Combined with session-start's source='startup' check, these prevent daemon
+// proliferation (v0.1 postmortem §18.2).
+
+export function isChildCall() {
+  const v = process.env.SPOTTER_PARENT_PID;
+  return typeof v === 'string' && v.length > 0;
+}
+
+export function isSubagentCall(input) {
+  return input !== null
+      && typeof input === 'object'
+      && typeof input.agent_id === 'string'
+      && input.agent_id.length > 0;
+}
 
 export async function readStdinJson() {
   let raw = '';

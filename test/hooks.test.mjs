@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatTransparentContext, formatTransparentBlockReason } from '../src/hooks/lib.mjs';
+import {
+  formatTransparentContext,
+  formatTransparentBlockReason,
+  isChildCall,
+  isSubagentCall,
+} from '../src/hooks/lib.mjs';
 
 test('formatTransparentContext: mentions Spotter explicitly (§12.2)', () => {
   const text = formatTransparentContext([
@@ -29,4 +34,28 @@ test('formatTransparentContext: handles multiple tools', () => {
   assert.ok(text.includes('b'));
   assert.ok(text.includes('r1'));
   assert.ok(text.includes('r2'));
+});
+
+test('isChildCall: true when SPOTTER_PARENT_PID env is set', () => {
+  const prev = process.env.SPOTTER_PARENT_PID;
+  try {
+    process.env.SPOTTER_PARENT_PID = '12345';
+    assert.equal(isChildCall(), true);
+    process.env.SPOTTER_PARENT_PID = '';
+    assert.equal(isChildCall(), false);
+    delete process.env.SPOTTER_PARENT_PID;
+    assert.equal(isChildCall(), false);
+  } finally {
+    if (prev === undefined) delete process.env.SPOTTER_PARENT_PID;
+    else process.env.SPOTTER_PARENT_PID = prev;
+  }
+});
+
+test('isSubagentCall: true when input.agent_id is a non-empty string', () => {
+  assert.equal(isSubagentCall({ agent_id: 'abc' }), true);
+  assert.equal(isSubagentCall({ agent_id: '' }), false);
+  assert.equal(isSubagentCall({}), false);
+  assert.equal(isSubagentCall(null), false);
+  assert.equal(isSubagentCall(undefined), false);
+  assert.equal(isSubagentCall({ agent_id: 42 }), false);
 });

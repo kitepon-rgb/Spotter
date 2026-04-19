@@ -24,7 +24,17 @@ export async function ensureWorkdir() {
 }
 
 // Build the first-stage prompt — projection of catalog purpose/when_to_use only.
-export function buildFirstStagePrompt({ catalog, userInput }) {
+// When `isFirst` is true, includes system rules + full catalog (used with --session-id).
+// When false, sends only incremental input (used with --resume; Haiku already has catalog/rules).
+export function buildFirstStagePrompt({ catalog, userInput, isFirst = true }) {
+  if (!isFirst) {
+    return [
+      '## 新しいユーザー入力',
+      userInput,
+      '',
+      '既に共有済みの判定ルール・カタログに従い、同一 JSON スキーマで結果を返してください。',
+    ].join('\n');
+  }
   const toolsProjection = catalog.tools.map((t) => ({
     name: t.name,
     purpose: t.purpose,
@@ -46,7 +56,24 @@ export function buildFirstStagePrompt({ catalog, userInput }) {
 }
 
 // Build the final-stage prompt — Stop hook, after Bell's response.
-export function buildFinalStagePrompt({ catalog, userInput, usedTools, finalResponse }) {
+// Incremental form (isFirst=false) omits the catalog since Haiku's resumed session already has it.
+export function buildFinalStagePrompt({ catalog, userInput, usedTools, finalResponse, isFirst = true }) {
+  if (!isFirst) {
+    return [
+      '## ターン終了判定',
+      '',
+      '### 対象ユーザー入力',
+      userInput,
+      '',
+      '### Bell が既に使用したツール',
+      usedTools.length > 0 ? usedTools.map((t) => `- ${t}`).join('\n') : '(なし)',
+      '',
+      '### Bell の最終応答',
+      finalResponse,
+      '',
+      '既に共有済みのルールに従い、使用済みツールは除外した上で同一 JSON スキーマで結果を返してください。',
+    ].join('\n');
+  }
   const toolsProjection = catalog.tools.map((t) => ({
     name: t.name,
     purpose: t.purpose,
@@ -154,8 +181,14 @@ function truncate(s, n = 300) {
 // On Windows, the `claude` entry is typically a .cmd shim which Node's spawn
 // cannot locate without going through the shell. We use cmd.exe /c explicitly
 // rather than spawn({ shell: true }) because the latter triggers DEP0190 on Node 24+.
-function buildSpawnArgs(claudeBin, model) {
-  const args = ['-p', '--model', model];
+//
+// v0.2: For the first call of a daemon's lifetime, spawn with `--session-id <haikuSessionId>`
+// to create a new Haiku conversation. For subsequent calls, spawn with `--resume <haikuSessionId>`
+// to continue that same conversation (so catalog/system rules persist in Haiku's context).
+// Note: `--bare` was tried but fails with "Not logged in" — it is intentionally NOT used.
+function buildSpawnArgs(claudeBin, model, haikuSessionId, isFirstCall) {
+  const sessionFlag = isFirstCall ? '--session-id' : '--resume';
+  const args = ['-p', sessionFlag, haikuSessionId, '--model', model];
   if (process.platform === 'win32') {
     return { cmd: 'cmd.exe', cmdArgs: ['/c', claudeBin, ...args] };
   }
@@ -164,18 +197,25 @@ function buildSpawnArgs(claudeBin, model) {
 
 // Invoke `claude -p` in the isolated workdir. Returns raw stdout.
 // §5.5: no retry on failure. §14.1: silent fallback forbidden.
-export function createHaikuCaller({ timeoutMs, claudeBin = 'claude', model = HAIKU_MODEL, env = process.env }) {
+//
+// v0.2: `haikuSessionId` is required — used for --session-id (first call) / --resume (subsequent).
+// The SPOTTER_PARENT_PID env var is always injected so hooks firing inside the spawned claude
+// exit early via isChildCall() (prevents daemon-spawn recursion).
+export function createHaikuCaller({ timeoutMs, haikuSessionId, claudeBin = 'claude', model = HAIKU_MODEL, env = process.env }) {
   if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
     throw new TypeError('timeoutMs must be a positive number');
   }
+  if (typeof haikuSessionId !== 'string' || haikuSessionId.length === 0) {
+    throw new TypeError('haikuSessionId is required (non-empty string)');
+  }
 
-  return async function callHaiku(prompt) {
+  return async function callHaiku(prompt, { isFirst = true } = {}) {
     await ensureWorkdir();
     return new Promise((resolve, reject) => {
-      const { cmd, cmdArgs } = buildSpawnArgs(claudeBin, model);
+      const { cmd, cmdArgs } = buildSpawnArgs(claudeBin, model, haikuSessionId, isFirst);
       const child = spawn(cmd, cmdArgs, {
         cwd: WORKDIR,
-        env,
+        env: { ...env, SPOTTER_PARENT_PID: String(process.pid) },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });

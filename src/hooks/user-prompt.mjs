@@ -1,12 +1,24 @@
 // UserPromptSubmit hook — send user_input to daemon, inject additionalContext (§12.2 transparent).
+// v0.2 gates: see src/hooks/session-start.mjs comment.
 
-import { readStdinJson, requireString, exitCodeFor, die, formatTransparentContext } from './lib.mjs';
+import {
+  readStdinJson,
+  requireString,
+  exitCodeFor,
+  die,
+  formatTransparentContext,
+  isChildCall,
+  isSubagentCall,
+} from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 
 const TIMEOUT_MS = 30_000;
 
 export async function runUserPrompt() {
+  if (isChildCall()) return;
   const input = await readStdinJson();
+  if (isSubagentCall(input)) return;
+
   const sessionId = requireString(input, 'session_id');
   const prompt = requireString(input, 'prompt');
 

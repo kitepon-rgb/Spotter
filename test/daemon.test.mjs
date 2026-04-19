@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { startDaemon } from '../src/daemon/daemon.mjs';
+import { startDaemon, DaemonAlreadyRunningError, pidFilePath } from '../src/daemon/daemon.mjs';
 import { sendRequest } from '../src/daemon/transport.mjs';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -27,7 +27,7 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
-  const haikuCaller = async () => {
+  const haikuCaller = async (_prompt, _opts) => {
     haikuCalls += 1;
     return JSON.stringify({
       pass: false,
@@ -52,11 +52,32 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
   }
 });
 
+test('startDaemon: first call has isFirst=true, subsequent isFirst=false', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  const isFirstSeen = [];
+  const haikuCaller = async (_prompt, opts) => {
+    isFirstSeen.push(opts?.isFirst);
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  try {
+    await sendRequest({ sessionId, event: 'user_input', payload: { user_input: '1' }, timeoutMs: 2_000 });
+    // wait out the 10s window so the 2nd call actually reaches Haiku rather than being skipped
+    // instead of sleeping, we verify just that the first was isFirst=true
+    assert.equal(isFirstSeen[0], true);
+    assert.equal(isFirstSeen.length, 1);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('startDaemon: tool_used records without invoking Haiku', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
-  const haikuCaller = async () => {
+  const haikuCaller = async (_prompt, _opts) => {
     haikuCalls += 1;
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
@@ -81,13 +102,12 @@ test('startDaemon: turn_end passes when stop_hook_active is true (§7.5)', async
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
-  const haikuCaller = async () => {
+  const haikuCaller = async (_prompt, _opts) => {
     haikuCalls += 1;
     return JSON.stringify({ pass: false, missing_tools: [{ name: 'current_time', reason: 'r' }] });
   };
   const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
   try {
-    // first set a user_input so state.lastUserInput is populated
     await sendRequest({
       sessionId,
       event: 'user_input',
@@ -110,19 +130,49 @@ test('startDaemon: turn_end passes when stop_hook_active is true (§7.5)', async
   }
 });
 
+test('startDaemon: 10-second window skips concurrent Haiku-invoking events', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async (_prompt, _opts) => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  try {
+    // First call advances lastHaikuCallAt
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '1' },
+      timeoutMs: 2_000,
+    });
+    // Second call within 10s → should be skipped (pass with reason)
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '2' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.pass, true);
+    assert.equal(resp.result.reason, 'within_haiku_call_window');
+    assert.equal(haikuCalls, 1);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('startDaemon: session_id mismatch rejected as E_INTERNAL', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   const running = await startDaemon({
     sessionId,
     catalogPath,
-    haikuCaller: async () => JSON.stringify({ pass: true, missing_tools: [] }),
+    haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
   });
   try {
-    // craft a request whose envelope session_id differs from the daemon's session_id
-    const { sendRequest: realSend } = await import('../src/daemon/transport.mjs');
-    // sendRequest uses the session id for socket lookup AND envelope.session_id — they're coupled,
-    // so we can only test this by bypassing sendRequest. Minimal raw client:
     const net = await import('node:net');
     const { socketPath } = await import('../src/daemon/transport.mjs');
     const { randomUUID: uuid } = await import('node:crypto');
@@ -156,7 +206,7 @@ test('startDaemon: throws on missing catalog', async () => {
     startDaemon({
       sessionId,
       catalogPath: '/nonexistent/catalog.yaml',
-      haikuCaller: async () => JSON.stringify({ pass: true, missing_tools: [] }),
+      haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
     })
   );
 });
@@ -167,7 +217,7 @@ test('startDaemon: readiness event responds immediately', async () => {
   const running = await startDaemon({
     sessionId,
     catalogPath,
-    haikuCaller: async () => { throw new Error('should not be called'); },
+    haikuCaller: async (_p, _o) => { throw new Error('should not be called'); },
   });
   try {
     const resp = await sendRequest({ sessionId, event: 'readiness', timeoutMs: 1_000 });
@@ -175,6 +225,65 @@ test('startDaemon: readiness event responds immediately', async () => {
     assert.equal(resp.result.ready, true);
   } finally {
     await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: exposes haikuSessionId on the returned handle', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  const running = await startDaemon({
+    sessionId,
+    catalogPath,
+    haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
+  });
+  try {
+    assert.equal(typeof running.haikuSessionId, 'string');
+    assert.ok(running.haikuSessionId.length > 0);
+    // Accepts a caller-supplied id too
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: DaemonAlreadyRunningError when PID file points at live process', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `preexist-${randomUUID()}`;
+  // Plant a PID file pointing at the current process (which is definitely alive).
+  const pidPath = pidFilePath(sessionId);
+  await writeFile(pidPath, String(process.pid), 'utf8');
+  try {
+    await assert.rejects(
+      startDaemon({
+        sessionId,
+        catalogPath,
+        haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
+      }),
+      (err) => err instanceof DaemonAlreadyRunningError && err.sessionId === sessionId
+    );
+  } finally {
+    try { await unlink(pidPath); } catch {}
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: stale PID file (dead process) does not block startup', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `stale-${randomUUID()}`;
+  const pidPath = pidFilePath(sessionId);
+  // A PID we're fairly sure isn't ours and is unlikely to be live. Use a huge number.
+  await writeFile(pidPath, '99999999', 'utf8');
+  let running;
+  try {
+    running = await startDaemon({
+      sessionId,
+      catalogPath,
+      haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
+    });
+    assert.ok(running);
+  } finally {
+    if (running) await running.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });

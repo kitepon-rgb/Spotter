@@ -1,6 +1,6 @@
 # Spotter
 
-> ⚠️ **v0.1.x は deprecate 済 (2026-04-19)**。実環境で daemon 増殖事故が判明しました。新規インストールしないでください。v0.2 は設計見直し中。詳細は [docs/spotter-plan.md §18](docs/spotter-plan.md) 参照。
+> **v0.2.0 released 2026-04-19**. v0.1.x had a daemon-proliferation defect caused by hook re-entry from Spotter's own `claude -p` invocations. v0.2 adds five independent gates (env-var PID, `agent_id`, `source=startup`, PID-preexist, 10 s call window) plus session-scoped Haiku via `--session-id` / `--resume` to prevent this. See [CHANGELOG](CHANGELOG.md) and [docs/spotter-plan.md §18](docs/spotter-plan.md) for the full post-mortem.
 
 **気づく役と実行する役を分離する。** Spotter は Claude Code の横で静かに並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**に指摘する監査役です。
 

@@ -1,19 +1,35 @@
 // SessionStart hook — spawn daemon detached, wait up to 3s for readiness (§9.1).
 //
 // §14.3 classifies readiness failure as unexpected (exit 2). §14.1 forbids silent fallback.
+//
+// v0.2 gates (plan §18, C:\Users\kite_\.claude\plans\10-cuddly-codd.md):
+//   - isChildCall: Spotter's own claude -p subprocess → exit 0 (prevents recursion)
+//   - isSubagentCall: Bell's Task subagent → exit 0 (not audited in v0.2)
+//   - source !== 'startup': /compact, /clear, --resume, --continue → exit 0
+//     (these continue an existing parent session; v0.2 does not migrate daemon state)
 
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { readStdinJson, requireString, die } from './lib.mjs';
+import { readStdinJson, requireString, die, isChildCall, isSubagentCall } from './lib.mjs';
 import { sendRequest, TransportError } from '../daemon/transport.mjs';
 
 const READINESS_TIMEOUT_MS = 3_000;
 const POLL_INTERVAL_MS = 100;
 
 export async function runSessionStart({ argv = process.argv, now = Date.now } = {}) {
+  // Gate 1 (pre-stdin): Spotter's own claude -p subprocess — exit without reading stdin.
+  if (isChildCall()) return;
+
   const input = await readStdinJson();
+
+  // Gate 2: Task subagent — skip audit.
+  if (isSubagentCall(input)) return;
+
+  // Gate 3: non-startup sources (resume/compact/clear) don't spawn a new daemon.
+  if (input.source !== 'startup') return;
+
   const sessionId = requireString(input, 'session_id');
 
   spawnDaemon(sessionId, argv);

@@ -1,6 +1,6 @@
 // `spotter daemon start|stop` — internal commands invoked by SessionStart/SessionEnd hooks.
 
-import { startDaemon } from '../daemon/daemon.mjs';
+import { startDaemon, DaemonAlreadyRunningError } from '../daemon/daemon.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { open } from 'node:fs/promises';
@@ -32,7 +32,19 @@ export async function runDaemonStart({ argv }) {
     logFile.write(line).catch(() => {});
   };
 
-  const running = await startDaemon({ sessionId, logFn: log });
+  let running;
+  try {
+    running = await startDaemon({ sessionId, logFn: log });
+  } catch (err) {
+    if (err instanceof DaemonAlreadyRunningError) {
+      // v0.2 PID-preexist layer: a sibling daemon already serves this session.
+      // Exit cleanly so the hook's readiness poll finds the existing one.
+      log(`startup skipped: ${err.message}`);
+      await logFile.close();
+      process.exit(0);
+    }
+    throw err;
+  }
   log(`started on ${running.path}`);
 
   // Keep process alive; SessionEnd → shutdown event triggers server.close() which resolves the await.

@@ -1,5 +1,6 @@
 // Stop hook — send turn_end, return decision:"block" on miss (§12.3 transparent).
 // `stop_hook_active: true` → daemon returns pass automatically (§7.5 max-1-loop).
+// v0.2 gates: see src/hooks/session-start.mjs comment.
 
 import {
   readStdinJson,
@@ -8,13 +9,18 @@ import {
   exitCodeFor,
   die,
   formatTransparentBlockReason,
+  isChildCall,
+  isSubagentCall,
 } from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 
 const TIMEOUT_MS = 15_000;
 
 export async function runStop() {
+  if (isChildCall()) return;
   const input = await readStdinJson();
+  if (isSubagentCall(input)) return;
+
   const sessionId = requireString(input, 'session_id');
   const stopHookActive = input.stop_hook_active === true;
   // Claude Code passes the transcript path; the final response is read from there or provided inline.

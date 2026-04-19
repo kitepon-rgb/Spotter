@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.2.0
+
+Fixes the v0.1.x daemon proliferation by adding multiple defence layers that together prevent any
+non-parent-session hook from re-entering the daemon spawn path.
+
+- **Env-var gate (`SPOTTER_PARENT_PID`)**: the daemon injects its own PID when spawning `claude -p`
+  for Haiku. Every hook checks this on startup and exits immediately when present — the primary
+  fix for Spotter's own subprocess recursion.
+- **`agent_id` gate**: hooks fired inside a Task subagent carry `agent_id` per the Claude Code
+  hook contract. The hook entry-points exit on seeing this field, so subagent activity is never
+  audited (matches v0.2's scope: top-level parent sessions only).
+- **`source === 'startup'` gate on SessionStart**: `/compact`, `/clear`, `--resume`, `--continue`
+  all fire SessionStart with a fresh session_id; without this gate they used to spawn a new
+  daemon. Now they no-op.
+- **PID-preexist check**: `startDaemon` asserts no live daemon already serves the session_id,
+  throwing `DaemonAlreadyRunningError` so the caller exits cleanly.
+- **10-second call window**: the daemon ignores `user_input` / `turn_end` events that arrive
+  within 10 s of its own Haiku spawn. Final safety net; documented trade-off (a brief window of
+  legitimate parent events may also be skipped).
+- **Session-scoped Haiku conversation**: the daemon now generates one `haikuSessionId` UUID at
+  startup. The first Haiku call uses `claude -p --session-id <uuid>`; subsequent calls use
+  `--resume <uuid>`. The catalog is therefore sent to Haiku exactly once per parent session,
+  realising plan §5.4's original economic intent. Prompts now distinguish first vs incremental
+  form.
+- **Mutex on Haiku calls**: a Promise chain serialises `callHaiku` so concurrent events cannot
+  race on the `haikuInitialized` flag and double-send the catalog.
+
+### Breaking
+
+- `createHaikuCaller` now requires `haikuSessionId` (will throw without it).
+- The returned `callHaiku` accepts `(prompt, { isFirst })`; callers that used `callHaiku(prompt)`
+  should pass `{ isFirst: true }` (the lint flow does this).
+- `buildFirstStagePrompt` / `buildFinalStagePrompt` accept `isFirst` (defaults to true, so
+  existing callers that want full prompts continue working).
+
+### Experimental-flag note
+
+`claude -p --bare` was evaluated as a fifth layer but errors with "Not logged in" because it
+skips auth auto-discovery. `--bare` is therefore NOT used. The env-var gate plus the other four
+layers cover the same proliferation cases.
+
 ## 0.1.1 — ⚠️ DEPRECATED 2026-04-19
 
 **Do not install this version.** Real-world testing against a live Claude Code session revealed that the "one daemon per session" model is based on a wrong assumption — `SessionStart` hooks fire per subagent (Task tool invocation), not only at top-level session startup. Within 41 seconds of install, 213 orphan daemons accumulated and Haiku API calls uniformly timed out. `npm uninstall -g` also did not execute `preuninstall`, leaving hook entries in `~/.claude/settings.json`. See [docs/spotter-plan.md §18](https://github.com/kitepon-rgb/Spotter/blob/main/docs/spotter-plan.md#18) for details and the v0.2 redesign plan.

@@ -832,19 +832,41 @@ v0.1 のように「session_id をキーに daemon を立てる」と、subagent
 
 **代替案**: subagent session を検出したら daemon 起動を **スキップ** する条件分岐 (hook input の `source` や `agent_id` フィールドで判定) を入れる。ただしこれは subagent の発話を監査対象から外すことを意味し、設計目的とトレードオフ。
 
-### 18.4 決定事項
+### 18.4 v0.2 で採用した防御多層 (2026-04-19 実装済)
 
-- **v0.1.0 / v0.1.1 は npm 上で deprecate 済**。新規ユーザーに警告が表示される
-- **v0.2 は都度起動型にリデザイン** — 維持型は subagent 問題が解けない限り採用しない
-- `preuninstall` ではなく `postinstall` 内で **uninstall 用 shim スクリプト** (`~/.spotter/uninstall.mjs` 等) を配置し、ユーザーが明示的に `spotter uninstall --user` を呼ぶ運用にする
-- カタログ実呼び lint (§11) で合格した test_cases は v0.1 で検証済み → カタログ・Haiku プロンプトの設計は健全。書き換えは daemon 層のみ
+18.2 で棚上げしていた「都度起動型への全面書き換え」は棄却し、**原設計の維持型 daemon を保ったまま複数の独立した防御層で再発を防ぐ**方針に確定した。ユーザー判断 (2026-04-19):
 
-### 18.5 作業ログ
+> daemon があったほうが都合がいいのなら daemon は否定しない。daemon が親セッションと新たに作ったセッションの紐づけ (親と子) を把握し、子からの呼び出しであれば無視すればいい。これはもっとも簡単な実装だ。
+
+実装された 5 層 (+ セッション維持機構):
+
+1. **`SPOTTER_PARENT_PID` env var** (primary): daemon が `claude -p` 起動時に自身の PID を env に立てる。子プロセスで起動する全 hook は env を見て即 `exit 0`。Spotter 自身の再帰的 daemon spawn を遮断
+2. **`agent_id` フィールド判定**: Bell が Task tool で呼び出した subagent の hook は `agent_id` を持つ。各 hook はこれを検出して即 `exit 0` (subagent は監査対象外)
+3. **`source === 'startup'` 限定**: `/compact` / `/clear` / `--resume` / `--continue` は SessionStart を新 session_id で発火させるが、`source=startup` でない限り daemon spawn をスキップ
+4. **PID preexist check**: daemon 起動時に `pidFilePath(sessionId)` を確認、既存 PID が生きていれば `DaemonAlreadyRunningError` を throw。CLI は exit 0 で撤退 (既存 daemon がそのまま機能する)
+5. **10 秒 Haiku call ウィンドウ**: daemon は自身の claude -p spawn 時刻を記録、直後 10 秒に来る `user_input` / `turn_end` は pass を即返す。1〜4 をすり抜けたケースの最終防衛線。10 秒以内の正当なターン終了判定が空振りするトレードオフはユーザー了承済み (「失うのは最適利用能力 1 回」)
+
+### 18.5 §5.4 経済性の復活 (session-scoped Haiku)
+
+上記とは別に、§5.4 の「カタログ 1 回ロード、毎回は可変情報のみ」という経済性の主張を v0.2 で**真に実現**した:
+
+- daemon 起動時に `haikuSessionId = randomUUID()` を 1 個生成
+- 初回 Haiku 呼び出し: `claude -p --session-id <haikuSessionId>` で新規 Haiku 会話を作成、システムルール + カタログ + user_input をプロンプトに含める
+- 2 回目以降: `claude -p --resume <haikuSessionId>` で同 Haiku 会話を継続、**カタログは送信せず** user_input / used_tools / final_response だけを送る
+- `--bare` は auth 状態を読まない仕様のため使えないと判明、env 経由の hook 遮断で代替
+- 並行リクエスト race による初回プロンプト 2 重送信は Promise chain ベースの mutex で防止
+
+監査役 Haiku の生存期間 = 親セッション単位、という設計が成立。
+
+### 18.6 作業ログ
 
 - 2026-04-19 02:18 UTC: v0.1.0 publish
 - 2026-04-19 02:30 UTC: v0.1.1 publish (postinstall 追加)
 - 2026-04-19 02:40 UTC: 手元で `npm install -g` 実行 → 41 秒で 213 daemon 累積、Haiku 全滅を確認
 - 2026-04-19 02:55 UTC: 全 daemon kill、settings.json 手動修復、`npm deprecate` 実施
+- 2026-04-19 03:XX UTC: v0.2.0 設計監査 (CRITICAL 2 / HIGH 3 / MEDIUM 3 / LOW 2)、抜け穴を 5 層構成で補完
+- 2026-04-19 04:XX UTC: C2 実機検証 (--bare + --session-id 組み合わせが "Not logged in" で失敗することを確認、--session-id / --resume の組み合わせで会話維持成立することを確認)
+- 2026-04-19 04:XX UTC: v0.2.0 実装完了、tests 52 pass / 1 skip / 0 fail
 
 ## Appendix A: 参考資料
 

@@ -24,11 +24,13 @@ export async function runLint({ catalogPath, haikuCaller, writeLine }) {
   for (const tool of catalog.tools) {
     if (!Array.isArray(tool.test_cases)) continue;
     for (const tc of tool.test_cases) {
+      // Each test case is an independent judgement, so isFirst=true always.
       const prompt = buildFirstStagePrompt({
         catalog,
         userInput: tc.user_input,
+        isFirst: true,
       });
-      const rawResponse = await haikuCaller(prompt);
+      const rawResponse = await haikuCaller(prompt, { isFirst: true });
       const parsed = parseHaikuResponse(rawResponse);
       const detectedNames = parsed.missing_tools.map((m) => m.name);
       const hit = detectedNames.includes(tc.expected_tool);
