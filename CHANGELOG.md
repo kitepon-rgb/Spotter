@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.1
+
+**hotfix: `src/version.mjs` を `package.json` から読み取る**。0.11.0 は package.json を 0.11.0 に bump したが `src/version.mjs` のハードコード文字列 (`'0.10.0'`) を上げ忘れていたため、`spotter --version` が `0.10.0` のまま表示される不整合があった。同じミスを防ぐため ESM JSON import (`import pkg from '../package.json' with { type: 'json' }`) で package.json から動的に引くよう変更。以降は package.json の version を bump するだけで CLI 出力も追従する。
+
+### 変更点
+
+- **編集 [src/version.mjs](src/version.mjs)**: ハードコード廃止、`package.json` の version フィールドを ESM JSON import で読み取る
+- **編集 [package.json](package.json)**: 0.11.0 → 0.11.1
+
 ## 0.11.0
 
 **短プロンプトの Haiku スキップ**。ユーザーの入力が trim 後 10 文字 (コードポイント) 以下なら、挨拶・相槌・短い確認質問などツール不要な会話が支配的なため、UserPromptSubmit hook で早期 return して Haiku 呼び出しを完全にスキップする。daemon には user_input を送らず、`state.lastUserInput=null` のまま次の turn_end が `reason=no_user_input` で自動 pass する。preamble 57 件の判定コストを、最も的外れになりやすい短文ターンで丸ごと節約する。
