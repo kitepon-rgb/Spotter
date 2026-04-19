@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- **`src/version.mjs` の更新漏れ修正**: v0.4.0 公開版で `spotter --version` が "0.3.0" を返していた。package.json の `version` と `src/version.mjs` が二重管理になっているため両方の bump が必要だが、`src/version.mjs` を更新し忘れた。0.4.1 で修正。
+
 ## 0.4.0
 
 **Haiku 呼び出しを stateless に戻す** (v0.2.0 の session-scoped 最適化 §18.5 を撤回)。
