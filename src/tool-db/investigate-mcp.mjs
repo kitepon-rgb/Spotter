@@ -12,11 +12,22 @@
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { listToolsHttp } from './investigate-mcp-http.mjs';
 
 const execFileP = promisify(execFile);
 
 const PROTOCOL_VERSION = '2025-03-26'; // MCP protocol version we claim to speak.
 const HANDSHAKE_TIMEOUT_MS = 10_000;
+
+// On Windows, `claude` is a .cmd shim; Node's execFile cannot locate it directly without
+// going through cmd.exe. Matches the pattern in src/daemon/haiku-caller.mjs buildSpawnArgs.
+// We use cmd.exe /c rather than shell:true to avoid DEP0190 on Node 24+.
+async function execClaude(claudeBin, args, opts) {
+  if (process.platform === 'win32') {
+    return execFileP('cmd.exe', ['/c', claudeBin, ...args], opts);
+  }
+  return execFileP(claudeBin, args, opts);
+}
 
 export class McpInvestigationError extends Error {
   constructor(message, server) {
@@ -45,7 +56,7 @@ export async function listMcpToolsAll({ logFn = () => {}, claudeBin = 'claude' }
 // Parse `claude mcp list` output. Returns array of {name, transport, command, url}.
 // stdio servers have command, http/sse servers have url.
 export async function listMcpServers({ claudeBin = 'claude' } = {}) {
-  const { stdout } = await execFileP(claudeBin, ['mcp', 'list'], { encoding: 'utf8' });
+  const { stdout } = await execClaude(claudeBin, ['mcp', 'list'], { encoding: 'utf8' });
   return parseMcpListOutput(stdout);
 }
 
@@ -89,17 +100,20 @@ export async function listMcpToolsOne({ server, logFn = () => {}, claudeBin = 'c
     return spawnAndQuery(config, server.name);
   }
   if (server.transport === 'http' || server.transport === 'sse') {
-    throw new McpInvestigationError(
-      `${server.transport} transport not yet supported (need HTTP MCP client)`,
-      server.name
-    );
+    // Streamable HTTP transport. For `claude.ai ...` servers, `claude mcp get` rejects
+    // them (they are not in local .mcp.json) so server.url is unavailable — those are
+    // covered by src/tool-db/claude-ai-baseline.mjs at a higher layer.
+    if (!server.url) {
+      throw new McpInvestigationError(`no URL available for ${server.transport} server`, server.name);
+    }
+    return listToolsHttp({ url: server.url, serverName: server.name });
   }
   throw new McpInvestigationError(`unknown transport: ${server.transport}`, server.name);
 }
 
 // Parse `claude mcp get <name>` to extract Command + Args for stdio servers.
 async function getStdioConfig({ name, claudeBin }) {
-  const { stdout } = await execFileP(claudeBin, ['mcp', 'get', name], { encoding: 'utf8' });
+  const { stdout } = await execClaude(claudeBin, ['mcp', 'get', name], { encoding: 'utf8' });
   let command = null;
   let argsRaw = null;
   for (const rawLine of stdout.split('\n')) {
@@ -119,9 +133,19 @@ function splitArgs(s) {
   return s.split(/\s+/).filter((t) => t.length > 0);
 }
 
+// On Windows, `.cmd` / `.bat` shims cannot be spawned directly without cmd.exe.
+// Unix-like paths or `.exe` binaries go through spawn as-is.
+function buildStdioSpawn(command, args) {
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
+    return { cmd: 'cmd.exe', cmdArgs: ['/c', command, ...args] };
+  }
+  return { cmd: command, cmdArgs: args };
+}
+
 async function spawnAndQuery({ command, args }, serverName) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const { cmd, cmdArgs } = buildStdioSpawn(command, args);
+    const child = spawn(cmd, cmdArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -199,7 +223,7 @@ async function spawnAndQuery({ command, args }, serverName) {
         await request('initialize', {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: 'spotter', version: '0.7.0' },
+          clientInfo: { name: 'spotter', version: '0.8.0' },
         });
         send({ jsonrpc: '2.0', method: 'notifications/initialized' });
         initializedSent = true;

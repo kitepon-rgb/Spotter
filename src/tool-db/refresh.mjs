@@ -8,6 +8,7 @@
 import { resolveAll } from './lookup.mjs';
 import { listMcpToolsAll, bellVisibleName } from './investigate-mcp.mjs';
 import { getDeferredDescription, listDeferredNames } from './deferred-baseline.mjs';
+import { getClaudeAiDescription, listClaudeAiNames } from './claude-ai-baseline.mjs';
 import { localDbPath, globalDbPath } from './loader.mjs';
 
 // Build the (name → description) map for an investigation pass:
@@ -19,12 +20,19 @@ import { localDbPath, globalDbPath } from './loader.mjs';
 export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin = 'claude' } = {}) {
   const snapshot = new Map();
 
-  // Deferred built-ins.
+  // Deferred built-ins (Claude Code deferred tools like WebFetch, TodoWrite, etc.).
   for (const name of listDeferredNames()) {
     snapshot.set(name, getDeferredDescription(name));
   }
 
-  // MCP servers.
+  // Anthropic-provided `claude.ai ...` MCP servers — hardcoded because the OAuth proxy
+  // is not reachable without reading ~/.claude/.credentials.json (deliberately avoided).
+  // If a live HTTP investigate for the same name later succeeds below, it overrides.
+  for (const name of listClaudeAiNames()) {
+    snapshot.set(name, getClaudeAiDescription(name));
+  }
+
+  // MCP servers (stdio + user-registered HTTP/SSE).
   const mcp = await listMcpToolsAll({ logFn, claudeBin });
   for (const [serverName, tools] of mcp.entries()) {
     for (const tool of tools) {

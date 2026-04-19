@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.0
+
+**HTTP/SSE MCP transport 対応 + Windows `.cmd` 経路の ENOENT fix + claude.ai 系 MCP の hardcoded baseline**。v0.7.0 を実測したら Windows で `spotter db refresh` が `spawn claude ENOENT` で起動すらせず、fix した上で動かしたら今度は Gmail / Google Calendar / Google Drive / x-api が丸ごと抜け落ちて Haiku の視野に入らない状態だった。この 3 本を同時に潰した。
+
+### 事の発端
+
+v0.7.0 リリース直後、新規セッションで `spotter db refresh` を打ったら即失敗:
+
+1. **Windows で `spawn claude ENOENT`**: Node の `execFile` / `spawn` は Windows で `.cmd` 拡張子のラッパーを直接起動できない。`doctor` は `cmd.exe /c claude` 経由で回避していたが、新規コード [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs) は `execFileP(claudeBin, ...)` をそのまま使っていて全 Windows 環境で DB refresh 不可。
+2. **HTTP/SSE transport 全滅**: v0.7.0 は stdio しか実装していなかったため、`claude.ai Google Drive` / `claude.ai Google Calendar` / `claude.ai Gmail` / `x-api` の 4 サーバーが `sse transport not yet supported` / `http transport not yet supported` でスキップされ、Haiku は Gmail や Calendar のツールを推奨できない状態だった。
+3. **claude.ai 系 MCP は `claude mcp get` で取得不可**: `claude mcp get "claude.ai Gmail"` は `No MCP server found` を返す。Anthropic 提供の MCP は `.mcp.json` に登録されず、Claude Code は `~/.claude/.credentials.json` の OAuth token を使って `mcp-proxy.anthropic.com` に直接アクセスしている。Spotter は credentials を読まない方針なので、これらは **hardcoded baseline** でカバーする。
+
+### 変更点
+
+- **新規 [src/tool-db/investigate-mcp-http.mjs](src/tool-db/investigate-mcp-http.mjs)**: MCP Streamable HTTP transport 実装。POST + `Content-Type: application/json` + `Accept: application/json, text/event-stream` で JSON-RPC 往復、`Mcp-Session-Id` header で session 維持、SSE 形式レスポンスも parse。`initialize` → `notifications/initialized` → `tools/list` を 10 秒 timeout で実行
+- **新規 [src/tool-db/claude-ai-baseline.mjs](src/tool-db/claude-ai-baseline.mjs)**: `claude.ai Gmail` (10) / `claude.ai Google Calendar` (8) / `claude.ai Google Drive` (7) の合計 25 件の {name, description} を手書き baseline として保持。deferred-baseline と同じ設計パターン
+- **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**:
+  - `execClaude()` helper 追加: Windows では `execFileP('cmd.exe', ['/c', claudeBin, ...args])` 経由、他は `execFileP(claudeBin, args)` そのまま。`listMcpServers` と `getStdioConfig` の 2 箇所で利用
+  - `buildStdioSpawn()` helper 追加: MCP stdio サーバーの Command が Windows で `.cmd` / `.bat` 拡張子なら `cmd.exe /c` 経由で spawn (caveat 等 `.exe` は影響なし)
+  - `listMcpToolsOne` の HTTP/SSE 分岐を `listToolsHttp` に dispatch
+- **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `buildInvestigationSnapshot` に claude.ai baseline を deferred の直後に merge。後続の live HTTP investigate が成功すれば上書き
+- **編集 [package.json](package.json), [src/version.mjs](src/version.mjs)**: `0.7.0` → `0.8.0`
+
+### 実測
+
+`spotter db rebuild` で **48 tools resolved**:
+- deferred baseline: 17 (Claude Code 組込み遅延ツール)
+- claude.ai baseline: 25 (Gmail 10 + Calendar 8 + Drive 7)
+- stdio MCP (Caveat): 6
+
+`claude.ai Gmail/Calendar/Drive` への live HTTP fetch は **HTTP 403 Forbidden** (認証 token なしで直接叩けない、想定通り) → baseline がカバー。`x-api` は **HTTP 401 Unauthorized** (ユーザー設定 MCP で Authorization header 未対応、次回課題)。`caveat` は stdio で正常 fetch。
+
+### 残る課題
+
+- **ユーザー設定 HTTP MCP の認証 header**: `claude mcp get <name>` の出力から Authorization 等を抽出して fetch に付与する仕組みが未実装。v0.8.0 では x-api が落ちる (baseline でも救えない、公開情報でない)
+- **claude.ai baseline の手動メンテ**: Anthropic が tool を追加・変更したら手で追従。deferred baseline と同じ trade-off
+
 ## 0.7.0
 
 **カタログを tool-db に置き換え**。手書きの `tools.yaml` (5 つの抽象ツール) を捨て、**実際にセッションで使えるツール (MCP + Claude Code 組込み 遅延ツール) の name + description を自動収集してキャッシュする** 仕組みに置き換え。
