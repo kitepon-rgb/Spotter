@@ -7,12 +7,16 @@
 //   - isSubagentCall: Bell's Task subagent → exit 0 (not audited in v0.2)
 //   - source !== 'startup': /compact, /clear, --resume, --continue → exit 0
 //     (these continue an existing parent session; v0.2 does not migrate daemon state)
+//
+// v0.3 gate:
+//   - isOutsideSpotterProject: cwd has no .spotter/marker.json above it → exit 0
+//     (Throughline workdir etc. — `claude -p` from tools outside any installed project)
 
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { readStdinJson, requireString, die, isChildCall, isSubagentCall } from './lib.mjs';
+import { readStdinJson, requireString, die, isChildCall, isSubagentCall, isOutsideSpotterProject } from './lib.mjs';
 import { sendRequest, TransportError } from '../daemon/transport.mjs';
 
 const READINESS_TIMEOUT_MS = 3_000;
@@ -29,6 +33,10 @@ export async function runSessionStart({ argv = process.argv, now = Date.now } = 
 
   // Gate 3: non-startup sources (resume/compact/clear) don't spawn a new daemon.
   if (input.source !== 'startup') return;
+
+  // Gate 4 (v0.3): cwd is not inside any project that has been `spotter install`-ed.
+  // Other tools (Throughline etc.) launching `claude -p` in unrelated workdirs land here.
+  if (isOutsideSpotterProject(input)) return;
 
   const sessionId = requireString(input, 'session_id');
 

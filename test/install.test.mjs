@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runInstall } from '../src/cli/install.mjs';
-import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
+import { runUninstall } from '../src/cli/uninstall.mjs';
+import { mkdtemp, readFile, writeFile, rm, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -62,6 +63,53 @@ test('install: preserves pre-existing unrelated hooks', async () => {
     const stopCommands = settings.hooks.Stop.flatMap((g) => g.hooks.map((h) => h.command));
     assert.ok(stopCommands.some((c) => c.includes('other-tool')));
     assert.ok(stopCommands.some((c) => c.includes('spotter.mjs')));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install (project): writes .spotter/marker.json with version metadata', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-marker-'));
+  try {
+    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    const marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
+    assert.equal(marker.markerVersion, '1');
+    assert.ok(typeof marker.spotterVersion === 'string' && marker.spotterVersion.length > 0);
+    assert.ok(typeof marker.installedAt === 'string' && marker.installedAt.length > 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install (project): re-run refreshes marker (installedAt updates on each install)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-marker-refresh-'));
+  try {
+    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    const first = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
+    // Ensure wall-clock advances at least 1ms so installedAt differs.
+    await new Promise((r) => setTimeout(r, 5));
+    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    const second = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
+    assert.equal(second.markerVersion, first.markerVersion);
+    assert.equal(second.spotterVersion, first.spotterVersion);
+    assert.notEqual(second.installedAt, first.installedAt, 'installedAt should refresh on re-install');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('uninstall (project): removes .spotter/marker.json but keeps .spotter dir', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-uninstall-marker-'));
+  try {
+    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    // sanity: marker present after install
+    await stat(join(dir, '.spotter', 'marker.json'));
+    await runUninstall({ target: 'project', autoYes: true, cwd: dir });
+    // marker gone
+    await assert.rejects(stat(join(dir, '.spotter', 'marker.json')), { code: 'ENOENT' });
+    // directory itself still present (user data may live here)
+    const dirStat = await stat(join(dir, '.spotter'));
+    assert.ok(dirStat.isDirectory());
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

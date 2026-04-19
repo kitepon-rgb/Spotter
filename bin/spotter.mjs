@@ -17,8 +17,15 @@ import { runSessionEnd } from '../src/hooks/session-end.mjs';
 const USAGE = `spotter — Claude Code tool-call auditor
 
 Usage:
-  spotter install [--user] [-y]         register hooks in .claude/settings.json
-  spotter uninstall [--user] [-y]       remove spotter hooks
+  spotter install [-y]                  register hooks in <cwd>/.claude/settings.json
+                                        and create <cwd>/.spotter/marker.json
+                                        (run inside each project you want audited)
+  spotter install --user [-y]           legacy: register globally in ~/.claude/settings.json
+                                        (NOT RECOMMENDED — fires for every Claude Code session
+                                         on the system, including unrelated \`claude -p\`)
+  spotter uninstall [-y]                remove spotter hooks from <cwd>/.claude/settings.json
+                                        and remove <cwd>/.spotter/marker.json
+  spotter uninstall --user [-y]         remove from ~/.claude/settings.json
   spotter catalog edit                  open tool catalog in $EDITOR
   spotter catalog lint                  validate catalog + run test_cases (Haiku live call)
   spotter status                        show running daemons

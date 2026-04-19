@@ -1,12 +1,17 @@
 // `spotter install` — create ~/.spotter/, place template catalog, register hooks in .claude/settings.json.
 //
 // Per plan §15.4, this shows a diff and asks for confirmation before touching settings.json.
+//
+// v0.3: also writes <cwd>/.spotter/marker.json (project mode) so hooks can detect
+// "this Claude Code session is rooted in a project where Spotter is installed" and
+// silently exit otherwise (prevents Throughline-style proliferation).
 
 import { mkdir, writeFile, readFile, access, copyFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
+import { version as SPOTTER_VERSION } from '../version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
@@ -15,6 +20,8 @@ const SPOTTER_BIN = join(PACKAGE_ROOT, 'bin', 'spotter.mjs');
 
 const SPOTTER_HOME = join(homedir(), '.spotter');
 const CATALOG_DEST = join(SPOTTER_HOME, 'tool-catalog', 'tools.yaml');
+
+const MARKER_VERSION = '1';
 
 const HOOK_EVENTS = [
   { event: 'SessionStart', sub: 'session-start', timeout: 5 },
@@ -48,7 +55,28 @@ export async function runInstall({ target = 'project', autoYes = false, cwd = pr
     console.log(`  catalog already present at ${CATALOG_DEST} (not overwritten)`);
   }
 
-  // 3. compute desired settings.json with hooks
+  // 3. project marker (v0.3): hooks use this to detect installed projects.
+  //    Skipped in user-mode install — user-mode is a deprecated escape hatch and
+  //    intentionally has no marker, so all hooks would exit. (Existing user-mode
+  //    installs from <0.3 won't surprise-stop working only because of this — they
+  //    were already broken by daemon proliferation.)
+  //
+  //    Always overwritten so that `spotter install` after a version bump refreshes
+  //    `spotterVersion` / `installedAt` rather than leaving stale metadata.
+  if (target === 'project') {
+    const markerDir = join(cwd, '.spotter');
+    const markerPath = join(markerDir, 'marker.json');
+    await mkdir(markerDir, { recursive: true });
+    const marker = {
+      markerVersion: MARKER_VERSION,
+      spotterVersion: SPOTTER_VERSION,
+      installedAt: new Date().toISOString(),
+    };
+    await writeFile(markerPath, JSON.stringify(marker, null, 2) + '\n', 'utf8');
+    console.log(`  wrote ${markerPath}`);
+  }
+
+  // 4. compute desired settings.json with hooks
   const current = await loadSettings(settingsPath);
   const updated = mergeHooks(current);
   const diff = diffSettings(current, updated);

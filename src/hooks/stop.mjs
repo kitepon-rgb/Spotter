@@ -11,6 +11,7 @@ import {
   formatTransparentBlockReason,
   isChildCall,
   isSubagentCall,
+  isOutsideSpotterProject,
 } from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 
@@ -20,6 +21,7 @@ export async function runStop() {
   if (isChildCall()) return;
   const input = await readStdinJson();
   if (isSubagentCall(input)) return;
+  if (isOutsideSpotterProject(input)) return;
 
   const sessionId = requireString(input, 'session_id');
   const stopHookActive = input.stop_hook_active === true;

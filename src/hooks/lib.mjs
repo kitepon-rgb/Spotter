@@ -12,6 +12,14 @@
 // - isSubagentCall(input): agent_id gate for Bell's Task subagent hooks
 // Combined with session-start's source='startup' check, these prevent daemon
 // proliferation (v0.1 postmortem §18.2).
+//
+// v0.3 gate (plan §18 daemon-proliferation root fix):
+// - findSpotterMarker(cwd): walk up from cwd looking for .spotter/marker.json.
+//   Hooks exit 0 when no marker is found, so other tools' `claude -p` invocations
+//   in unrelated workdirs (Throughline workdir etc.) never spawn a daemon.
+
+import { statSync } from 'node:fs';
+import { dirname, join, parse } from 'node:path';
 
 export function isChildCall() {
   const v = process.env.SPOTTER_PARENT_PID;
@@ -23,6 +31,39 @@ export function isSubagentCall(input) {
       && typeof input === 'object'
       && typeof input.agent_id === 'string'
       && input.agent_id.length > 0;
+}
+
+// Walk up from startCwd looking for .spotter/marker.json. Returns the project
+// root path containing the marker, or null if none was found before reaching
+// the filesystem root.
+//
+// Synchronous fs is intentional — hooks run on every Claude Code event and
+// must add minimal latency. statSync of one file per directory level is cheap.
+export function findSpotterMarker(startCwd) {
+  if (typeof startCwd !== 'string' || startCwd.length === 0) return null;
+  let dir = startCwd;
+  const root = parse(dir).root;
+  while (true) {
+    const marker = join(dir, '.spotter', 'marker.json');
+    try {
+      const st = statSync(marker);
+      if (st.isFile()) return dir;
+    } catch {
+      // marker missing at this level — keep walking up
+    }
+    if (dir === root) return null;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+// True when input.cwd does not sit inside a project that has been `spotter install`-ed.
+// Used by all 5 hooks to early-exit on unrelated `claude -p` invocations from other tools.
+export function isOutsideSpotterProject(input) {
+  const cwd = input?.cwd;
+  if (typeof cwd !== 'string' || cwd.length === 0) return true;
+  return findSpotterMarker(cwd) === null;
 }
 
 export async function readStdinJson() {

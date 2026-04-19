@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0
+
+v0.2.1 で追跡課題として残していた **daemon 増殖問題の根本原因を特定** (実セッション 64 分の生ログ調査)。74 個生成された daemon のうち 51 個が Throughline (token-monitor) の `claude -p` 由来で、残り 23 個も同種の他ツール起動と推定された。
+
+5 層防御は **Spotter 自身の `claude -p` 再帰** と **Bell の Task subagent** はカバーするが、**他ツールが起動する `claude -p` 経由の SessionStart** には無防備だった。原因は v0.1.1 で導入した `npm postinstall` の `~/.claude/settings.json` (user-global) への自動 hook 登録 — システム全体のあらゆる Claude Code セッションが Spotter hook を読み込む構造になっていた。
+
+### 変更点
+
+- **`postinstall` の自動登録を撤回**: `npm install -g claude-spotter` は CLI を使える状態にするだけ。`~/.claude/settings.json` への書き込みは行わない (案内文を出すのみ)。
+- **`spotter install` が project-scoped に**: `<cwd>/.claude/settings.json` に hook を書き、同時に `<cwd>/.spotter/marker.json` を作成する。`--user` フラグで旧来の user-global 登録も可能だが非推奨。
+- **`spotter uninstall` も project-scoped がデフォルト**: project mode 時に `<cwd>/.spotter/marker.json` も削除する (`.spotter/` ディレクトリ自体は残す)。
+- **新ガード `isOutsideSpotterProject(input)`**: 5 つの hook の冒頭で hook input の `cwd` を起点に上向きに `.spotter/marker.json` を探し、見つからなければ `exit 0`。Throughline 等の他ツールが別 workdir で `claude -p` を呼んだ場合、そもそも Spotter hook 自体が無視される (実測の Throughline 由来 51 件のうち 49 件は別 workdir 起動なので、このガード単独で 96% を hook 側で完全遮断)。
+- **`preuninstall` を縮小**: legacy user-scope hook の cleanup は best-effort で残し、project-level hook は各プロジェクトでユーザーが明示 uninstall するよう案内する。
+
+### Breaking
+
+- `npm install -g claude-spotter` 後に各プロジェクトで `spotter install` を一度実行する必要がある (v0.1.1 / v0.2.x の自動登録は撤回された)。
+- 旧バージョンの user-global hook 登録は `npm uninstall` 時に preuninstall が cleanup を試みるが、各プロジェクトの hook 登録は手動 uninstall が必要。
+
+### 持ち越し
+
+- A-2 warmup の `--resume` 40+秒 timeout 問題 (v0.2.1 の追跡課題) は本リリースでは未対応 — 別枠で調査継続。
+
 ## 0.2.1
 
 v0.2.0 の実セッション観測で `UserPromptSubmit` 経路に `E_HAIKU_TIMEOUT` が集中していることが判明 (20 分で 14 件、全て `handler error on user_input`)。Stop hook 側はタイムアウトゼロ。原因は初回 Haiku spawn (Windows: `cmd.exe /c claude.cmd -p --session-id ...`) のコールドスタートが 28s 超になるケースで、これが UserPromptSubmit hook のブロック中に直撃していた。

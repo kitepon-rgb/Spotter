@@ -9,6 +9,7 @@ import {
   formatTransparentContext,
   isChildCall,
   isSubagentCall,
+  isOutsideSpotterProject,
 } from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 
@@ -18,6 +19,7 @@ export async function runUserPrompt() {
   if (isChildCall()) return;
   const input = await readStdinJson();
   if (isSubagentCall(input)) return;
+  if (isOutsideSpotterProject(input)) return;
 
   const sessionId = requireString(input, 'session_id');
   const prompt = requireString(input, 'prompt');

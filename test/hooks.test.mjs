@@ -1,10 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   formatTransparentContext,
   formatTransparentBlockReason,
   isChildCall,
   isSubagentCall,
+  findSpotterMarker,
+  isOutsideSpotterProject,
 } from '../src/hooks/lib.mjs';
 
 test('formatTransparentContext: mentions Spotter explicitly (§12.2)', () => {
@@ -58,4 +63,72 @@ test('isSubagentCall: true when input.agent_id is a non-empty string', () => {
   assert.equal(isSubagentCall(null), false);
   assert.equal(isSubagentCall(undefined), false);
   assert.equal(isSubagentCall({ agent_id: 42 }), false);
+});
+
+test('findSpotterMarker: returns the project root when marker exists at cwd', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-marker-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    assert.equal(findSpotterMarker(project), project);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('findSpotterMarker: walks up from a nested cwd to find marker', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-marker-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    const nested = join(project, 'src', 'deep', 'nested');
+    await mkdir(nested, { recursive: true });
+    assert.equal(findSpotterMarker(nested), project);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('findSpotterMarker: returns null when no marker exists above cwd', async () => {
+  const isolated = await mkdtemp(join(tmpdir(), 'spotter-no-marker-'));
+  try {
+    assert.equal(findSpotterMarker(isolated), null);
+  } finally {
+    await rm(isolated, { recursive: true, force: true });
+  }
+});
+
+test('findSpotterMarker: returns null for invalid input', () => {
+  assert.equal(findSpotterMarker(''), null);
+  assert.equal(findSpotterMarker(null), null);
+  assert.equal(findSpotterMarker(undefined), null);
+  assert.equal(findSpotterMarker(42), null);
+});
+
+test('isOutsideSpotterProject: true when cwd has no marker', async () => {
+  const isolated = await mkdtemp(join(tmpdir(), 'spotter-outside-'));
+  try {
+    assert.equal(isOutsideSpotterProject({ cwd: isolated }), true);
+  } finally {
+    await rm(isolated, { recursive: true, force: true });
+  }
+});
+
+test('isOutsideSpotterProject: false when cwd is an installed project', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-inside-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    assert.equal(isOutsideSpotterProject({ cwd: project }), false);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('isOutsideSpotterProject: true when cwd is missing or non-string', () => {
+  assert.equal(isOutsideSpotterProject({}), true);
+  assert.equal(isOutsideSpotterProject({ cwd: '' }), true);
+  assert.equal(isOutsideSpotterProject({ cwd: null }), true);
+  assert.equal(isOutsideSpotterProject(null), true);
+  assert.equal(isOutsideSpotterProject(undefined), true);
 });

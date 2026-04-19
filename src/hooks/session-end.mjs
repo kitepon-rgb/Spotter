@@ -1,7 +1,7 @@
 // SessionEnd hook — best-effort shutdown notice. §14.1 exception: cleanup failures warn only.
 // v0.2 gates: see src/hooks/session-start.mjs comment.
 
-import { readStdinJson, requireString, isChildCall, isSubagentCall } from './lib.mjs';
+import { readStdinJson, requireString, isChildCall, isSubagentCall, isOutsideSpotterProject } from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 
 const TIMEOUT_MS = 2_000;
@@ -10,6 +10,7 @@ export async function runSessionEnd() {
   if (isChildCall()) return;
   const input = await readStdinJson();
   if (isSubagentCall(input)) return;
+  if (isOutsideSpotterProject(input)) return;
 
   const sessionId = requireString(input, 'session_id');
 

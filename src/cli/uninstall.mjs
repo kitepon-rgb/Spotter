@@ -1,7 +1,11 @@
 // `spotter uninstall` — remove hook entries that reference this spotter installation.
 // Does NOT delete ~/.spotter/ (user data), just unregisters hooks.
+//
+// v0.3: in project mode also removes the .spotter/marker.json (so that hooks would
+// silently exit even if the settings.json removal somehow failed). The .spotter/
+// directory itself is left alone in case the user has additional content there.
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -12,6 +16,10 @@ export async function runUninstall({ target = 'project', autoYes = false, cwd = 
     : join(cwd, '.claude', 'settings.json');
 
   console.log(`spotter uninstall (settings: ${settingsPath})`);
+
+  if (target === 'project') {
+    await removeMarker(cwd);
+  }
 
   let current;
   try {
@@ -72,4 +80,17 @@ export async function runUninstall({ target = 'project', autoYes = false, cwd = 
   await writeFile(settingsPath, JSON.stringify(updated, null, 2) + '\n', 'utf8');
   console.log(`wrote ${settingsPath}`);
   console.log('note: ~/.spotter/ (catalog, logs) was not removed. delete manually if no longer needed.');
+}
+
+async function removeMarker(cwd) {
+  const markerPath = join(cwd, '.spotter', 'marker.json');
+  try {
+    await stat(markerPath);
+  } catch (err) {
+    if (err.code === 'ENOENT') return;
+    throw err;
+  }
+  await rm(markerPath, { force: true });
+  console.log(`  removed ${markerPath}`);
+  // Leave the .spotter/ directory itself in place — the user may keep other files there.
 }
