@@ -4,30 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v0.4.4 実装完了** (2026-04-19)。Stop hook が **Bell の最終応答を Haiku に渡していなかったバグ**を修正。`input.final_response` (存在しないフィールド) を廃止し、`input.transcript_path` から JSONL 末尾の assistant text だけを抽出する `getLastAssistantText()` を新設 ([src/hooks/transcript-reader.mjs](src/hooks/transcript-reader.mjs))。thinking / tool_use ブロックは除外、ユーザーが見た最終応答テキストのみ Haiku に渡る。Throughline から移植 (MIT, 同作者)。詳細は [CHANGELOG.md](CHANGELOG.md)。
+**v0.5.0 実装完了** (2026-04-19)。**v0.4.0 で捨てた session-scoped Haiku を事後回復機構付きで復活**。v0.4.x stateless の毎ターン cold-start 問題 (Bell 応答後に 30 秒前後動きが止まる) を解消するため、`claude -p --session-id <uuid> --resume <uuid>` で同一セッション再接続。v0.4.0 で session-scoped を捨てた理由の **Haiku role collapse** (persona drift で JSON 契約破棄) は、構造的予防ではなく **JSON パース失敗検知 → session renew + silent pass** の事後回復で処理する方針へ変更。これは §0 の「想定済み異常 = 記録 + 正常リターン」の分類変更であり、silent fallback 新規導入ではない。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
-**v0.4.3** (2026-04-19): v0.4.2 の prompt hardening が過剰 (自己リポジトリに攻撃者はいない、persona drift は stateless で構造対処済) だったため、攻撃文言リスト・`【最重要】` タグ・末尾の JSON-only 再宣言を削り、プロンプト長を 30-40% 削減。
+**v0.4.4** (2026-04-19): Stop hook が **Bell の最終応答を Haiku に渡していなかったバグ**を修正。`input.final_response` (存在しないフィールド) を廃止し、`input.transcript_path` から JSONL 末尾の assistant text だけを抽出する `getLastAssistantText()` を新設 ([src/hooks/transcript-reader.mjs](src/hooks/transcript-reader.mjs))。thinking / tool_use ブロックは除外、ユーザーが見た最終応答テキストのみ Haiku に渡る。Throughline から移植 (MIT, 同作者)。
 
-**v0.4 系の核心設計** (v0.4.3 でも不変): daemon は依然として session-scoped (hook イベント集約・used_tools 記録) だが、**Haiku 呼び出しは毎ターン stateless** (`--session-id <fresh UUID>` のみ、`--resume` 不使用)。下記 Architecture 節の「Claude 呼び出しは毎回 stateless」原則への回帰であり、session-scoped が引き起こした **Haiku が Bell 会話履歴を聞き続けて persona drift する問題**を構造的に排除する。5 層防御 (`SPOTTER_PARENT_PID` env / `agent_id` gate / `source=startup` 限定 / PID preexist check / 10 秒ウィンドウ) は維持。プラン §18.3 の都度起動型 (daemon レベルでの都度起動) は引き続き棄却、再議論しない。
+**v0.5.0 の核心設計**: daemon は session-scoped (hook イベント集約・used_tools 記録)。**Haiku 呼び出しも session-scoped** (`--session-id` を daemon 生存期間中保持、2 回目以降は `--resume` で再接続)。5 層防御 (`SPOTTER_PARENT_PID` env / `agent_id` gate / `source=startup` 限定 / PID preexist check / 10 秒ウィンドウ) は維持。プラン §18.3 の都度起動型 (daemon レベルでの都度起動) は引き続き棄却、再議論しない。
 
-### v0.4.2 で投入した対策 (v0.4.3 でも有効)
-- **Haiku timeout 28s → 60s** (`DEFAULT_HAIKU_TIMEOUT_MS` @ [daemon.mjs](src/daemon/daemon.mjs)): stateless 化で毎ターン cold-start を踏むため、実測される spawn 時間 (40〜50 秒台) をカバーできる最悪値に調整。
-- **Stateless-safe warmup** (`buildWarmupPrompt`, `startDaemon({warmup: true})`): SessionStart 直後に fire-and-forget で throwaway Haiku spawn。warmup も実呼び出しも共に fresh `--session-id` + 応答破棄で、会話状態は一切引き継がない。**`callHaikuTracked` を経由させない**ため 10 秒ウィンドウが warmup 直後の合法 user_input を silent-pass しない。system rules + catalog の prefix が実呼び出しと一致するので prompt cache の前倒し効果あり。
+### v0.5.0 で投入した対策
 
-### v0.4.3 で投入した対策 — プロンプト最小化
-- **Role-guard の攻撃文言列挙を削除**: 具体的攻撃文言 5 件のリストを撤去。網羅性もなく副作用もあった (モデルに攻撃パターンを教える)。
-- **`【最重要】` タグ撤去・冒頭の役割再宣言を 1 回に**: 強調と反復の過剰を削減。
-- **末尾の JSON-only 再宣言削除**: 冒頭と出力スキーマで既に 2 回宣言済。末尾は `when_to_use` 絞り込みに集中。
-- **維持**: `<user_input>` / `<final_response>` タグ (攻撃対策ではなく**構造マーカー**として)、few-shot 2 例、`Bell = 主役の Claude` 補足、`when_to_use に明確に該当、推測禁止` の絞り込み。
+- **Session-scoped Haiku** (`createHaikuCaller` @ [haiku-caller.mjs](src/daemon/haiku-caller.mjs)): closure で `currentSessionId` と `isFirstCall` を保持。初回は `--session-id` のみ、以降は `--session-id + --resume`。2 回目以降の cold-start を消す。
+- **Role-collapse recovery** (`runHaikuJudgment` @ [daemon.mjs](src/daemon/daemon.mjs)): `parseHaikuResponse` が `E_HAIKU_SCHEMA` を throw したら `callHaiku.reset()` で session-id を renew し、当該ターンは `{pass: true, reason: 'role_collapse_reset'}` で silent pass。次ターンから fresh session で監査再開。
+- **Timeout 短縮** (60s → 30s): 2 回目以降は cold-start がないので延長の必要なし。初回だけは 30s 以内に終わる想定。
+- **Warmup 削除**: stateless 対策だったので不要。
 
 ### 残る既知課題
-- **最悪 60s 待ち**: cold-start + warmup 未完の条件下ではユーザーが最長 60 秒待つ。silent-block より遥かにましだが体感は悪い。fail-open 化 (E_HAIKU_TIMEOUT を silent pass に降格) は §0 実装規範の改訂とセットで v0.4.3+ で検討。
+
+- **`--resume` の実効 spawn 削減量未検証**: プロセス起動・認証自体は毎回発生する可能性。効果が薄ければ追加検討。
 - **カタログ毎ターン再送のコスト**: prompt caching に依存。prefix 固定 (system rules + few-shot + catalog) なので効くはずだが実測未検証。
-- **カタログのツール名抽象**: `current_time` 等のエントリが実環境の `Bash:date` 等とマッピングされていない (持ち越し)。lint 拡張検討中
+- **カタログのツール名抽象**: `current_time` 等のエントリが実環境の `Bash:date` 等とマッピングされていない (持ち越し)。lint 拡張検討中。
+- **role collapse の実発生頻度**: 事後回復でカバーする方針なので、daemon ログの `role collapse detected, session reset` の頻度を観測し、多発するなら予防機構 (N ターン毎の強制 renew 等) の追加を検討。
 
 ### Spotter 本体プロジェクトでの install に関する警告
 
-**Spotter リポジトリで Spotter を install すると、Bell 側の会話が Spotter 自体の議論になり、Haiku が自己言及で混乱する**。v0.4 では stateless 化で会話履歴蓄積は解消されたが、1 ターンのプロンプトに「Spotter のロール」「カタログ改定」等が含まれると persona drift のきっかけにはなる。開発時は他プロジェクトで動作確認するか、install せず手動で `spotter catalog lint` を回すこと。
+**Spotter リポジトリで Spotter を install すると、Bell 側の会話が Spotter 自体の議論になり、Haiku が自己言及で混乱する**。v0.5.0 で session-scoped に戻したため、過去より persona drift リスクが高い環境。開発時は他プロジェクトで動作確認するか、install せず手動で `spotter catalog lint` を回すこと。
 
 ## Product Concept (一行)
 
@@ -36,7 +35,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture の核 (実装判断に効く部分)
 
 - **並走デーモン型**: SessionStart で 1 プロセス起動、SessionEnd で shutdown。Bell から呼ぶのではなく、hook 経由で **Bell の意思と独立に** user_input / tool_used / turn_end を受け取る。「Bell が自覚して呼ぶ」設計は **本プロダクトの存在意義を破壊する**ので却下されている。
-- **Claude 呼び出しは毎回 stateless**: プロセスは維持するが、`claude -p --model claude-haiku-4-5-*` への呼び出しは**毎ターン独立プロンプト**。プロセス内メモリに持つのは `used_tools[]` 等の軽量記録のみ。ツールカタログの再送信コスト回避 × 判断の独立性を両立させるための核心設計。
+- **Claude 呼び出しは session-scoped + 事後回復** (v0.5.0 で更新): `claude -p --session-id <uuid>` で初回セッション確立、以降 `--resume` で再接続して cold-start を消す。プロンプト内容は毎回 full (system + catalog + delta) を送るので、Anthropic 側 session replay の取りこぼしに依存しない。role collapse は `parseHaikuResponse` が `E_HAIKU_SCHEMA` を返した瞬間に `callHaiku.reset()` で session-id を rotate し、当該ターンは silent pass。**これは §0 の silent fallback 禁止違反ではなく、「想定済み異常 = 記録 + 正常リターン」の適用**。
 - **隔離実行**: Spotter の workdir (`~/.spotter/workdir/`) には **CLAUDE.md を置かない**。プロジェクト文脈に引きずられないことが品質保証の要件。
 - **ツールカタログは YAML**: `purpose` / `when_to_use` / `keywords` (一次判定用) と `usage` / `examples` (確定後) を分離した 2 段階コンテキスト。`test_cases` フィールドで回帰検出する。
 - **Stop hook の介入**: `decision: "block"` + `reason` で Bell に継続応答を生成させる。`stop_hook_active: true` を見たら即 pass することで max 1 回ループを担保 (Claude Code 側の機構で自動)。

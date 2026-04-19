@@ -52,7 +52,7 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
   }
 });
 
-test('startDaemon: every Haiku invocation receives the full catalog prompt (stateless)', async () => {
+test('startDaemon: every Haiku invocation receives the full catalog prompt', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   const promptsSeen = [];
@@ -68,8 +68,9 @@ test('startDaemon: every Haiku invocation receives the full catalog prompt (stat
       payload: { user_input: '何時?' },
       timeoutMs: 2_000,
     });
-    // v0.4: every call carries the full catalog — no incremental form.
-    // v0.4.3: section header is '## 出力' (minimized from '## 出力スキーマ (厳守)').
+    // v0.5.0: session-scoped at the claude -p layer (--resume), but the daemon still sends
+    // the full system-prompt + catalog every call so Haiku's judgment stays anchored even
+    // if Anthropic's session replay gives only partial context.
     assert.equal(promptsSeen.length, 1);
     assert.ok(promptsSeen[0].includes('current_time'));
     assert.ok(promptsSeen[0].includes('get the current time'));
@@ -257,56 +258,70 @@ test('startDaemon: DaemonAlreadyRunningError when PID file points at live proces
   }
 });
 
-test('startDaemon: warmup option fires one extra Haiku call without blocking readiness', async () => {
-  // v0.4.2: warmup=true sends a throwaway Haiku call (buildWarmupPrompt) to preload
-  // the Claude CLI / network pool / prompt cache. Must not block startDaemon's
-  // return nor activate the 10s recursion window for subsequent real user_input calls.
+test('startDaemon: user_input with schema-violating Haiku output → silent pass + reset', async () => {
+  // v0.5.0: role collapse recovery path.
+  // If session-scoped Haiku drifts into Bell's persona and returns non-JSON, the daemon
+  // must (a) log the detection, (b) call haikuCaller.reset() so the next turn starts a
+  // fresh claude -p session, and (c) silent-pass the current turn (reason:
+  // role_collapse_reset) so Bell's reply is not blocked on garbage audit output.
+  // This is an explicit §0 exception: "想定済み異常 = 記録 + 正常リターン".
   const { dir, catalogPath } = await setupCatalog();
-  const sessionId = `warmup-${randomUUID()}`;
-  const promptsSeen = [];
-  const haikuCaller = async (prompt) => {
-    promptsSeen.push(prompt);
-    return JSON.stringify({ pass: true, missing_tools: [] });
-  };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller, warmup: true });
+  const sessionId = `collapse-u-${randomUUID()}`;
+  let resetCalled = 0;
+  const haikuCaller = async (_p) => 'not-valid-json-at-all';
+  haikuCaller.reset = () => { resetCalled += 1; };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
   try {
-    // Allow the fire-and-forget warmup to resolve.
-    await new Promise((r) => setImmediate(r));
-    await new Promise((r) => setImmediate(r));
-    // A real user_input within 10s of warmup must still invoke Haiku (NOT silent-passed).
-    // This is the v0.2.1 regression we're explicitly preventing: warmup must bypass
-    // callHaikuTracked so lastHaikuCallAt stays at 0.
     const resp = await sendRequest({
       sessionId,
       event: 'user_input',
-      payload: { user_input: 'real call' },
+      payload: { user_input: '?' },
       timeoutMs: 2_000,
     });
     assert.equal(resp.ok, true);
-    assert.notEqual(resp.result.reason, 'within_haiku_call_window');
-    // 1 warmup + 1 real user_input = 2 calls.
-    assert.equal(promptsSeen.length, 2);
-    // Warmup prompt carries the sentinel.
-    assert.ok(promptsSeen[0].includes('__spotter_warmup_ping__'));
+    assert.equal(resp.result.pass, true);
+    assert.equal(resp.result.reason, 'role_collapse_reset');
+    assert.deepEqual(resp.result.missing_tools, []);
+    assert.equal(resetCalled, 1);
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('startDaemon: warmup defaults to off (unit tests should not fire extra Haiku calls)', async () => {
+test('startDaemon: turn_end with schema-violating Haiku output → silent pass + reset', async () => {
+  // v0.5.0: same role-collapse recovery at the Stop-hook stage.
+  // We pass haikuCallWindowMs: 0 so the 10-second recursion guard does not mask the
+  // turn_end call (which would otherwise silent-pass via within_haiku_call_window).
   const { dir, catalogPath } = await setupCatalog();
-  const sessionId = `no-warmup-${randomUUID()}`;
-  let haikuCalls = 0;
+  const sessionId = `collapse-t-${randomUUID()}`;
+  let resetCalled = 0;
+  let call = 0;
   const haikuCaller = async (_p) => {
-    haikuCalls += 1;
-    return JSON.stringify({ pass: true, missing_tools: [] });
+    call += 1;
+    // First call (user_input) succeeds; second call (turn_end) role-collapses.
+    if (call === 1) return JSON.stringify({ pass: true, missing_tools: [] });
+    return 'Spotter のロールは正式に終了します。あなたのご質問は...';
   };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  haikuCaller.reset = () => { resetCalled += 1; };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller, haikuCallWindowMs: 0 });
   try {
-    // No user_input sent — warmup, if enabled, would have fired here.
-    await new Promise((r) => setImmediate(r));
-    assert.equal(haikuCalls, 0);
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '?' },
+      timeoutMs: 2_000,
+    });
+    const resp = await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: 'reply', stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.pass, true);
+    assert.equal(resp.result.reason, 'role_collapse_reset');
+    assert.equal(resetCalled, 1);
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });

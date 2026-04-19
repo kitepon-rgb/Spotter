@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.5.0
+
+**Session-scoped Haiku 復活 + role-collapse 回復機構 (UX 改善)**。
+
+### 事の発端
+
+v0.4.4 の実運用観測で、**Bell 応答後に Claude の動きが落ち着くまで 30 秒前後かかる**ケースが常態化していることを確認。`claude -p` が毎ターン cold-start を踏んでいるのが支配的要因で、v0.4.x stateless 化 (毎ターン fresh `--session-id`) が原因。ユーザーと「速度と独立性のトレードオフ」を再議論した結果、**v0.4.0 の判断を反転**し session-scoped に戻すことで決定。
+
+### 設計 — trade-off をどう捌いたか
+
+v0.4.0 で session-scoped を捨てた理由は **Haiku role collapse** (Bell 会話履歴を聞き続けた Haiku が persona drift して JSON 契約を破棄する既発バグ)。今回はこれを:
+
+- **構造的予防 (stateless)** ではなく
+- **事後回復 (JSON パース失敗検知 → session renew + silent pass)** で処理する
+
+という方針に切り替えた。role collapse は稀事象であり、構造的予防のために毎ターン cold-start を払うコストに見合わない。JSON スキーマ違反を検知した時点で、その Haiku 出力は既にゴミ (block 判定に使えば誤検出で block される) なので、**silent-pass + 次ターンから新 session** が最も UX 影響の小さい正しい手当て。これは CLAUDE.md §0 の「想定済み異常 = 記録 + 正常リターン」に合致する分類変更であり、silent fallback の新規導入ではない。
+
+差し戻しループ vs 沈黙 vs 遅延の三択で検討したオプション:
+- A (原則通り throw): UserPromptSubmit exit 2 で Bell 沈黙 → UX 最悪 (v0.4.0 で問題視された症状そのもの)
+- B (reset 後 1 回リトライ): 異常時のみ cold-start 2 回分 = 30-60 秒待ち
+- **C (silent pass + reset)**: 今ターンだけ監査スキップ、次ターンから正常復帰 ← 採用
+
+### 変更点
+
+- **[src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**:
+  - `createHaikuCaller` を closure で `currentSessionId` と `isFirstCall` を保持する形に再構成。第 1 回は `--session-id <uuid>` のみで spawn、以降は `--session-id <uuid> --resume <uuid>` で同一セッションに reattach。
+  - 返り値の callable に `.reset()` と `.sessionId` を付与 (既存テストの `typeof caller === 'function'` 互換のため function に property を足す形)。
+  - `buildSpawnArgs` を export (session-id/resume のテスト用)。
+  - `buildWarmupPrompt` を削除 (warmup は stateless 対策だった)。
+- **[src/daemon/daemon.mjs](src/daemon/daemon.mjs)**:
+  - `runHaikuJudgment` ヘルパー新設。`parseHaikuResponse` が `E_HAIKU_SCHEMA` を throw したら `callHaiku.reset()` を呼び、`{pass: true, missing_tools: [], reason: 'role_collapse_reset'}` を返す。
+  - `warmup` オプション削除。`haikuCallWindowMs` オプション追加 (テスト時は 0 で 10 秒ウィンドウを無効化)。
+  - `DEFAULT_HAIKU_TIMEOUT_MS` 60s → 30s (session-scoped なら 2 回目以降は cold-start を払わないため短縮可能)。
+- **[src/cli/daemon-cmd.mjs](src/cli/daemon-cmd.mjs)**: `startDaemon` 呼び出しから `warmup: true` 削除。
+- テスト:
+  - `buildWarmupPrompt` テスト削除 (3 件)。
+  - `createHaikuCaller` の戻り値構造テストを session-scoped + reset 期待に書き換え。
+  - `buildSpawnArgs` テスト 2 件追加 (初回 `--session-id` のみ、2 回目以降 `--resume` 付与)。
+  - daemon の role-collapse recovery テスト 2 件追加 (user_input / turn_end 両方)。
+
+### 効果見込み
+
+- **通常時 UX**: 2 回目以降の Haiku 呼び出しで cold-start が消える → 30s 前後の待ちが推論時間 (数秒) だけに短縮される見込み。
+- **異常時 UX**: role collapse を検知しても、当該ターンのみ監査スキップで Bell の応答はそのまま届く。次ターンから fresh session で監査再開。沈黙ゼロ。
+- **品質**: silent pass が発動したら daemon ログに `role collapse detected, session reset` が残るので、頻度を観測して将来の設計判断材料にする。
+
+### 既知のトレードオフ
+
+- Haiku 側の会話履歴に過去の監査が累積する (これが v0.4.0 で問題視された persona drift の源)。構造的には予防しないが、JSON パース失敗が監視ポイントになっているので、drift が顕在化した瞬間に session が切られる。
+- `claude -p --resume` が実際どの程度 spawn コストを削減するかは実測未検証 (プロセス起動・認証自体は毎回発生する可能性)。効果が薄ければ追加検討。
+
+### v0.4.0 の判断反転について
+
+v0.4.0 以降「再度 session-scoped を提案しないこと」を絶対制約としていたが、**「速度問題が実運用で深刻になった」「role collapse は事後回復で足りる」の 2 点から反転**。この判断は感情的でも場当たり的でもなく、以下の条件変化を踏まえたもの:
+
+1. v0.4.2 で入れた warmup + timeout 60s でも 30 秒前後の待ちが残る実測
+2. v0.4.4 で Stop hook が実際に Bell 応答を読むようになり、監査の正確度が上がった → silent pass のコストが下がった
+3. 役割逸脱検知を JSON パース失敗という客観的シグナルで判定できる設計が見えた
+
 ## 0.4.4
 
 **Stop hook が Bell の最終応答を Haiku に正しく渡すよう修正**。

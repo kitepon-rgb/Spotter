@@ -1,13 +1,14 @@
 // Session-scoped daemon — receives hook events, dispatches to handlers,
 // calls Haiku on user_input / turn_end, keeps used_tools in process memory.
 //
-// v0.4: Haiku calls are STATELESS. Each call is an independent claude -p invocation with
-//       full system prompt + catalog. There is no session-scoped Haiku conversation
-//       (§18.5 is reverted). The daemon still keeps per-turn state (used_tools, lastUserInput)
-//       in its own memory; what was removed is the *Haiku-side* conversation persistence
-//       introduced in v0.2.0. This matches the CLAUDE.md core design
-//       ("Claude 呼び出しは毎回 stateless") and prevents role collapse caused by Haiku
-//       accumulating Bell conversation history across turns.
+// v0.5.0: Haiku calls are session-scoped at the claude -p layer (--session-id + --resume).
+// The daemon holds one Haiku caller for the session's lifetime; the first call establishes
+// the claude -p session and every subsequent call reattaches, avoiding cold-start spawn.
+// Role collapse (Haiku drifting into Bell's persona, previously the reason v0.4.0 reverted
+// to stateless) is handled by a recovery mechanism rather than structural prevention:
+// E_HAIKU_SCHEMA → haikuCaller.reset() + silent-pass the offending turn. This is the §0
+// "想定済み異常 = 記録 + 正常リターン" classification.
+//
 // §5.7: event dispatch follows the envelope contract.
 // §14:  unexpected errors are thrown; hooks convert them to exit codes.
 //
@@ -25,9 +26,9 @@ import { createServer, ensureRuntimeDir, socketPath } from './transport.mjs';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
-  buildWarmupPrompt,
   parseHaikuResponse,
   createHaikuCaller,
+  HaikuError,
 } from './haiku-caller.mjs';
 import { loadCatalog } from '../catalog/loader.mjs';
 import { homedir } from 'node:os';
@@ -35,12 +36,12 @@ import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
 
 const DEFAULT_CATALOG_PATH = join(homedir(), '.spotter', 'tool-catalog', 'tools.yaml');
-const HAIKU_CALL_WINDOW_MS = 10_000;
-// v0.4.2: bumped 28s → 60s. Stateless calls mean every turn pays cold-start cost
-// (Claude CLI boot, Anthropic round-trip, prompt-cache warm-up). 28s was not enough
-// under observed load — E_HAIKU_TIMEOUT then blocked UserPromptSubmit (exit 2)
-// and silenced Bell. Warmup below also helps but cannot eliminate every cold start.
-const DEFAULT_HAIKU_TIMEOUT_MS = 60_000;
+const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
+// v0.5.0: lowered 60s → 30s. Session-scoped (--resume) means the first call still pays
+// cold-start but subsequent calls skip it. 30s covers the first-call cold path without
+// being excessive, and a role-collapse recovery cycle (reset → next call is effectively
+// a cold start again) stays within budget.
+const DEFAULT_HAIKU_TIMEOUT_MS = 30_000;
 
 export class DaemonAlreadyRunningError extends Error {
   constructor(sessionId, pid) {
@@ -56,7 +57,7 @@ export async function startDaemon({
   catalogPath = DEFAULT_CATALOG_PATH,
   haikuCaller,
   logFn = () => {},
-  warmup = false,
+  haikuCallWindowMs = DEFAULT_HAIKU_CALL_WINDOW_MS,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -82,11 +83,31 @@ export async function startDaemon({
 
   // 10-second recursion-guard bookkeeping. Every Haiku spawn updates this; incoming
   // Haiku-invoking events within the window are treated as recursive noise and passed.
+  // Tests may pass haikuCallWindowMs: 0 to disable this guard.
   let lastHaikuCallAt = 0;
 
   const callHaikuTracked = async (prompt) => {
     lastHaikuCallAt = Date.now();
     return callHaiku(prompt);
+  };
+
+  // v0.5.0: shared Haiku-invocation + parse helper. On E_HAIKU_SCHEMA (role collapse),
+  // rotates the Haiku session-id and silent-passes the turn (reason: role_collapse_reset).
+  // Other Haiku errors (timeout, spawn failure) still propagate — §14 unexpected → throw.
+  const runHaikuJudgment = async (stage, prompt) => {
+    const raw = await callHaikuTracked(prompt);
+    try {
+      return parseHaikuResponse(raw);
+    } catch (err) {
+      if (err instanceof HaikuError && err.code === 'E_HAIKU_SCHEMA') {
+        logFn(`${stage}: role collapse detected, session reset: ${err.message}`);
+        if (typeof callHaiku.reset === 'function') {
+          callHaiku.reset();
+        }
+        return { pass: true, missing_tools: [], reason: 'role_collapse_reset' };
+      }
+      throw err;
+    }
   };
 
   const handler = async (envelope) => {
@@ -105,7 +126,12 @@ export async function startDaemon({
     // claude -p spawn are likely recursive noise; pass them quietly.
     const needsHaiku = envelope.event === 'user_input' || envelope.event === 'turn_end';
     const sinceLast = Date.now() - lastHaikuCallAt;
-    if (needsHaiku && lastHaikuCallAt > 0 && sinceLast < HAIKU_CALL_WINDOW_MS) {
+    if (
+      needsHaiku &&
+      haikuCallWindowMs > 0 &&
+      lastHaikuCallAt > 0 &&
+      sinceLast < haikuCallWindowMs
+    ) {
       logFn(`${envelope.event} skipped: within ${sinceLast}ms of own haiku call`);
       return { pass: true, missing_tools: [], reason: 'within_haiku_call_window' };
     }
@@ -140,9 +166,12 @@ export async function startDaemon({
     state.lastUserInput = userInput;
     state.usedTools = []; // reset tools for this turn
 
-    const raw = await callHaikuTracked(buildFirstStagePrompt({ catalog, userInput }));
-    const parsed = parseHaikuResponse(raw);
-    logFn(`user_input: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}`);
+    const parsed = await runHaikuJudgment('user_input', buildFirstStagePrompt({ catalog, userInput }));
+    logFn(
+      `user_input: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}${
+        parsed.reason ? `, reason=${parsed.reason}` : ''
+      }`
+    );
     return parsed;
   }
 
@@ -178,7 +207,8 @@ export async function startDaemon({
 
     const savedUserInput = state.lastUserInput;
     const savedUsedTools = state.usedTools.slice();
-    const raw = await callHaikuTracked(
+    const parsed = await runHaikuJudgment(
+      'turn_end',
       buildFinalStagePrompt({
         catalog,
         userInput: savedUserInput,
@@ -186,8 +216,11 @@ export async function startDaemon({
         finalResponse,
       })
     );
-    const parsed = parseHaikuResponse(raw);
-    logFn(`turn_end: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}`);
+    logFn(
+      `turn_end: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}${
+        parsed.reason ? `, reason=${parsed.reason}` : ''
+      }`
+    );
 
     state.usedTools = [];
     state.lastUserInput = null;
@@ -212,35 +245,6 @@ export async function startDaemon({
   // Write PID file so uninstall/doctor can reason about liveness (§15.3 doctor).
   const pidPath = pidFilePath(sessionId);
   await writeFile(pidPath, String(process.pid), 'utf8');
-
-  // v0.4.2: stateless-safe warmup.
-  // Spawns a single throwaway Haiku call with the full system-prompt + catalog prefix
-  // (same as real calls). Goal: pre-load the Claude CLI binary, warm the Anthropic
-  // connection pool, and populate the prompt cache for the shared prefix, so the
-  // first real user_input does not pay full cold-start cost.
-  //
-  // Important: we bypass callHaikuTracked to avoid setting lastHaikuCallAt. If the
-  // 10-second recursion window activated, a legitimate user_input arriving within
-  // 10s of warmup would be silent-passed (the v0.2.1 bug this mirrors).
-  //
-  // Fire-and-forget: warmup MUST NOT block readiness or real traffic. Failure is
-  // logged but not thrown — at worst, the first real call pays the cold-start cost
-  // we were trying to avoid, same as the pre-warmup baseline.
-  if (warmup) {
-    const warmupPrompt = buildWarmupPrompt({ catalog });
-    callHaiku(warmupPrompt)
-      .then((raw) => {
-        try {
-          parseHaikuResponse(raw);
-          logFn('warmup: ok');
-        } catch (err) {
-          logFn(`warmup: schema failed: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
-        }
-      })
-      .catch((err) => {
-        logFn(`warmup: call failed: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
-      });
-  }
 
   return {
     server,

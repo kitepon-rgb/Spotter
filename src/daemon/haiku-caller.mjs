@@ -1,13 +1,17 @@
 // claude -p --model claude-haiku-4-5-* wrapper.
 // §5.5: structured JSON I/O, no retries, schema violations throw.
 //
-// v0.4: each Haiku invocation is STATELESS — no --resume, no session-scoped conversation.
-// Every call is an isolated --session-id <fresh UUID> with the full system prompt + catalog.
-// This reverts the v0.2.0 session-scoped optimisation, which caused role-collapse on long
-// sessions: Haiku, having listened to the accumulating Bell conversation, eventually drifted
-// into Bell's persona and abandoned the JSON contract ("Spotter のロールは正式に終了します"),
-// producing E_HAIKU_SCHEMA and silencing the user via hook exit 1.
-// Stateless calls prevent that drift structurally — each call starts from zero context.
+// v0.5.0: session-scoped Haiku is back. Each daemon holds a single Haiku session-id for
+// the life of the Bell session; the first call uses --session-id only, subsequent calls
+// use --session-id + --resume to reattach to the same claude -p conversation, avoiding
+// per-turn cold-start spawn (observed 20–50s in v0.4.x stateless mode).
+//
+// Role-collapse (Haiku drifting into Bell's persona over long sessions — the failure mode
+// v0.4.0 reverted to stateless to avoid) is now handled by a recovery mechanism instead of
+// structural prevention: if the daemon detects a schema violation (E_HAIKU_SCHEMA) from
+// parseHaikuResponse, it calls reset() on the caller to renew the session-id, then silent-
+// passes the offending turn. See daemon.mjs for the catch site. This makes role collapse a
+// "想定済み異常" (CLAUDE.md §0) — recorded, recovered from, never bubbled up as exit 2.
 
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -32,12 +36,9 @@ export async function ensureWorkdir() {
   return WORKDIR;
 }
 
-// v0.4.3 minimization:
-//   The prompt was getting bigger each iteration (role-guard enumeration, tag injection defence,
-//   triple restatement of "JSON only"). For a solo project there is no adversarial prompt-
-//   injection threat, and persona drift is already structurally prevented by stateless calls.
-//   So we trim aggressively. Shorter prompts → the judgment-anchoring instruction at the tail
-//   is relatively more prominent → JSON compliance tends to improve, not worsen.
+// v0.4.3 minimization (retained in v0.5.0):
+//   Aggressive trim — no adversarial prompt-injection list, no 【最重要】 tags, no triple
+//   restatement. The judgment-anchoring instruction at the tail stays prominent.
 //
 // Shared header (role + schema + few-shot) is identical between first/final stages, which
 // keeps the Anthropic prompt-cache prefix stable across calls of the same stage.
@@ -106,19 +107,6 @@ function projectCatalog(catalog) {
   }));
 }
 
-// Build a lightweight warmup prompt — pre-loads the Claude CLI, network pool,
-// and Anthropic prompt cache (system rules + catalog prefix is identical to real calls).
-// The user_input is a sentinel that should cleanly return pass:true.
-// v0.4.2: stateless-safe. Uses the same buildFirstStagePrompt path, with its own
-// fresh --session-id at spawn time (like every other stateless call).
-// No conversation state survives the warmup.
-export function buildWarmupPrompt({ catalog }) {
-  return buildFirstStagePrompt({
-    catalog,
-    userInput: '__spotter_warmup_ping__',
-  });
-}
-
 // Parse Haiku's response. Throws HaikuError on schema violation.
 export function parseHaikuResponse(raw) {
   const trimmed = raw.trim();
@@ -176,15 +164,16 @@ function truncate(s, n = 300) {
   return s.slice(0, n) + '...';
 }
 
-// On Windows, the `claude` entry is typically a .cmd shim which Node's spawn
-// cannot locate without going through the shell. We use cmd.exe /c explicitly
-// rather than spawn({ shell: true }) because the latter triggers DEP0190 on Node 24+.
+// On Windows, the `claude` entry is typically a .cmd shim which Node's spawn cannot locate
+// without going through the shell. We use cmd.exe /c explicitly rather than spawn({ shell:
+// true }) because the latter triggers DEP0190 on Node 24+.
 //
-// v0.4: stateless — each call spawns with a fresh --session-id so no conversation history
-// carries over. We keep the flag (rather than omitting) so each call has an explicit,
-// loggable session id, which aids debugging when something goes wrong.
-function buildSpawnArgs(claudeBin, model) {
-  const args = ['-p', '--session-id', randomUUID(), '--model', model];
+// v0.5.0: session-scoped. First call of a given session id uses --session-id only; every
+// subsequent call adds --resume so claude -p re-attaches to that session, skipping cold
+// start. buildSpawnArgs is exported so tests can assert the flag wiring without spawning.
+export function buildSpawnArgs({ claudeBin, model, sessionId, resume }) {
+  const args = ['-p', '--session-id', sessionId, '--model', model];
+  if (resume) args.push('--resume', sessionId);
   if (process.platform === 'win32') {
     return { cmd: 'cmd.exe', cmdArgs: ['/c', claudeBin, ...args] };
   }
@@ -192,20 +181,30 @@ function buildSpawnArgs(claudeBin, model) {
 }
 
 // Invoke `claude -p` in the isolated workdir. Returns raw stdout.
-// §5.5: no retry on failure. §14.1: silent fallback forbidden.
+// §5.5: no retry on failure. §14.1: silent fallback forbidden (role-collapse recovery in
+// daemon.mjs is an explicit §0 exception, not silent fallback).
 //
-// v0.4: STATELESS. Each call is a fresh --session-id; no --resume, no warmup.
-// SPOTTER_PARENT_PID is injected so hooks firing inside the spawned claude exit early
-// via isChildCall() (prevents daemon-spawn recursion).
+// v0.5.0: session-scoped. The caller keeps one session-id for the session's lifetime, and
+// exposes a reset() method that rotates the session-id (used by daemon on E_HAIKU_SCHEMA
+// to recover from role collapse). The returned value is a function (so existing tests that
+// check `typeof caller === 'function'` still pass) with `reset` and `sessionId` attached.
 export function createHaikuCaller({ timeoutMs, claudeBin = 'claude', model = HAIKU_MODEL, env = process.env }) {
   if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
     throw new TypeError('timeoutMs must be a positive number');
   }
 
-  return async function callHaiku(prompt) {
+  let currentSessionId = randomUUID();
+  let isFirstCall = true;
+
+  const callHaiku = async function (prompt) {
     await ensureWorkdir();
     return new Promise((resolve, reject) => {
-      const { cmd, cmdArgs } = buildSpawnArgs(claudeBin, model);
+      const { cmd, cmdArgs } = buildSpawnArgs({
+        claudeBin,
+        model,
+        sessionId: currentSessionId,
+        resume: !isFirstCall,
+      });
       const child = spawn(cmd, cmdArgs, {
         cwd: WORKDIR,
         env: { ...env, SPOTTER_PARENT_PID: String(process.pid) },
@@ -241,10 +240,26 @@ export function createHaikuCaller({ timeoutMs, claudeBin = 'claude', model = HAI
           reject(new HaikuError('E_INTERNAL', `haiku exited with code ${code}: ${truncate(stderr)}`));
           return;
         }
+        // Flip isFirstCall only after a successful spawn — a failed first call should
+        // still be treated as "session not yet established" so the next attempt uses
+        // --session-id only (not --resume against a non-existent session).
+        isFirstCall = false;
         resolve(stdout);
       });
 
       child.stdin.end(prompt, 'utf8');
     });
   };
+
+  callHaiku.reset = () => {
+    currentSessionId = randomUUID();
+    isFirstCall = true;
+  };
+
+  Object.defineProperty(callHaiku, 'sessionId', {
+    get: () => currentSessionId,
+    enumerable: true,
+  });
+
+  return callHaiku;
 }

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
-  buildWarmupPrompt,
   parseHaikuResponse,
   createHaikuCaller,
+  buildSpawnArgs,
   HaikuError,
 } from '../src/daemon/haiku-caller.mjs';
 
@@ -96,17 +96,6 @@ test('buildFinalStagePrompt tail directs Haiku to exclude already-used tools', (
   assert.ok(tail.includes('呼び忘れ'));
 });
 
-test('buildWarmupPrompt uses the same prefix as real calls (cache-friendly)', () => {
-  // v0.4.2: warmup prompt shares the system-rules + catalog prefix with real calls so
-  // that Anthropic prompt caching carries over. Only the user_input differs.
-  const warmup = buildWarmupPrompt({ catalog: sampleCatalog });
-  const real = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?' });
-  const prefix = warmup.slice(0, warmup.indexOf('<user_input>'));
-  const realPrefix = real.slice(0, real.indexOf('<user_input>'));
-  assert.equal(prefix, realPrefix, 'warmup and real prompts must share an identical prefix');
-  assert.ok(warmup.includes('__spotter_warmup_ping__'));
-});
-
 test('buildFinalStagePrompt includes used_tools section', () => {
   const prompt = buildFinalStagePrompt({
     catalog: sampleCatalog,
@@ -136,9 +125,54 @@ test('createHaikuCaller throws on invalid timeout', () => {
   );
 });
 
-test('createHaikuCaller accepts minimal options (stateless)', () => {
+test('createHaikuCaller returns a callable with reset() and sessionId (session-scoped)', () => {
+  // v0.5.0: Haiku calls are session-scoped again (--session-id + --resume on follow-ups).
+  // The caller exposes its current session id and a reset() to renew it on role-collapse.
   const caller = createHaikuCaller({ timeoutMs: 1000 });
   assert.equal(typeof caller, 'function');
+  assert.equal(typeof caller.reset, 'function');
+  assert.equal(typeof caller.sessionId, 'string');
+  assert.ok(caller.sessionId.length > 0);
+});
+
+test('createHaikuCaller: reset() assigns a new session-id', () => {
+  // v0.5.0: reset() is the recovery path for role collapse — it must produce a fresh uuid
+  // so the next call starts a brand-new claude -p session.
+  const caller = createHaikuCaller({ timeoutMs: 1000 });
+  const before = caller.sessionId;
+  caller.reset();
+  const after = caller.sessionId;
+  assert.notEqual(before, after);
+});
+
+test('buildSpawnArgs: first call uses --session-id without --resume', () => {
+  // v0.5.0: the very first call of a session has no prior claude -p session to resume.
+  const { cmdArgs } = buildSpawnArgs({
+    claudeBin: 'claude',
+    model: 'haiku',
+    sessionId: 'abc-123',
+    resume: false,
+  });
+  assert.ok(cmdArgs.includes('--session-id'));
+  const idIdx = cmdArgs.indexOf('--session-id');
+  assert.equal(cmdArgs[idIdx + 1], 'abc-123');
+  assert.ok(!cmdArgs.includes('--resume'));
+});
+
+test('buildSpawnArgs: subsequent call adds --resume with the same session-id', () => {
+  // v0.5.0: --resume makes claude -p attach to the existing session, eliminating
+  // the per-turn cold-start that stateless v0.4.x paid.
+  const { cmdArgs } = buildSpawnArgs({
+    claudeBin: 'claude',
+    model: 'haiku',
+    sessionId: 'abc-123',
+    resume: true,
+  });
+  const idIdx = cmdArgs.indexOf('--session-id');
+  assert.equal(cmdArgs[idIdx + 1], 'abc-123');
+  const resumeIdx = cmdArgs.indexOf('--resume');
+  assert.ok(resumeIdx > -1);
+  assert.equal(cmdArgs[resumeIdx + 1], 'abc-123');
 });
 
 test('parseHaikuResponse: accepts valid pass=true', () => {
