@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 必読: Open Issues
+
+**新規作業に入る前に [docs/open-issues.md](docs/open-issues.md) を必ず読むこと**。Spotter で現時点で塞がっていない穴と実測未検証の懸念を優先度別 (P0/P1/P2) に集約した唯一の真実源。バージョンごとのリリースノート (下記 Repository Status / [CHANGELOG.md](CHANGELOG.md)) は歴史記録であって、現状把握には使わない。
+
+課題を解決したら open-issues.md から項目を消し、CHANGELOG にリリース番号とともに記録する運用。
+
 ## Repository Status
 
 **v0.10.0** (2026-04-19): **project scope `.mcp.json` 対応**。v0.9.0 は user scope (`~/.claude/.mcp.json`) だけ読んでいたため、プロジェクト直下の `.mcp.json` に登録された MCP サーバー (project 固有) の env / headers を拾えなかった。`<projectRoot>/.mcp.json` も読んで user scope に merge (project 勝ち = Claude Code precedence と整合)。`readMcpServers({projectRoot})` シグネチャ変更 + `refresh` → `investigate` → `mcp-config` の経路で projectRoot を伝搬。詳細は [CHANGELOG.md](CHANGELOG.md)。
@@ -33,12 +39,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Timeout 短縮** (60s → 30s): 2 回目以降は cold-start がないので延長の必要なし。初回だけは 30s 以内に終わる想定。
 - **Warmup 削除**: stateless 対策だったので不要。
 
-### 残る既知課題
+### v0.5.0 時点の既知課題 (歴史記録)
 
-- **`--resume` の実効 spawn 削減量未検証**: プロセス起動・認証自体は毎回発生する可能性。効果が薄ければ追加検討。
-- **カタログ毎ターン再送のコスト**: prompt caching に依存。prefix 固定 (system rules + few-shot + catalog) なので効くはずだが実測未検証。
-- **カタログのツール名抽象**: `current_time` 等のエントリが実環境の `Bash:date` 等とマッピングされていない (持ち越し)。lint 拡張検討中。
-- **role collapse の実発生頻度**: 事後回復でカバーする方針なので、daemon ログの `role collapse detected, session reset` の頻度を観測し、多発するなら予防機構 (N ターン毎の強制 renew 等) の追加を検討。
+この時点の未解決項目は現在 [docs/open-issues.md](docs/open-issues.md) に統合されている (`--resume` 実効 spawn 削減量 / preamble caching コスト / role collapse 発生頻度)。カタログのツール名抽象問題は v0.7.0 の tool-db 置換で消滅済み。
 
 ### Spotter 本体プロジェクトでの install に関する警告
 
@@ -113,10 +116,11 @@ v0.1 に含める / 含めないの判断で迷ったらプラン §9 を参照�
 
 ## 未解決論点 (設計上の開かれた選択)
 
-プラン §12 に未解決として残っているもの。実装中にこれらに触る判断をするときは、**独断で決めずユーザーに確認する**:
+プラン §12 のうち、実装段階ではなく **設計思想レベルで開いたまま** の論点。独断で決めずユーザーに確認すること。実装レベルの穴 (Spotter の現コードに存在する技術的課題) は [docs/open-issues.md](docs/open-issues.md) を参照。
 
-- カタログの初期構築: 手動 vs MCP 自動列挙 (v0.1 は手動確定、v0.3 で再検討) — §12.1
-- 最初の応答を取り消せない仕様への中長期対応 (Pre-Response hook の feature request 等) — §12.4
+- **最初の応答を取り消せない仕様への中長期対応** (§12.4): Stop hook で差し戻せるが、ユーザーが最初の応答を一瞬でも目にする点は Claude Code 側の仕様で変えられない。Pre-Response hook 相当の feature が来たら全面見直しの可能性
+
+§12.1 (カタログ初期構築の手動 vs 自動列挙) は v0.7.0 の tool-db 置換で完全に自動側に確定したため、未解決から削除済み。
 
 ## Related Project
 
