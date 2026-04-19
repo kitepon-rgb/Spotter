@@ -535,3 +535,61 @@ test('startDaemon: stale PID file (dead process) does not block startup', async 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('startDaemon: drops Haiku hallucinations not in catalog (v0.13.3)', async () => {
+  // Haiku returns a tool name that is NOT in the catalog (training-memory leakage /
+  // few-shot cargo-cult). The daemon filters it; since no valid entries remain, pass
+  // flips to true with reason='hallucination_filtered'.
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  const haikuCaller = async (_prompt) =>
+    JSON.stringify({
+      pass: false,
+      missing_tools: [{ name: 'Skill(tl)', reason: 'bogus' }],
+    });
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
+  try {
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: 'something' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.pass, true);
+    assert.deepEqual(resp.result.missing_tools, []);
+    assert.equal(resp.result.reason, 'hallucination_filtered');
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: keeps valid tools when hallucinations mixed in (v0.13.3)', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  const haikuCaller = async (_prompt) =>
+    JSON.stringify({
+      pass: false,
+      missing_tools: [
+        { name: 'current_time', reason: 'legit' },
+        { name: 'Skill(ghost)', reason: 'bogus' },
+      ],
+    });
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
+  try {
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '今何時?' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.pass, false);
+    assert.equal(resp.result.missing_tools.length, 1);
+    assert.equal(resp.result.missing_tools[0].name, 'current_time');
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

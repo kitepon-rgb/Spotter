@@ -5,6 +5,7 @@ import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
   parseHaikuResponse,
+  filterCatalogMisses,
   createHaikuCaller,
   buildSpawnArgs,
   HaikuError,
@@ -221,4 +222,57 @@ test('parseHaikuResponse: throws on invalid tool entry', () => {
     missing_tools: [{ name: '', reason: 'empty' }],
   });
   assert.throws(() => parseHaikuResponse(raw), HaikuError);
+});
+
+test('buildPreamble declares the catalog-only rule (v0.13.3)', () => {
+  // Explicit rule discouraging catalog-external names. See filterCatalogMisses for the
+  // defensive filter that enforces this on the daemon side.
+  const preamble = buildPreamble({ tools: sampleTools });
+  assert.ok(preamble.includes('カタログ'));
+  assert.ok(/カタログ外|カタログに記載|カタログ外の名前/.test(preamble));
+});
+
+test('filterCatalogMisses: passthrough when every name is in catalog', () => {
+  const parsed = {
+    pass: false,
+    missing_tools: [{ name: 'WebSearch', reason: 'r' }],
+  };
+  const catalog = new Set(['WebSearch', 'mcp__caveat__caveat_record']);
+  const { parsed: out, dropped } = filterCatalogMisses(parsed, catalog);
+  assert.deepEqual(dropped, []);
+  assert.equal(out, parsed); // same reference when nothing dropped
+});
+
+test('filterCatalogMisses: drops a single hallucination and flips pass to true', () => {
+  const parsed = {
+    pass: false,
+    missing_tools: [{ name: 'Skill(tl)', reason: 'bogus' }],
+  };
+  const { parsed: out, dropped } = filterCatalogMisses(parsed, ['WebSearch']);
+  assert.equal(out.pass, true);
+  assert.deepEqual(out.missing_tools, []);
+  assert.equal(out.reason, 'hallucination_filtered');
+  assert.deepEqual(dropped, ['Skill(tl)']);
+});
+
+test('filterCatalogMisses: keeps valid entries when hallucinations mixed in', () => {
+  const parsed = {
+    pass: false,
+    missing_tools: [
+      { name: 'WebSearch', reason: 'ok' },
+      { name: 'Skill(ghost)', reason: 'bogus' },
+    ],
+  };
+  const { parsed: out, dropped } = filterCatalogMisses(parsed, new Set(['WebSearch']));
+  assert.equal(out.pass, false);
+  assert.equal(out.missing_tools.length, 1);
+  assert.equal(out.missing_tools[0].name, 'WebSearch');
+  assert.deepEqual(dropped, ['Skill(ghost)']);
+});
+
+test('filterCatalogMisses: accepts array form of catalogNames', () => {
+  const parsed = { pass: true, missing_tools: [] };
+  const { parsed: out, dropped } = filterCatalogMisses(parsed, ['WebSearch']);
+  assert.equal(out.pass, true);
+  assert.deepEqual(dropped, []);
 });

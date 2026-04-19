@@ -38,6 +38,7 @@ import {
   buildFinalStagePrompt,
   buildPreamble,
   parseHaikuResponse,
+  filterCatalogMisses,
   createHaikuCaller,
   HaikuError,
 } from './haiku-caller.mjs';
@@ -103,6 +104,11 @@ export async function startDaemon({
   }
   logFn(`tool-db loaded: ${toolList.length} tools` + (projectRoot ? ` (project=${projectRoot})` : ''));
 
+  // v0.13.3: Haiku occasionally hallucinates tool names outside the catalog (training-memory
+  // leakage / few-shot cargo-cult). We filter these post-parse; entries not in this set are
+  // dropped. See filterCatalogMisses for the pass-flip semantics.
+  const catalogNames = new Set(toolList.map((t) => t.name));
+
   // v0.6.0: preamble (role + schema + catalog) is built once and threaded into the Haiku
   // caller. The caller prepends it on the first call only; --resume keeps it in session
   // history for all subsequent calls.
@@ -133,8 +139,9 @@ export async function startDaemon({
   // Other Haiku errors (timeout, spawn failure) still propagate — §14 unexpected → throw.
   const runHaikuJudgment = async (stage, prompt) => {
     const { raw, meta } = await callHaikuTracked(prompt);
+    let parsed;
     try {
-      return { parsed: parseHaikuResponse(raw), meta };
+      parsed = parseHaikuResponse(raw);
     } catch (err) {
       if (err instanceof HaikuError && err.code === 'E_HAIKU_SCHEMA') {
         logFn(`${stage}: role collapse detected, session reset: ${err.message}`);
@@ -145,6 +152,11 @@ export async function startDaemon({
       }
       throw err;
     }
+    const { parsed: filtered, dropped } = filterCatalogMisses(parsed, catalogNames);
+    if (dropped.length > 0) {
+      logFn(`${stage}: dropped catalog-external names: ${dropped.join(',')}`);
+    }
+    return { parsed: filtered, meta };
   };
 
   // v0.12.0: heartbeat. Reset on every envelope; if no event arrives within

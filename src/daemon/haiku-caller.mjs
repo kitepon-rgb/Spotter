@@ -51,6 +51,9 @@ const SHARED_HEADER = [
   '{"pass": <true|false>, "missing_tools": [{"name": "<カタログ名>", "reason": "<一文の日本語>"}]}',
   '- pass:true なら missing_tools は空、pass:false なら 1 件以上',
   '- JSON のみ。前置き・コードフェンス禁止',
+  '- **name は後述「## カタログ」に列挙されたツール名そのまま**のみ許可。',
+  '  カタログ外の名前 (Skill(xxx) / 任意のスラッシュコマンド / 記憶した既知ツール等) は禁止。',
+  '  該当するツールがカタログに見当たらなければ、無理に挙げず pass:true を返す。',
   '',
   '## 判定対象',
   '各ターン、以下いずれかの stage で判定リクエストを受けます:',
@@ -177,6 +180,33 @@ export function parseHaikuResponse(raw) {
     );
   }
   return parsed;
+}
+
+// v0.13.3: post-parse defence against catalog-external hallucinations. Haiku occasionally
+// proposes tool names that are not in the catalog — training-memory leakage or few-shot
+// cargo-culting. The SHARED_HEADER now forbids this explicitly, but we also filter
+// defensively: entries whose name is not in `catalogNames` are dropped. If all entries are
+// dropped, pass is flipped to true with reason='hallucination_filtered'. Mixed cases keep
+// the valid entries and stay pass=false.
+//
+// Returns { parsed, dropped } where `dropped` is the list of filtered-out names (for
+// observability / logging).
+export function filterCatalogMisses(parsed, catalogNames) {
+  const names = catalogNames instanceof Set ? catalogNames : new Set(catalogNames);
+  const kept = [];
+  const dropped = [];
+  for (const m of parsed.missing_tools) {
+    if (names.has(m.name)) kept.push(m);
+    else dropped.push(m.name);
+  }
+  if (dropped.length === 0) return { parsed, dropped };
+  if (kept.length === 0) {
+    return {
+      parsed: { pass: true, missing_tools: [], reason: 'hallucination_filtered' },
+      dropped,
+    };
+  }
+  return { parsed: { ...parsed, missing_tools: kept }, dropped };
 }
 
 function stripFence(text) {

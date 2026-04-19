@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点 (v0.13.0 時点, 2026-04-20) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点 (v0.13.3 時点, 2026-04-20) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -56,7 +56,9 @@ v0.7.0 〜 v0.10.0 で tool-db が 5 件 (手書き抽象カタログ) → **57 
 - `mcp__caveat__*` や `mcp__claude_ai_Gmail__*` 系が「登録/照会」カテゴリで誤爆する
 - 「迷ったら pass」の指示が効かず Haiku が過提案に倒れる (前バージョンで AskUserQuestion 過提案傾向を実測済み)
 
-**次アクション**: 数日の実運用 → daemon ログから turn_end の `pass=false, missing=...` 件数と内訳を集計、ユーザーが受け入れた指摘 / 却下した指摘の比率を観測。過検出が目立つなら (a) few-shot 増量、(b) カテゴリ別優先度付け、(c) カタログ description 側での「on-demand only」明示、のいずれかを検討。
+**v0.13.3 で部分対処**: カタログ**外**のハルシネーション (例: `Skill(tl)`、training 記憶由来の架空ツール名) は prompt 明示 + `filterCatalogMisses` の二重防御で遮断済み。**カタログ内の過検出** (Read 乱発 / caveat 誤爆等) はそのまま残っているためこの項目は継続。
+
+**次アクション**: 数日の実運用 → daemon ログから turn_end の `pass=false, missing=...` 件数と内訳を集計、ユーザーが受け入れた指摘 / 却下した指摘の比率を観測。過検出が目立つなら (a) few-shot 増量、(b) カテゴリ別優先度付け、(c) カタログ description 側での「on-demand only」明示、のいずれかを検討。v0.13.3 の `dropped catalog-external names: ...` ログで filter 発動回数も併せて観測可能。
 
 ### preamble 57 件時の Haiku 判定品質
 

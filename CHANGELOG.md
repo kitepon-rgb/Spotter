@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.13.3
+
+**カタログ外ツール名の推奨を遮断 (prompt 明示 + 事後 filter の二重防御)**。v0.13.2 リリース直後の実セッション ([daemon-f047521c.log](../../.spotter/logs/daemon-f047521c-9cce-4822-9555-90b206b8341e.log) line 9) で `turn_end: pass=false, missing=Skill(tl)` を観測。**`Skill(tl)` はカタログ (tool-db.json 57 件) に存在しない**。Haiku が training 記憶 or few-shot の `current_time` / `Skill` 表記から cargo-cult してカタログ外名を提案していた。これが恒常化するとユーザーが無効な推奨に混乱する + /tl など description を直しても Haiku は参照していないため修正が届かない、という構造問題になる。
+
+### 変更点
+
+- **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `SHARED_HEADER` に「name は**カタログに列挙されたツール名そのまま**のみ許可」ルールを明記。カタログ外 (Skill(xxx) / 任意スラッシュコマンド / 記憶した既知ツール) は禁止、該当なければ pass:true
+- **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `filterCatalogMisses(parsed, catalogNames)` を export。parse 後の post-filter として、`missing_tools[].name` がカタログ外のエントリを drop する。全削除なら `pass=true, reason='hallucination_filtered'` に flip、部分削除なら valid 分だけ残し `pass=false` 維持
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `startDaemon` が tool-db ロード時に `catalogNames = new Set(toolList.map(t => t.name))` を構築、`runHaikuJudgment` で `parseHaikuResponse` 後に filter を適用。drop した name はログに残す (`dropped catalog-external names: ...`)
+- **テスト追加**: `filterCatalogMisses` の 4 ケース (passthrough / 全 drop / 部分 drop / array 形式 catalog) + preamble 文言 smoke test + daemon 統合 2 ケース (全ハルシ → pass flip / 混在 → valid 残し)
+
+### 設計判断
+
+- **prompt + filter の二重化**: prompt だけだと Haiku が従わない場合に素通りする。filter だけだと今後 preamble をいじる人が rule を外しても気付けない。両方ある方が安全
+- **pass flip のセマンティクス**: 全 drop 時に pass:false のまま空配列を返すと v0.5.x で導入した schema 整合性チェック (`pass:false かつ missing_tools 空は inconsistent`) に引っかかる。`pass:true, reason='hallucination_filtered'` が正解
+- **§0 silent fallback 禁止との関係**: これは「想定外を黙って潰す」ではなく「想定内の誤検出 = 記録 + 正常リターン」。dropped name はログに必ず残る
+
+### 残課題
+
+- v0.13.0 新軸の**カタログ内過検出** (Read 乱発 / caveat 誤爆等) は別問題。[docs/open-issues.md](docs/open-issues.md) の P0 観測タスクとして継続
+- few-shot 例の `current_time` は現 tool-db に無い名前。Haiku が cargo-cult するリスクを filter で潰したが、例そのものを実在ツールに差し替えるかは要検討 (ただし例の抽象性が失われる tradeoff あり)
+
 ## 0.13.2
 
 **Daemon の死因を必ずログに残す診断インフラ + Haiku 子プロセス stdio の防御的 error listener**。v0.13.1 までは daemon が `uncaughtException` / `unhandledRejection` で死ぬと痕跡ゼロで消えていた ([daemon-80b5c0af.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15 → line 16 で shutdown ログなしに再起動)。次に同じことが起きた時に真因を必ず捕まえられるよう、診断 handler を導入。
