@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
-  buildWarmupPrompt,
   parseHaikuResponse,
   createHaikuCaller,
   HaikuError,
@@ -17,60 +16,31 @@ const sampleCatalog = {
   ],
 };
 
-test('buildFirstStagePrompt (isFirst=true) includes catalog and rules', () => {
-  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?', isFirst: true });
+test('buildFirstStagePrompt includes catalog and rules', () => {
+  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?' });
   assert.ok(prompt.includes('current_time'));
   assert.ok(prompt.includes('今何時?'));
   assert.ok(prompt.includes('pass'));
   assert.ok(prompt.includes('get time'));
 });
 
-test('buildWarmupPrompt includes catalog and rules, instructs trivial pass response (A-2)', () => {
-  const prompt = buildWarmupPrompt({ catalog: sampleCatalog });
-  assert.ok(prompt.includes('current_time'));
-  assert.ok(prompt.includes('get time'));
-  assert.ok(prompt.includes('ウォームアップ'));
-  // Haiku must return the trivial pass object, parseable by parseHaikuResponse
-  assert.ok(prompt.includes('"pass": true'));
-  assert.ok(prompt.includes('"missing_tools": []'));
-  // System rules (schema etc.) must be present so Haiku loads them on this --session-id call
-  assert.ok(prompt.includes('出力スキーマ'));
+test('buildFirstStagePrompt includes role-guard language against persona drift', () => {
+  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?' });
+  // v0.4: explicit guard so Haiku does not drift into Bell's persona.
+  assert.ok(prompt.includes('監査対象のデータ'));
+  assert.ok(prompt.includes('役割を降りる'));
 });
 
-test('buildFirstStagePrompt (isFirst=false) omits catalog — incremental form', () => {
-  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?', isFirst: false });
-  // Should still include the user input
-  assert.ok(prompt.includes('今何時?'));
-  // But NOT re-send the catalog
-  assert.ok(!prompt.includes('get time'));
-  assert.ok(!prompt.includes('"name":'));
-});
-
-test('buildFinalStagePrompt (isFirst=true) includes used_tools section', () => {
+test('buildFinalStagePrompt includes used_tools section', () => {
   const prompt = buildFinalStagePrompt({
     catalog: sampleCatalog,
     userInput: '今何時?',
     usedTools: ['read_file'],
     finalResponse: '深夜ですね',
-    isFirst: true,
   });
   assert.ok(prompt.includes('read_file'));
   assert.ok(prompt.includes('深夜ですね'));
   assert.ok(prompt.includes('get time'));
-});
-
-test('buildFinalStagePrompt (isFirst=false) omits catalog — incremental form', () => {
-  const prompt = buildFinalStagePrompt({
-    catalog: sampleCatalog,
-    userInput: '今何時?',
-    usedTools: ['read_file'],
-    finalResponse: '深夜ですね',
-    isFirst: false,
-  });
-  assert.ok(prompt.includes('read_file'));
-  assert.ok(prompt.includes('深夜ですね'));
-  // Catalog shouldn't be resent
-  assert.ok(!prompt.includes('get time'));
 });
 
 test('buildFinalStagePrompt handles empty used_tools', () => {
@@ -79,23 +49,20 @@ test('buildFinalStagePrompt handles empty used_tools', () => {
     userInput: '?',
     usedTools: [],
     finalResponse: 'r',
-    isFirst: true,
   });
   assert.ok(prompt.includes('なし'));
 });
 
-test('createHaikuCaller throws without haikuSessionId', () => {
+test('createHaikuCaller throws on invalid timeout', () => {
   assert.throws(
-    () => createHaikuCaller({ timeoutMs: 1000 }),
+    () => createHaikuCaller({ timeoutMs: 0 }),
     TypeError
   );
 });
 
-test('createHaikuCaller throws on invalid timeout', () => {
-  assert.throws(
-    () => createHaikuCaller({ haikuSessionId: 'abc', timeoutMs: 0 }),
-    TypeError
-  );
+test('createHaikuCaller accepts minimal options (stateless)', () => {
+  const caller = createHaikuCaller({ timeoutMs: 1000 });
+  assert.equal(typeof caller, 'function');
 });
 
 test('parseHaikuResponse: accepts valid pass=true', () => {

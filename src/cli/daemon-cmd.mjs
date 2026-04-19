@@ -34,7 +34,7 @@ export async function runDaemonStart({ argv }) {
 
   let running;
   try {
-    running = await startDaemon({ sessionId, logFn: log, warmup: true });
+    running = await startDaemon({ sessionId, logFn: log });
   } catch (err) {
     if (err instanceof DaemonAlreadyRunningError) {
       // v0.2 PID-preexist layer: a sibling daemon already serves this session.

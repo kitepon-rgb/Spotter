@@ -1,13 +1,17 @@
 // Session-scoped daemon — receives hook events, dispatches to handlers,
 // calls Haiku on user_input / turn_end, keeps used_tools in process memory.
 //
-// §5.4: the Haiku conversation is session-scoped (one per parent session), realised via
-//       --session-id (first call) and --resume (subsequent). The catalog is therefore
-//       transmitted once in the first Haiku call; later calls only send incremental info.
+// v0.4: Haiku calls are STATELESS. Each call is an independent claude -p invocation with
+//       full system prompt + catalog. There is no session-scoped Haiku conversation
+//       (§18.5 is reverted). The daemon still keeps per-turn state (used_tools, lastUserInput)
+//       in its own memory; what was removed is the *Haiku-side* conversation persistence
+//       introduced in v0.2.0. This matches the CLAUDE.md core design
+//       ("Claude 呼び出しは毎回 stateless") and prevents role collapse caused by Haiku
+//       accumulating Bell conversation history across turns.
 // §5.7: event dispatch follows the envelope contract.
 // §14:  unexpected errors are thrown; hooks convert them to exit codes.
 //
-// v0.2 defence layers against daemon proliferation (see plan §18 / C2 verification log):
+// v0.2 defence layers against daemon proliferation (see plan §18) — still active:
 //   - SPOTTER_PARENT_PID env var (set by haiku-caller when spawning claude -p; hooks skip on presence)
 //   - agent_id gate (subagent hooks exit 0 before reaching the daemon)
 //   - source='startup' gate (session-start hook only spawns daemon for startup sources)
@@ -21,7 +25,6 @@ import { createServer, ensureRuntimeDir, socketPath } from './transport.mjs';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
-  buildWarmupPrompt,
   parseHaikuResponse,
   createHaikuCaller,
 } from './haiku-caller.mjs';
@@ -29,7 +32,6 @@ import { loadCatalog } from '../catalog/loader.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 
 const DEFAULT_CATALOG_PATH = join(homedir(), '.spotter', 'tool-catalog', 'tools.yaml');
 const HAIKU_CALL_WINDOW_MS = 10_000;
@@ -47,9 +49,7 @@ export async function startDaemon({
   sessionId,
   catalogPath = DEFAULT_CATALOG_PATH,
   haikuCaller,
-  haikuSessionId,
   logFn = () => {},
-  warmup = false,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -65,14 +65,7 @@ export async function startDaemon({
   const catalog = await loadCatalog(catalogPath);
   logFn(`catalog loaded: ${catalog.tools.length} tools from ${catalogPath}`);
 
-  // Per-daemon Haiku conversation id. Same UUID is used for --session-id (first)
-  // and --resume (subsequent), so Haiku retains the catalog/rules across calls.
-  const ownHaikuSessionId = haikuSessionId ?? randomUUID();
-
-  const callHaiku = haikuCaller ?? createHaikuCaller({
-    timeoutMs: 28_000,
-    haikuSessionId: ownHaikuSessionId,
-  });
+  const callHaiku = haikuCaller ?? createHaikuCaller({ timeoutMs: 28_000 });
 
   // Per-turn state, reset on turn_end.
   const state = {
@@ -80,28 +73,13 @@ export async function startDaemon({
     lastUserInput: null,
   };
 
-  // Haiku call serialisation + bookkeeping.
-  // Serialisation prevents two concurrent incoming events from both computing isFirst=true
-  // and double-sending the catalog (audit H2).
-  let haikuInitialized = false;
+  // 10-second recursion-guard bookkeeping. Every Haiku spawn updates this; incoming
+  // Haiku-invoking events within the window are treated as recursive noise and passed.
   let lastHaikuCallAt = 0;
-  let haikuChain = Promise.resolve();
 
-  const callHaikuTracked = (buildPrompt) => {
-    const run = async () => {
-      lastHaikuCallAt = Date.now();
-      const isFirst = !haikuInitialized;
-      const prompt = buildPrompt({ isFirst });
-      const raw = await callHaiku(prompt, { isFirst });
-      // Only flip to initialised after a successful call so a failed first call is retried
-      // (still as first) rather than leaving Haiku with no catalog/rules in its context.
-      haikuInitialized = true;
-      return raw;
-    };
-    // Chain onto the previous call; whether it resolved or rejected, we run next.
-    const next = haikuChain.then(run, run);
-    haikuChain = next.catch(() => {}); // swallow so chain survives rejections
-    return next;
+  const callHaikuTracked = async (prompt) => {
+    lastHaikuCallAt = Date.now();
+    return callHaiku(prompt);
   };
 
   const handler = async (envelope) => {
@@ -155,9 +133,7 @@ export async function startDaemon({
     state.lastUserInput = userInput;
     state.usedTools = []; // reset tools for this turn
 
-    const raw = await callHaikuTracked(({ isFirst }) =>
-      buildFirstStagePrompt({ catalog, userInput, isFirst })
-    );
+    const raw = await callHaikuTracked(buildFirstStagePrompt({ catalog, userInput }));
     const parsed = parseHaikuResponse(raw);
     logFn(`user_input: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}`);
     return parsed;
@@ -195,13 +171,12 @@ export async function startDaemon({
 
     const savedUserInput = state.lastUserInput;
     const savedUsedTools = state.usedTools.slice();
-    const raw = await callHaikuTracked(({ isFirst }) =>
+    const raw = await callHaikuTracked(
       buildFinalStagePrompt({
         catalog,
         userInput: savedUserInput,
         usedTools: savedUsedTools,
         finalResponse,
-        isFirst,
       })
     );
     const parsed = parseHaikuResponse(raw);
@@ -222,7 +197,7 @@ export async function startDaemon({
   await new Promise((resolve, reject) => {
     server.on('error', (err) => reject(err));
     server.listen(path, () => {
-      logFn(`daemon listening on ${path} (haikuSessionId=${ownHaikuSessionId})`);
+      logFn(`daemon listening on ${path}`);
       resolve();
     });
   });
@@ -231,37 +206,10 @@ export async function startDaemon({
   const pidPath = pidFilePath(sessionId);
   await writeFile(pidPath, String(process.pid), 'utf8');
 
-  // A-2: fire-and-forget Haiku warmup. Pays the cold-start cost during SessionStart
-  // (while the user is still composing their first prompt) rather than blocking the
-  // first UserPromptSubmit. On success the Haiku conversation is ready for --resume
-  // and subsequent calls respond within the 28s timeout. On failure we log and leave
-  // haikuInitialized=false so the next real call retries as --session-id (no regression).
-  // haikuChain serialises this against any incoming event, preventing double-init.
-  //
-  // After warmup settles (success or failure) we reset lastHaikuCallAt so that the first
-  // real user_input is not spuriously silenced by the 10-second recursion window. The
-  // SPOTTER_PARENT_PID env var and agent_id gate already prevent genuine recursion from
-  // the warmup spawn, so this reset does not regress the defence.
-  let warmupPromise = null;
-  if (warmup) {
-    warmupPromise = callHaikuTracked(() => buildWarmupPrompt({ catalog })).then(
-      () => {
-        logFn('warmup: haiku session initialised');
-        lastHaikuCallAt = 0;
-      },
-      (err) => {
-        logFn(`warmup failed: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
-        lastHaikuCallAt = 0;
-      }
-    );
-  }
-
   return {
     server,
     path,
     pidPath,
-    haikuSessionId: ownHaikuSessionId,
-    warmupPromise,
     stop: () => shutdown(server, sessionId, logFn),
   };
 }

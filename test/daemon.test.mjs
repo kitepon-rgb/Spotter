@@ -27,7 +27,7 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
-  const haikuCaller = async (_prompt, _opts) => {
+  const haikuCaller = async (_prompt) => {
     haikuCalls += 1;
     return JSON.stringify({
       pass: false,
@@ -52,21 +52,27 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
   }
 });
 
-test('startDaemon: first call has isFirst=true, subsequent isFirst=false', async () => {
+test('startDaemon: every Haiku invocation receives the full catalog prompt (stateless)', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
-  const isFirstSeen = [];
-  const haikuCaller = async (_prompt, opts) => {
-    isFirstSeen.push(opts?.isFirst);
+  const promptsSeen = [];
+  const haikuCaller = async (prompt) => {
+    promptsSeen.push(prompt);
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
   const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
   try {
-    await sendRequest({ sessionId, event: 'user_input', payload: { user_input: '1' }, timeoutMs: 2_000 });
-    // wait out the 10s window so the 2nd call actually reaches Haiku rather than being skipped
-    // instead of sleeping, we verify just that the first was isFirst=true
-    assert.equal(isFirstSeen[0], true);
-    assert.equal(isFirstSeen.length, 1);
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '何時?' },
+      timeoutMs: 2_000,
+    });
+    // v0.4: every call carries the full catalog — no incremental form.
+    assert.equal(promptsSeen.length, 1);
+    assert.ok(promptsSeen[0].includes('current_time'));
+    assert.ok(promptsSeen[0].includes('get the current time'));
+    assert.ok(promptsSeen[0].includes('出力スキーマ'));
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });
@@ -77,7 +83,7 @@ test('startDaemon: tool_used records without invoking Haiku', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
-  const haikuCaller = async (_prompt, _opts) => {
+  const haikuCaller = async (_prompt) => {
     haikuCalls += 1;
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
@@ -102,7 +108,7 @@ test('startDaemon: turn_end passes when stop_hook_active is true (§7.5)', async
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
-  const haikuCaller = async (_prompt, _opts) => {
+  const haikuCaller = async (_prompt) => {
     haikuCalls += 1;
     return JSON.stringify({ pass: false, missing_tools: [{ name: 'current_time', reason: 'r' }] });
   };
@@ -134,7 +140,7 @@ test('startDaemon: 10-second window skips concurrent Haiku-invoking events', asy
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
-  const haikuCaller = async (_prompt, _opts) => {
+  const haikuCaller = async (_prompt) => {
     haikuCalls += 1;
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
@@ -170,7 +176,7 @@ test('startDaemon: session_id mismatch rejected as E_INTERNAL', async () => {
   const running = await startDaemon({
     sessionId,
     catalogPath,
-    haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
+    haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
   });
   try {
     const net = await import('node:net');
@@ -206,7 +212,7 @@ test('startDaemon: throws on missing catalog', async () => {
     startDaemon({
       sessionId,
       catalogPath: '/nonexistent/catalog.yaml',
-      haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
+      haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
     })
   );
 });
@@ -217,30 +223,12 @@ test('startDaemon: readiness event responds immediately', async () => {
   const running = await startDaemon({
     sessionId,
     catalogPath,
-    haikuCaller: async (_p, _o) => { throw new Error('should not be called'); },
+    haikuCaller: async (_p) => { throw new Error('should not be called'); },
   });
   try {
     const resp = await sendRequest({ sessionId, event: 'readiness', timeoutMs: 1_000 });
     assert.equal(resp.ok, true);
     assert.equal(resp.result.ready, true);
-  } finally {
-    await running.stop();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('startDaemon: exposes haikuSessionId on the returned handle', async () => {
-  const { dir, catalogPath } = await setupCatalog();
-  const sessionId = `d-${randomUUID()}`;
-  const running = await startDaemon({
-    sessionId,
-    catalogPath,
-    haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
-  });
-  try {
-    assert.equal(typeof running.haikuSessionId, 'string');
-    assert.ok(running.haikuSessionId.length > 0);
-    // Accepts a caller-supplied id too
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });
@@ -258,96 +246,12 @@ test('startDaemon: DaemonAlreadyRunningError when PID file points at live proces
       startDaemon({
         sessionId,
         catalogPath,
-        haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
+        haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
       }),
       (err) => err instanceof DaemonAlreadyRunningError && err.sessionId === sessionId
     );
   } finally {
     try { await unlink(pidPath); } catch {}
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('startDaemon (A-2): warmup=true fires one Haiku call and sets haikuInitialized', async () => {
-  const { dir, catalogPath } = await setupCatalog();
-  const sessionId = `warmup-${randomUUID()}`;
-  const isFirstSeen = [];
-  const haikuCaller = async (_prompt, opts) => {
-    isFirstSeen.push(opts?.isFirst);
-    return JSON.stringify({ pass: true, missing_tools: [] });
-  };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller, warmup: true });
-  try {
-    assert.ok(running.warmupPromise instanceof Promise);
-    await running.warmupPromise;
-    // warmup call was the first and only call so far, with isFirst=true
-    assert.deepEqual(isFirstSeen, [true]);
-
-    // A real user_input after warmup should reach Haiku as isFirst=false (resumed session)
-    const resp = await sendRequest({
-      sessionId,
-      event: 'user_input',
-      payload: { user_input: 'hi' },
-      timeoutMs: 2_000,
-    });
-    assert.equal(resp.ok, true);
-    // Not silenced by the 10s window (warmup reset lastHaikuCallAt)
-    assert.notEqual(resp.result.reason, 'within_haiku_call_window');
-    assert.deepEqual(isFirstSeen, [true, false]);
-  } finally {
-    await running.stop();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('startDaemon (A-2): warmup failure leaves haikuInitialized=false for next call', async () => {
-  const { dir, catalogPath } = await setupCatalog();
-  const sessionId = `warmup-fail-${randomUUID()}`;
-  const isFirstSeen = [];
-  let callIdx = 0;
-  const haikuCaller = async (_prompt, opts) => {
-    isFirstSeen.push(opts?.isFirst);
-    callIdx += 1;
-    if (callIdx === 1) throw new Error('simulated haiku failure');
-    return JSON.stringify({ pass: true, missing_tools: [] });
-  };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller, warmup: true });
-  try {
-    await running.warmupPromise;
-    // warmup attempt was isFirst=true and failed
-    assert.deepEqual(isFirstSeen, [true]);
-
-    // Next user_input should retry as isFirst=true (no regression from warmup failure)
-    const resp = await sendRequest({
-      sessionId,
-      event: 'user_input',
-      payload: { user_input: 'hi' },
-      timeoutMs: 2_000,
-    });
-    assert.equal(resp.ok, true);
-    assert.deepEqual(isFirstSeen, [true, true]);
-  } finally {
-    await running.stop();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('startDaemon (A-2): warmup=false (default) does not call Haiku at startup', async () => {
-  const { dir, catalogPath } = await setupCatalog();
-  const sessionId = `no-warmup-${randomUUID()}`;
-  let haikuCalls = 0;
-  const haikuCaller = async (_prompt, _opts) => {
-    haikuCalls += 1;
-    return JSON.stringify({ pass: true, missing_tools: [] });
-  };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
-  try {
-    assert.equal(running.warmupPromise, null);
-    // Give the event loop a tick to surface any rogue async call
-    await new Promise((r) => setImmediate(r));
-    assert.equal(haikuCalls, 0);
-  } finally {
-    await running.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -363,7 +267,7 @@ test('startDaemon: stale PID file (dead process) does not block startup', async 
     running = await startDaemon({
       sessionId,
       catalogPath,
-      haikuCaller: async (_p, _o) => JSON.stringify({ pass: true, missing_tools: [] }),
+      haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
     });
     assert.ok(running);
   } finally {

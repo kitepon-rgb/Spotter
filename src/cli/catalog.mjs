@@ -6,7 +6,6 @@
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { runLint } from '../catalog/lint.mjs';
 import { createHaikuCaller } from '../daemon/haiku-caller.mjs';
 
@@ -26,16 +25,9 @@ function defaultEditor() {
 }
 
 export async function runCatalogLint({ catalogPath = CATALOG_PATH } = {}) {
-  // Each test case must be independent, so generate a fresh Haiku session per call.
-  // (Reusing one session-id across cases would have Haiku's context carry judgements
-  // from earlier cases, contaminating later ones.)
-  const haikuCaller = async (prompt, opts = {}) => {
-    const caller = createHaikuCaller({
-      timeoutMs: 30_000,
-      haikuSessionId: randomUUID(),
-    });
-    return await caller(prompt, { ...opts, isFirst: true });
-  };
+  // v0.4: Haiku is stateless — each createHaikuCaller call already spawns a fresh session
+  // per invocation, so test cases are structurally independent.
+  const haikuCaller = createHaikuCaller({ timeoutMs: 30_000 });
   const result = await runLint({
     catalogPath,
     haikuCaller,
