@@ -47,10 +47,11 @@ import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
 const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
 // v0.5.0: lowered 60s → 30s. Session-scoped (--resume) means the first call still pays
-// cold-start but subsequent calls skip it. 30s covers the first-call cold path without
-// being excessive, and a role-collapse recovery cycle (reset → next call is effectively
-// a cold start again) stays within budget.
-const DEFAULT_HAIKU_TIMEOUT_MS = 30_000;
+// cold-start but subsequent calls skip it. 45s covers first-call cold path plus the
+// observed Haiku CLI latency spikes (2026-04-20 log shows 20.9s resumed calls and 30s
+// timeouts in the wild). Role-collapse recovery (reset → next call is effectively a
+// cold start again) stays within budget.
+const DEFAULT_HAIKU_TIMEOUT_MS = 45_000;
 // v0.12.0: heartbeat-based orphan cleanup. Every envelope resets a setTimeout; if no
 // hook event arrives within this window, the daemon self-shuts. 30 min is the longest
 // silence we expect from a live Claude Code session. UserPromptSubmit auto-resurrects

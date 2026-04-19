@@ -15,6 +15,35 @@ Spotter で現時点 (v0.13.0 時点, 2026-04-20) に **塞がっていない穴
 
 ---
 
+## P0 — 緊急対処タスク (2026-04-20 実測で確認)
+
+実セッションの daemon ログで確認済みの実害。観測タスクと違い、既に壊れている / 見えないターンを生む恐れがあるため、優先的に対処する。
+
+### E_HAIKU_TIMEOUT の再発率観測 (v0.13.1 で 45s に緩和済み)
+
+**背景**: v0.13.0 までの daemon は `DEFAULT_HAIKU_TIMEOUT_MS = 30_000` で Haiku 応答を待っていたが、[daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15 で `E_HAIKU_TIMEOUT` を観測。同ログ line 20 でも `mode=first, duration_ms=20948` と timeout の 70% 域まで達していた。v0.13.1 で Haiku timeout を 45s、hook 側 IPC timeout を 50s に引き上げ済み ([daemon.mjs:53](../src/daemon/daemon.mjs#L53), [hooks/user-prompt.mjs:24](../src/hooks/user-prompt.mjs#L24), [hooks/stop.mjs:18](../src/hooks/stop.mjs#L18))。
+
+**Haiku 4.5 の高速化ダイヤル** (2026-04-20 公式 docs 確認):
+- `--effort` は Opus 4.7 / Opus 4.6 / Sonnet 4.6 のみ対応、**Haiku 4.5 は effort 非対応** ([model-config docs](https://code.claude.com/docs/en/model-config#adjust-effort-level))
+- Haiku 4.5 は **extended thinking 対応だが adaptive thinking 非対応** ([models/overview](https://platform.claude.com/docs/en/docs/about-claude/models/overview) 比較表)
+- `claude -p` に thinking 直接フラグ無し。API デフォルトで thinking は OFF
+- つまり「Haiku をさらに速くするつまみ」は存在せず、timeout 緩和しか打ち手が無い
+
+**次アクション**: v0.13.1 リリース後の daemon ログで `E_HAIKU_TIMEOUT` が 45s でも発生するか集計。発生率が下がらなければ (b) retry or (c) 動的延長を検討。発生率がゼロに近ければこの項目は closable。
+
+### daemon プロセスが shutdown ログなしに死ぬ
+
+**背景**: [daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15 (E_HAIKU_TIMEOUT) の 53 秒後、同じ `session_id` で **shutdown ログなしに daemon が再起動** している (line 16-19 の `tool-db loaded` → `daemon listening` → `heartbeat armed` → `started`)。SessionEnd も heartbeat expire も走っていない。
+
+v0.12.0 の UserPromptSubmit auto-resurrect が次のユーザー入力で `E_UNREACHABLE` を拾って spawn し直したと推定されるが、**auto-resurrect で救われている分、sudden death 自体は観測されないまま積もる**。その間の turn_end / PreToolUse が届かない = 見えない欠落ターン。
+
+**次アクション**:
+- daemon の uncaught exception / unhandled rejection を stderr + file にも吐くよう handler 追加 (現状ログに痕跡なしなのは捕捉漏れの可能性大)
+- E_HAIKU_TIMEOUT が daemon 自体を落としていないか haiku-caller.mjs を精読 (timer / child.kill の後処理に穴がないか)
+- auto-resurrect 発動時に daemon 側へ「前プロセス死亡 + 現セッションで N 分 gap」を記録させ、頻度を可視化
+
+---
+
 ## P0 — 実運用観測タスク
 
 v0.7.0 〜 v0.10.0 で tool-db が 5 件 (手書き抽象カタログ) → **57 件** (実 MCP + deferred + baseline) に膨らんだ。さらに v0.13.0 で Stop 判定軸を「要請充足チェック」から「ツール適用機会の監査」に転換した。これらの変化を実測で評価する。

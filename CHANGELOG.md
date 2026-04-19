@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.13.1
+
+**Haiku timeout 30s → 45s 緩和 + hook 側 IPC timeout を整合**。v0.13.0 以前の実セッション ([daemon-80b5c0af.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15) で `E_HAIKU_TIMEOUT: haiku did not respond within 30000ms` を観測。同ログ line 20 でも `mode=first, duration_ms=20948` と 30s の 70% 域まで達しており、timeout が実測レイテンシに対して狭すぎた。合わせて [src/hooks/stop.mjs](src/hooks/stop.mjs) の IPC timeout が元々 15s で Haiku 側 30s と整合していなかった既存バグ (turn_end で Haiku が 16s 超かかると hook 側が先に諦めていた) も同時解消。
+
+### 調査で判明した Haiku 4.5 の高速化ダイヤル不在
+
+公式 docs 確認 (2026-04-20):
+
+- `--effort` フラグは Opus 4.7 / Opus 4.6 / Sonnet 4.6 のみ対応、**Haiku 4.5 は effort 非対応** ([model-config docs](https://code.claude.com/docs/en/model-config#adjust-effort-level))
+- Haiku 4.5 は **extended thinking 対応だが adaptive thinking 非対応** ([models/overview](https://platform.claude.com/docs/en/docs/about-claude/models/overview) 比較表)
+- `claude -p` CLI に thinking 直接フラグ無し、API デフォルトで thinking は OFF
+- つまり Haiku 側で「速くする手段」は存在せず、timeout 緩和しか打ち手が無い (Sonnet 4.6 切替は遅くなる + 3 倍コストで逆効果)
+
+### 変更点
+
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `DEFAULT_HAIKU_TIMEOUT_MS` を 30_000 → 45_000。first-call cold-start + 観測されたレイテンシスパイク (20.9s) + margin を包含
+- **編集 [src/hooks/user-prompt.mjs](src/hooks/user-prompt.mjs)**: `TIMEOUT_MS` を 30_000 → 50_000 (Haiku 45s + IPC margin 5s)
+- **編集 [src/hooks/stop.mjs](src/hooks/stop.mjs)**: `TIMEOUT_MS` を 15_000 → 50_000 (既存の整合性バグも解消)
+
+### 残課題
+
+Haiku 突然死 (shutdown ログなしで daemon 再起動する事象、v0.12.0 auto-resurrect で救われているが見えない欠落ターンが発生する) は未対処。[docs/open-issues.md](docs/open-issues.md) P0 に残置。
+
 ## 0.13.0
 
 **Stop 判定軸を「要請充足チェック」から「ツール適用機会の監査」に転換**。v0.12.x 以前の `stage=turn_end` は `<user_input>` + `<used_tools>` + `<final_response>` を Haiku に渡し、「ユーザー要請されたツールが使われたか」を判定していた。この軸では Bell が Stop 到達後にすべき動作 — 事実断定の裏付け / 新知見の記録 / 既知情報の照会 — を拾えない。実セッションで Haiku が応答「判明: A モジュールは B に依存」に対し `caveat_record` を推奨する、といった本来期待される指摘が構造的に出ない状態だった (ユーザーが [この議論](https://github.com/kitepon-rgb/Spotter) で指摘)。

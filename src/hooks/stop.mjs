@@ -15,7 +15,7 @@ import {
 import { getLastAssistantText } from './transcript-reader.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 
-const TIMEOUT_MS = 15_000;
+const TIMEOUT_MS = 50_000;
 
 export async function runStop() {
   if (isChildCall()) return;

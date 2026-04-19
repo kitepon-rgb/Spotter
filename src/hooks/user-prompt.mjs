@@ -21,7 +21,7 @@ import {
 import { sendRequest, TransportError } from '../daemon/transport.mjs';
 import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
 
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 50_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
 
 export async function runUserPrompt() {
