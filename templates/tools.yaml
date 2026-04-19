@@ -1,0 +1,111 @@
+version: 1
+tools:
+  - name: current_time
+    category: time
+    purpose: >
+      現在の日時を正確に取得する。LLM は会話の流れから時刻を合成する癖があるが
+      不正確。時刻に言及する発話を出す前に必ず呼ぶ。
+    when_to_use:
+      - 「今何時」「今日は何日」等の時刻直接質問
+      - 「もう深夜だね」等の時刻言及を伴う発話
+      - 営業時間・締切・祝日など時間依存の判断
+    usage: current_time [timezone]
+    examples:
+      - input: もう夜遅いね
+        call: current_time Asia/Tokyo
+      - input: 今何時?
+        call: current_time
+    keywords: [今, 現在, 時刻, 日付, 何時, 今日, now, today, time]
+    test_cases:
+      - user_input: 今何時?
+        expected_tool: current_time
+      - user_input: 今日は何月何日?
+        expected_tool: current_time
+
+  - name: web_search
+    category: information
+    purpose: >
+      最新情報を Web から取得する。LLM の訓練データは特定時点までなので、
+      それ以降の出来事・価格・バージョン・ニュースは自力で答えない。
+    when_to_use:
+      - 最新ニュース・イベント・トレンドの質問
+      - 製品バージョン・リリース情報
+      - 価格・在庫・営業情報の問い合わせ
+      - 訓練データ以降に発生した事象の確認
+    usage: web_search <query>
+    examples:
+      - input: Claude の最新モデルは?
+        call: web_search "latest Claude model release"
+      - input: 今日の東京の天気
+        call: web_search "Tokyo weather today"
+    keywords: [最新, ニュース, 今, 現在, トレンド, 調べて, 検索, latest, news, search]
+    test_cases:
+      - user_input: React の最新バージョンは?
+        expected_tool: web_search
+      - user_input: 昨日のニュース教えて
+        expected_tool: web_search
+
+  - name: read_file
+    category: filesystem
+    purpose: >
+      ローカルファイルの内容を正確に読み取る。記憶から内容を再構成せず、
+      必ず最新の内容を取得する。
+    when_to_use:
+      - ユーザーがファイル名・パスを明示した質問
+      - コードのレビューや修正の依頼
+      - 設定ファイル・ログファイルの確認依頼
+    usage: read_file <path>
+    examples:
+      - input: package.json 見せて
+        call: read_file package.json
+      - input: src/index.js にバグある?
+        call: read_file src/index.js
+    keywords: [ファイル, 読ん, 開い, 見せて, 確認, read, file, open]
+    test_cases:
+      - user_input: README.md の内容は?
+        expected_tool: read_file
+      - user_input: この src/app.ts にバグがあるか確認して
+        expected_tool: read_file
+
+  - name: list_directory
+    category: filesystem
+    purpose: >
+      ディレクトリのファイル一覧を取得する。何があるか分からない状態で
+      推測せず、実際の一覧を確認する。
+    when_to_use:
+      - 「どんなファイルがある?」等のディレクトリ内容質問
+      - プロジェクト構造の把握
+      - 特定パターンのファイル存在確認
+    usage: list_directory <path>
+    examples:
+      - input: src/ 以下のファイル一覧
+        call: list_directory src/
+      - input: このプロジェクトの構造を教えて
+        call: list_directory .
+    keywords: [一覧, リスト, 構造, どんな, どこに, ls, list]
+    test_cases:
+      - user_input: test/ にどんなファイルある?
+        expected_tool: list_directory
+
+  - name: run_command
+    category: shell
+    purpose: >
+      シェルコマンドを実行する。ビルド・テスト・git 操作・環境確認など、
+      実行結果を知る必要がある場合に使う。実行結果を推測で答えない。
+    when_to_use:
+      - ビルド・テスト・リント実行の依頼
+      - git 操作 (status, log, diff)
+      - 環境確認 (node -v, which, 等)
+      - パッケージのインストール・更新
+    usage: run_command <command>
+    examples:
+      - input: テスト通る?
+        call: run_command "npm test"
+      - input: git の状態
+        call: run_command "git status"
+    keywords: [実行, 走ら, ビルド, テスト, npm, git, run, build, test]
+    test_cases:
+      - user_input: node のバージョン確認して
+        expected_tool: run_command
+      - user_input: npm test 通るか見て
+        expected_tool: run_command

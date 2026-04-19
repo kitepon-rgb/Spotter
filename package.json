@@ -1,0 +1,48 @@
+{
+  "name": "claude-spotter",
+  "version": "0.1.0",
+  "description": "Audit agent running alongside Claude Code that catches missed tool calls — 気づく役と実行する役の分離",
+  "type": "module",
+  "bin": {
+    "spotter": "./bin/spotter.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "hooks",
+    "agent",
+    "tool-use",
+    "audit",
+    "spotter"
+  ],
+  "author": "kitepon",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kitepon-rgb/Spotter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kitepon-rgb/Spotter/issues"
+  },
+  "homepage": "https://github.com/kitepon-rgb/Spotter#readme",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ]
+}
