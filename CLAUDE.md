@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v0.6.2** (2026-04-19): **親プロセス watch で孤児 daemon を自動回収**。SessionEnd が発火しない経路 (Claude Code crash / kill / IDE reload) で daemon が永久に残る問題への対処。SessionStart hook が `--parent-pid <process.ppid>` (Claude Code 本体 PID) を daemon に渡し、daemon は 5 秒間隔で `process.kill(parentPid, 0)` を ping、ESRCH なら自身を shutdown。実運用で 9 daemon 中 8 個が孤児だった (手動 kill 必要) 状態を解消。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
 **v0.6.0** (2026-04-19): **Preamble-once 化**。v0.5.2 で可視化した duration_ms を実測したところ、`first=7.4s → resumed=12.5s → resumed=20.2s` と resumed のほうが遅いという設計意図と逆の結果。真因は「`--resume` で session を継いでいるのに毎回 full prompt (role + schema + catalog + few-shot) を再送して session を肥大化させていた」こと。`buildPreamble({ catalog })` を新設、初回 1 回だけ送って以降は per-turn delta (stage マーカー + 入力タグ) のみにした。同作者の OpenClaw が Discord → Claude 長期セッションで使っているパターンを持ち込んだ。role collapse 耐性は既存 reset 機構がそのまま機能する (reset 時に preamble 再送)。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
 **v0.5.2** (2026-04-19): Haiku 呼び出しレイテンシ可視化。daemon ログに `mode=first|resumed, duration_ms=<N>` を追加し、`--resume` 経路の cold-start 削減効果 / role collapse 回復時間 / timeout 余裕を観測可能にした。機能変更なし、`isFirstCall` getter 追加 + ログフォーマット拡張のみ。これで v0.5.0/v0.5.1 の既知課題 (resume 実効削減量未検証、role collapse 実発生頻度未観測) が数値で判断できる状態になる。詳細は [CHANGELOG.md](CHANGELOG.md)。

@@ -47,6 +47,11 @@ const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
 // being excessive, and a role-collapse recovery cycle (reset → next call is effectively
 // a cold start again) stays within budget.
 const DEFAULT_HAIKU_TIMEOUT_MS = 30_000;
+// v0.6.2: parent-process watch interval. SessionStart hook passes the Claude Code PID;
+// the daemon polls it so it can self-terminate when Claude Code dies without firing
+// SessionEnd (crash, kill -9, IDE reload). 5s is a balance between responsiveness and
+// idle CPU cost — well below the cost of an orphan daemon staying up indefinitely.
+const DEFAULT_PARENT_WATCH_INTERVAL_MS = 5_000;
 
 export class DaemonAlreadyRunningError extends Error {
   constructor(sessionId, pid) {
@@ -63,9 +68,14 @@ export async function startDaemon({
   haikuCaller,
   logFn = () => {},
   haikuCallWindowMs = DEFAULT_HAIKU_CALL_WINDOW_MS,
+  parentPid = null,
+  parentWatchIntervalMs = DEFAULT_PARENT_WATCH_INTERVAL_MS,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
+  }
+  if (parentPid !== null && (!Number.isInteger(parentPid) || parentPid <= 0)) {
+    throw new TypeError('parentPid must be a positive integer or null');
   }
 
   await ensureRuntimeDir();
@@ -158,7 +168,7 @@ export async function startDaemon({
       case 'turn_end':
         return handleTurnEnd(envelope.payload ?? {});
       case 'shutdown':
-        setImmediate(() => shutdown(server, sessionId, logFn));
+        setImmediate(() => stop());
         return { stopping: true };
       default: {
         const err = new Error(`unknown event: ${envelope.event}`);
@@ -257,12 +267,51 @@ export async function startDaemon({
   const pidPath = pidFilePath(sessionId);
   await writeFile(pidPath, String(process.pid), 'utf8');
 
+  // v0.6.2: parent-process watch. SessionEnd is a graceful path; if Claude Code dies
+  // without it (crash, kill, IDE reload), nothing else cleans us up. Poll the parent
+  // PID and self-terminate on its disappearance.
+  let parentWatchHandle = null;
+  if (parentPid !== null) {
+    logFn(`watching parent pid=${parentPid} (interval=${parentWatchIntervalMs}ms)`);
+    parentWatchHandle = setInterval(() => {
+      if (!isProcessAlive(parentPid)) {
+        logFn(`parent pid=${parentPid} gone, shutting down`);
+        clearInterval(parentWatchHandle);
+        parentWatchHandle = null;
+        shutdown(server, sessionId, logFn).catch((err) => {
+          logFn(`parent-watch shutdown error: ${err.message}`);
+        });
+      }
+    }, parentWatchIntervalMs);
+    parentWatchHandle.unref();
+  }
+
+  const stop = async () => {
+    if (parentWatchHandle !== null) {
+      clearInterval(parentWatchHandle);
+      parentWatchHandle = null;
+    }
+    return shutdown(server, sessionId, logFn);
+  };
+
   return {
     server,
     path,
     pidPath,
-    stop: () => shutdown(server, sessionId, logFn),
+    stop,
   };
+}
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    if (err.code === 'ESRCH') return false;
+    if (err.code === 'EPERM') return true; // exists but owned by another user
+    // Unknown errno — be conservative and assume alive (don't auto-kill on transient).
+    return true;
+  }
 }
 
 async function assertNoLiveDaemon(sessionId) {

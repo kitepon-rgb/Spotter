@@ -67,12 +67,18 @@ export async function runSessionStart({ argv = process.argv, now = Date.now } = 
 
 function spawnDaemon(sessionId, argv) {
   // Invoke `node <spotter-bin> daemon start --session-id ...` detached.
+  // v0.6.2: pass --parent-pid so the daemon can self-terminate when Claude Code dies
+  // without firing SessionEnd. process.ppid here is Claude Code (this hook's parent).
   const spotterBin = resolveSpotterBin(argv);
-  const child = spawn(process.execPath, [spotterBin, 'daemon', 'start', '--session-id', sessionId], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
+  const child = spawn(
+    process.execPath,
+    [spotterBin, 'daemon', 'start', '--session-id', sessionId, '--parent-pid', String(process.ppid)],
+    {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }
+  );
   child.on('error', (err) => {
     // best effort: the polling below will fail if the spawn actually didn't work
     process.stderr.write(`spotter-hook: daemon spawn error: ${err.message}\n`);

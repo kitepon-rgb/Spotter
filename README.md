@@ -1,12 +1,12 @@
 # Spotter
 
-> **v0.4.3 released 2026-04-19**. v0.2.0 で追加した session-scoped Haiku は Spotter 本体プロジェクトでの長時間運用中に role collapse (Haiku が Bell 人格に drift) を起こしたため、v0.4.0 で stateless に回帰。v0.4.2 で stateless 化の副作用として発生した cold-start timeout 問題に対処 (timeout 28s→60s + stateless-safe warmup)、v0.4.3 で過剰になっていたプロンプトを 30-40% 削減。詳細は [CHANGELOG](CHANGELOG.md)。
+> **v0.6.2 released 2026-04-19**. v0.4 で stateless に回帰したが cold-start レイテンシ (毎ターン 30 秒前後の待ち) が運用で問題化したため、v0.5.0 で **session-scoped Haiku を「JSON パース失敗検知 → session renew + silent pass」の事後回復機構付き**で復活。v0.6.0 で **preamble (role + schema + catalog + few-shot) を初回のみ送信** する形 (preamble-once) に変更して `--resume` 経由の resumed 呼び出しが first より遅くなる v0.5.x の逆転現象を解消。v0.6.2 で **親プロセス (Claude Code) の死を 5 秒間隔で検知して daemon を自動 shutdown** する watch を追加し、SessionEnd が発火しない経路 (crash / kill / IDE reload) での孤児 daemon 残存を解消。詳細は [CHANGELOG](CHANGELOG.md)。
 
 **気づく役と実行する役を分離する。** Spotter は Claude Code の横で静かに並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**に指摘する監査役です。
 
 > Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。現在時刻を推測で答える、web_search を呼ばずに古い情報で応答する、read_file を使わずにファイルの中身を推測する — 「分からないと自覚できない」から、ツールを取りに行けない。
 
-Spotter は、ツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎にプロセスとして常駐させ、Bell の発話予定と応答を並走監査します。見落としを検出すると、透明化された指摘として Bell に届け、補正応答を促します。Haiku 呼び出しは毎ターン stateless (fresh `--session-id`) で実行されるため、長時間運用しても会話履歴による persona drift を構造的に防ぎます。
+Spotter は、ツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎にプロセスとして常駐させ、Bell の発話予定と応答を並走監査します。見落としを検出すると、透明化された指摘として Bell に届け、補正応答を促します。Haiku 呼び出しは session-scoped (`--resume`) で同一セッションに再接続して cold-start を削減し、初回のみ preamble を送って以降は per-turn delta だけ送ることで session 肥大化を防ぎます。role collapse (persona drift で JSON 契約破棄) は構造的に予防せず、検知した瞬間に session を切り直して fresh state から再開する事後回復機構で長時間運用に耐えます。
 
 ## インストール
 
@@ -75,7 +75,7 @@ spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ## 既知の制約
 
 - Stop hook は Bell の最初の応答が**出力された後**に発火するため、Spotter が Stop で差し戻した場合、ユーザーは「最初の応答 + 補正応答」の 2 連続を見ます (Claude Code の hook 仕様による制約)。UserPromptSubmit 段階での先回り検出を精度の軸にしています
-- JSON スキーマ違反・Haiku timeout はリトライせず即 throw します (§14.1 silent fallback 禁止の帰結)。UserPromptSubmit がブロックされユーザー入力が Bell に届かない症状として顕在化します。cold-start 対策として v0.4.2 で timeout 60s + warmup を導入しましたが、fail-open 化 (timeout を pass 扱い) は §0 改訂とセットで今後検討
+- **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Bell に届かない症状として顕在化します (timeout は v0.5.0 で 30s に短縮)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
 
 ## ライセンス
 

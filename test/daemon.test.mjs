@@ -6,6 +6,7 @@ import { mkdtemp, writeFile, rm, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 
 async function setupCatalog() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-test-'));
@@ -397,6 +398,67 @@ test('startDaemon: turn_end log records mode=resumed when caller is past its fir
     assert.match(line, /duration_ms=\d+/);
   } finally {
     await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: parent-watch shuts daemon down when parent process dies (v0.6.2)', async () => {
+  // SessionStart hook passes Claude Code's PID via --parent-pid. The daemon polls it and
+  // self-terminates when the parent disappears (covers crash / kill / IDE reload paths
+  // where SessionEnd never fires). We simulate Claude Code with a sleeping child node
+  // process and kill it after the daemon starts watching.
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `pwatch-${randomUUID()}`;
+  const haikuCaller = async (_p) => JSON.stringify({ pass: true, missing_tools: [] });
+  const fakeParent = spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)'], { stdio: 'ignore' });
+  let running;
+  try {
+    running = await startDaemon({
+      sessionId,
+      catalogPath,
+      haikuCaller,
+      parentPid: fakeParent.pid,
+      parentWatchIntervalMs: 50,
+    });
+    const closed = new Promise((resolve) => running.server.on('close', resolve));
+    fakeParent.kill('SIGKILL');
+    const winner = await Promise.race([
+      closed.then(() => 'closed'),
+      new Promise((res) => setTimeout(() => res('timeout'), 3_000)),
+    ]);
+    assert.equal(winner, 'closed', 'daemon should close after parent dies');
+  } finally {
+    if (!fakeParent.killed) fakeParent.kill('SIGKILL');
+    if (running) {
+      try { await running.stop(); } catch { /* server may already be closed */ }
+    }
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: rejects non-positive or non-integer parentPid (v0.6.2)', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `pwatch-bad-${randomUUID()}`;
+  try {
+    await assert.rejects(
+      () => startDaemon({
+        sessionId,
+        catalogPath,
+        parentPid: 0,
+        haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
+      }),
+      TypeError
+    );
+    await assert.rejects(
+      () => startDaemon({
+        sessionId,
+        catalogPath,
+        parentPid: 1.5,
+        haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
+      }),
+      TypeError
+    );
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.6.2
+
+**親プロセス watch による孤児 daemon 自動回収**。SessionEnd が発火しない経路 (Claude Code crash, kill -9, IDE reload) で daemon が永久に残る問題への対処。
+
+### 事の発端
+
+実運用で `spotter status` を見ると、現セッション以外に複数の daemon が `process=alive` で残存している状態が頻発していた。今回の観測では 9 個中 8 個が孤児で、手動 `taskkill` + `.pid` ファイル削除で掃除する必要があった。原因は SessionEnd hook が**正常終了経路でしか発火しない**こと。Claude Code の crash、強制終了、VSCode リロード等のいずれかで daemon は親を失っても生き続ける。v0.2 スコープに「孤児 cleanup」と書いてあったが未実装のままだった。
+
+### 変更点
+
+- **[src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `startDaemon({ parentPid, parentWatchIntervalMs })` を追加。`parentPid` が指定されると 5 秒間隔 (default) で `process.kill(parentPid, 0)` を ping し、ESRCH を検知したら自身を shutdown。`parentWatchIntervalMs` はテスト用に短縮可能。`parentPid !== null && (!Number.isInteger || <= 0)` は TypeError で reject。
+- **[src/cli/daemon-cmd.mjs](src/cli/daemon-cmd.mjs)**: `--parent-pid <N>` 引数をパースして `startDaemon` に渡す。
+- **[src/hooks/session-start.mjs](src/hooks/session-start.mjs)**: daemon spawn 時に `--parent-pid <process.ppid>` を付与。`process.ppid` は SessionStart hook から見た親 = Claude Code 本体。
+- **[test/daemon.test.mjs](test/daemon.test.mjs)**: 子プロセスを fake parent として spawn → daemon 起動 → 子を SIGKILL → daemon の `server.on('close')` が発火することを検証する E2E テストを追加。`parentPid: 0` / `1.5` が TypeError になることのバリデーションテストも追加。
+
+### 効果
+
+- 通常運用 (SessionEnd 発火経路) では従来どおり graceful shutdown
+- 異常終了経路 (crash, kill, reload) では親消滅を最大 5 秒で検知して自殺
+- 観測コスト: `process.kill(pid, 0)` の syscall が 5 秒に 1 回。idle CPU 影響は無視できる程度
+
+### 既知の制約
+
+- 親 PID を持たない経路 (手動 `spotter daemon start --session-id ...`) では watch が動かない (parentPid が null)。これは debug 用なので許容。
+- Claude Code が中間プロセス (cmd.exe / sh wrapper) 越しに hook を起動している場合、`process.ppid` が wrapper を指す可能性あり。今回の Windows 環境では実測で Claude Code 本体を指していたが、将来的に環境差で問題が出れば PID 取得方法を再検討。
+- 5 秒間隔のため、kill 直後の最大 5 秒は孤児状態が残る。これ以上短縮するなら polling コストとのトレードオフ再評価。
+
 ## 0.6.1
 
 **v0.6.0 で `src/version.mjs` を更新し忘れた trivia fix**。`spotter --version` が古い `0.5.2` を返していた。挙動差はない。
