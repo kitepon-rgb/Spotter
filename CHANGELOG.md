@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.13.0
+
+**Stop 判定軸を「要請充足チェック」から「ツール適用機会の監査」に転換**。v0.12.x 以前の `stage=turn_end` は `<user_input>` + `<used_tools>` + `<final_response>` を Haiku に渡し、「ユーザー要請されたツールが使われたか」を判定していた。この軸では Bell が Stop 到達後にすべき動作 — 事実断定の裏付け / 新知見の記録 / 既知情報の照会 — を拾えない。実セッションで Haiku が応答「判明: A モジュールは B に依存」に対し `caveat_record` を推奨する、といった本来期待される指摘が構造的に出ない状態だった (ユーザーが [この議論](https://github.com/kitepon-rgb/Spotter) で指摘)。
+
+### 新軸: ツール適用機会の監査
+
+- **入力**: `<used_tools>` + `<final_response>` のみ (user_input は削除)
+- **問い**: 「この応答で、カタログ上のツールが役立つ箇所ないか？」
+- **3 カテゴリ**: 検証 (Read/Grep/Bash/WebFetch 等) / 登録 (memory/caveat 等) / 照会 (search/list 等)
+- **非対称**: 指摘ゼロは歓迎、`used_tools` 既含は再指摘しない、迷ったら pass:true
+
+挨拶ターンの早期 pass は daemon 側の `state.lastUserInput === null` 分岐で従来通り機能する (user_input が来ていないターンは turn_end で `reason=no_user_input` で pass)。Stop hook の入力契約 (`final_response` のみを daemon に送信) は v0.4.4 時点で user_input を送っていないので hook 側の変更なし。
+
+### 変更点
+
+- **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `SHARED_HEADER` の stage=turn_end 説明を書き換え、few-shot を 4 件 (検証/登録/照会/pass) に拡張。`buildFinalStagePrompt` から `userInput` 引数を削除、`<user_input>` タグも削除
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `handleTurnEnd` の `buildFinalStagePrompt` 呼び出しから `userInput` 引数削除、`savedUserInput` 変数削除。`state.lastUserInput` は `no_user_input` pass 分岐用に保持継続 (コメントで意図明記)
+- **編集 [test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `buildFinalStagePrompt` の 3 テストから `userInput:` 引数削除、`<user_input>` タグ包含アサートを非包含アサートに反転
+- **編集 [test/daemon.test.mjs](test/daemon.test.mjs)**: turn_end の per-turn prompt に `<user_input>` タグも user 発言原文も含まれないことを確認するテストを 1 件追加
+- **編集 [CLAUDE.md](CLAUDE.md)**: Product Concept に「判定軸 (v0.13.0 で 2 軸化)」セクションを追加、user_input=要請充足チェック / turn_end=ツール適用機会の監査 を明記
+
+### 非互換
+
+- **判定挙動の意味論変更**: v0.12.x までの「user_input 要請に対応するツール」しか指摘しなかった Stop hook が、v0.13.0 からは user_input 非依存で「応答に対する適用機会」を指摘する。false positive / false negative の方向性も変わるため、過検出率 / pass 率の再計測が必要 ([docs/open-issues.md](docs/open-issues.md) P0 に観測タスクを追加)
+- **API 変更**: `buildFinalStagePrompt({ userInput, usedTools, finalResponse })` → `buildFinalStagePrompt({ usedTools, finalResponse })`。外部から直接呼ばれる API ではない (daemon 内部) ため影響範囲は Spotter 本体のみ
+
 ## 0.12.0
 
 **親 PID watch を heartbeat 方式に置換 + UserPromptSubmit auto-resurrect**。v0.6.2 で導入した `--parent-pid` watch (Claude Code 本体 PID を `process.kill(pid, 0)` で 5 秒間隔 ping) が VSCode native extension 環境で誤爆する問題を解消。`process.ppid` は extension host から spawn される短命ラッパーを指していて、5 秒で ESRCH → daemon 自死していた (`~/.spotter/logs/ppid-probe.log` の env dump で実測: hook の ppid が毎回 (55692, 46020 等) 変わるのに対し `VSCODE_PID=39964` は固定、CLAUDE_* 系には PID 系 env なし)。

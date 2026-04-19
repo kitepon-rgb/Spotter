@@ -78,6 +78,43 @@ test('startDaemon: per-turn prompts carry only the stage delta (no catalog)', as
   }
 });
 
+test('startDaemon: turn_end per-turn prompt has no <user_input> tag (v0.13.0)', async () => {
+  // v0.13.0: stage=turn_end の判定軸が「要請充足チェック」から「ツール適用機会の監査」に
+  // 変わった。user_input は渡さない。final_response + used_tools のみで判定する。
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  const promptsSeen = [];
+  const haikuCaller = async (prompt) => {
+    promptsSeen.push(prompt);
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0 });
+  try {
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '何か質問' },
+      timeoutMs: 2_000,
+    });
+    await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: 'Bell の最終応答', stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    assert.equal(promptsSeen.length, 2);
+    const turnEndPrompt = promptsSeen[1];
+    assert.ok(turnEndPrompt.includes('stage=turn_end'));
+    assert.ok(turnEndPrompt.includes('<final_response>'));
+    assert.ok(turnEndPrompt.includes('Bell の最終応答'));
+    assert.ok(!turnEndPrompt.includes('<user_input>'), 'turn_end prompt must not contain <user_input> tag (v0.13.0)');
+    assert.ok(!turnEndPrompt.includes('何か質問'), 'turn_end prompt must not contain the user question text (v0.13.0)');
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('startDaemon: tool_used records without invoking Haiku', async () => {
   const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;

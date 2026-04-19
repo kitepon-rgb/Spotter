@@ -258,12 +258,13 @@ export async function startDaemon({
       return { pass: true, missing_tools: [], reason: 'no_user_input' };
     }
 
-    const savedUserInput = state.lastUserInput;
+    // v0.13.0: state.lastUserInput は turn_end の Haiku 判定には渡さない (新軸は
+    // final_response + used_tools のみで判定)。ただし「挨拶ターン (user_input が来て
+    // いない) は早期 pass」の分岐は上で使うので保存は引き続き必要。
     const savedUsedTools = state.usedTools.slice();
     const { parsed, meta } = await runHaikuJudgment(
       'turn_end',
       buildFinalStagePrompt({
-        userInput: savedUserInput,
         usedTools: savedUsedTools,
         finalResponse,
       })

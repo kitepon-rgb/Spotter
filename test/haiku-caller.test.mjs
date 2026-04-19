@@ -62,7 +62,6 @@ test('buildFirstStagePrompt wraps user input in <user_input> tags', () => {
 
 test('buildFinalStagePrompt is a small per-turn delta — no catalog, no header', () => {
   const prompt = buildFinalStagePrompt({
-    userInput: '?',
     usedTools: [],
     finalResponse: 'reply',
   });
@@ -71,14 +70,14 @@ test('buildFinalStagePrompt is a small per-turn delta — no catalog, no header'
   assert.ok(!prompt.includes('Spotter'), 'role text must not be in per-turn prompt');
 });
 
-test('buildFinalStagePrompt wraps user_input, used_tools, and final_response in tags', () => {
+test('buildFinalStagePrompt wraps used_tools and final_response in tags (no user_input — v0.13.0)', () => {
+  // v0.13.0: stage=turn_end の判定は final_response + used_tools のみ。
+  // user_input は渡さない (ツール適用機会の監査に転換)。
   const prompt = buildFinalStagePrompt({
-    userInput: '何時?',
     usedTools: ['read_file'],
     finalResponse: 'Bell の返答',
   });
-  assert.ok(prompt.includes('<user_input>'));
-  assert.ok(prompt.includes('</user_input>'));
+  assert.ok(!prompt.includes('<user_input>'), 'user_input tag must not appear in v0.13.0 turn_end prompt');
   assert.ok(prompt.includes('<used_tools>'));
   assert.ok(prompt.includes('</used_tools>'));
   assert.ok(prompt.includes('<final_response>'));
@@ -89,7 +88,6 @@ test('buildFinalStagePrompt wraps user_input, used_tools, and final_response in 
 
 test('buildFinalStagePrompt handles empty used_tools', () => {
   const prompt = buildFinalStagePrompt({
-    userInput: '?',
     usedTools: [],
     finalResponse: 'r',
   });

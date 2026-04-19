@@ -38,6 +38,11 @@ export async function ensureWorkdir() {
 
 // Shared header covers BOTH stages — the preamble documents stage=user_input and
 // stage=turn_end so per-turn prompts only need to announce which stage they are.
+//
+// v0.13.0: stage=turn_end の判定軸を「要請充足チェック」から「ツール適用機会の監査」に転換。
+// 旧軸は <user_input> に対し used_tools が足りているかをチェックしていた。新軸は
+// <final_response> の内容 (事実断定 / 記録すべき新情報 / 既知情報の参照) に対し、カタログ
+// 上のツール (検証 / 登録 / 照会) を差し込める余地を探す。非対称 (指摘ゼロ歓迎) 設計。
 const SHARED_HEADER = [
   'あなたは Spotter。Bell (主役の Claude) が呼び忘れるツールを検出する監査役です。',
   'ユーザーへの会話文は生成せず、必ず下記 JSON のみを返します。',
@@ -49,13 +54,32 @@ const SHARED_HEADER = [
   '',
   '## 判定対象',
   '各ターン、以下いずれかの stage で判定リクエストを受けます:',
-  '- stage=user_input: <user_input> のみ届く。when_to_use に明確に該当するツールを列挙',
-  '- stage=turn_end: <user_input> + <used_tools> + <final_response> が届く。既使用を除き Bell が呼び忘れたツールを列挙',
-  'どちらも推測禁止。該当なしなら pass:true。',
+  '',
+  '### stage=user_input',
+  '<user_input> のみ届く。when_to_use に明確に該当するツールを列挙。',
+  '推測禁止。該当なしなら pass:true。',
+  '',
+  '### stage=turn_end  (ツール適用機会の監査)',
+  '<final_response> + <used_tools> が届く。',
+  'Bell の応答に含まれる動作 — 事実の断定 / 記録すべき新情報 / 既知情報の参照 —',
+  'それぞれについて、カタログに役立つツールがあれば提示する。',
+  '検証 (Read/Grep/Bash/WebFetch 等) / 登録 (memory/caveat 等) / 照会 (search/list 等) のいずれも対象。',
+  '<used_tools> に既に含まれるツールは再指摘しない。',
+  '指摘ゼロは歓迎。迷ったら pass:true。',
   '',
   '## 例',
-  '- stage=user_input "今何時?" → {"pass":false,"missing_tools":[{"name":"current_time","reason":"時刻の直接質問"}]}',
-  '- stage=user_input "ありがとう" → {"pass":true,"missing_tools":[]}',
+  '- stage=user_input "今何時?"',
+  '  → {"pass":false,"missing_tools":[{"name":"current_time","reason":"時刻の直接質問"}]}',
+  '- stage=user_input "ありがとう"',
+  '  → {"pass":true,"missing_tools":[]}',
+  '- stage=turn_end 応答「この関数は配列長を返します」(used:なし) ← 検証',
+  '  → {"pass":false,"missing_tools":[{"name":"Read","reason":"関数実装の断定は実ファイル読取で裏付けるべき"}]}',
+  '- stage=turn_end 応答「判明: A モジュールは B に依存」(used:Grep) ← 登録',
+  '  → {"pass":false,"missing_tools":[{"name":"mcp__caveat__caveat_record","reason":"新発見の依存関係は記録して次回参照可能にすべき"}]}',
+  '- stage=turn_end 応答「この話題は前にも議論したはず」(used:なし) ← 照会',
+  '  → {"pass":false,"missing_tools":[{"name":"mcp__caveat__caveat_search","reason":"過去の議論参照は検索して裏付けるべき"}]}',
+  '- stage=turn_end 応答「作業完了しました」(used:Read,Edit,Bash) ← pass',
+  '  → {"pass":true,"missing_tools":[]}',
 ].join('\n');
 
 // Preamble — sent exactly once per Haiku session (first call). Contains the role,
@@ -92,13 +116,13 @@ export function buildFirstStagePrompt({ userInput }) {
 }
 
 // Per-turn prompt — Stop hook stage.
-export function buildFinalStagePrompt({ userInput, usedTools, finalResponse }) {
+// v0.13.0: user_input は渡さない。判定軸が「ユーザー要請の充足」から「final_response に
+// ツール適用機会があるか」に変わったため。挨拶ターンの早期 pass は daemon 側の
+// state.lastUserInput === null 分岐 (handleTurnEnd) で処理する。
+export function buildFinalStagePrompt({ usedTools, finalResponse }) {
   const usedList = usedTools.length > 0 ? usedTools.map((t) => `- ${t}`).join('\n') : '(なし)';
   return [
     'stage=turn_end',
-    '<user_input>',
-    userInput,
-    '</user_input>',
     '<used_tools>',
     usedList,
     '</used_tools>',

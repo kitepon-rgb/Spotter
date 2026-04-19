@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v0.13.0** (2026-04-20): **Stop 判定軸を「ツール適用機会の監査」に転換**。従来の `stage=turn_end` は「user_input で要請されたツールが used_tools に含まれているか」= 要請充足チェックだった。この軸は Bell が Stop hook 到達後に新しく導入したい動作 (例: 事実断定の裏付け、新知見の `caveat_record`、過去議論の `caveat_search`) を拾えない。新軸は `<final_response>` + `<used_tools>` のみを Haiku に渡し、応答内容に対しカタログ上のツールを差し込める余地 (検証 / 登録 / 照会) があるかを問う。指摘ゼロは歓迎、`used_tools` 既含は再指摘しない、迷ったら pass:true の非対称設計。`buildFinalStagePrompt` から `userInput` 引数を削除、`SHARED_HEADER` の few-shot を 4 件 (検証/登録/照会/pass) に拡張。Stop hook の入力契約 (`final_response` のみ) はもともと user_input を含まないので hook 側の変更なし。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
 **v0.12.0** (2026-04-19): **親 PID watch を heartbeat 方式に置換 + UserPromptSubmit auto-resurrect**。v0.6.2 で導入した `--parent-pid` watch が VSCode native extension 環境で誤爆する問題 (`process.ppid` が短命ラッパーを指して 5 秒で ESRCH → daemon 自死) を解消。daemon 側は envelope 受信ごとに `setTimeout(selfShutdown, 30min)` を re-arm する heartbeat 方式に変更、OS / 環境依存ゼロ。誤自死しても次の UserPromptSubmit で `E_UNREACHABLE` を検知して spawn + retry する auto-resurrect も合わせて入れたため、孤児発生時のユーザー影響は「次の入力時に一瞬の起動 latency」だけになる。`--parent-pid` 引数と関連 watch ロジックは完全削除 (minor bump 相当の API 変更)。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
 **v0.11.0** (2026-04-19): **短プロンプトの Haiku スキップ**。ユーザー入力が trim 後 10 文字 (コードポイント) 以下なら UserPromptSubmit hook で早期 return し、daemon へ `user_input` を送らない。結果、daemon は `state.lastUserInput=null` のまま維持され、次の turn_end が `reason=no_user_input` で自動 pass する。挨拶・相槌・短い質問 ("今何時?" "ありがとう" "ok done" 等) でレイテンシ 0、preamble 57 件の無駄打ちを回避。daemon 側に閾値ロジックを足さず hook 層だけで閉じる最小実装。詳細は [CHANGELOG.md](CHANGELOG.md)。
@@ -53,7 +55,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Product Concept (一行)
 
-**Bell (主役の Claude) の発話予定を、ツール一覧を完全把握した別エージェント (Spotter) が並走監査し、ツール呼び忘れを検出する。** 気づく役と実行する役の分離。
+**Bell (主役の Claude) が呼び忘れるツールを、カタログを完全把握した別エージェント (Spotter) が並走監査して検出する。** 気づく役と実行する役の分離。
+
+### 判定軸 (v0.13.0 で 2 軸化)
+
+- **stage=user_input**: ユーザー要請に対し `when_to_use` が明確に該当するツールを列挙する **要請充足チェック**。挨拶・雑談は pass
+- **stage=turn_end**: Bell の最終応答に対し、事実の断定 / 記録すべき新情報 / 既知情報の参照 それぞれに、カタログ上のツール (検証 / 登録 / 照会) を差し込める余地がないか監査する **ツール適用機会の監査**。指摘ゼロは歓迎、`used_tools` 既含は再指摘しない
 
 ## Architecture の核 (実装判断に効く部分)
 

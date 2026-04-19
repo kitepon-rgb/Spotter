@@ -128,7 +128,9 @@ SessionStart hook
 
 [ターン終了] Stop hook
   └→ daemon に "turn_end" イベント送信 (+ final_response)
-     daemon: claude -p 呼び出し (ツールカタログ + user_input + used_tools + final_response)
+     daemon: claude -p 呼び出し (ツールカタログ + used_tools + final_response)
+       ※ v0.13.0 で user_input を渡さない形に変更: 判定軸が「要請充足チェック」から
+         「ツール適用機会の監査」に転換 (Bell の応答内容そのものを見る)
      daemon: 見落とし判定、必要なら decision: "block" を hook から返す
      daemon: ターン状態クリア (used_tools 等をリセット)
 
