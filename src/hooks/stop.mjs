@@ -5,7 +5,6 @@
 import {
   readStdinJson,
   requireString,
-  optionalString,
   exitCodeFor,
   die,
   formatTransparentBlockReason,
@@ -13,6 +12,7 @@ import {
   isSubagentCall,
   isOutsideSpotterProject,
 } from './lib.mjs';
+import { getLastAssistantText } from './transcript-reader.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 
 const TIMEOUT_MS = 15_000;
@@ -24,9 +24,13 @@ export async function runStop() {
   if (isOutsideSpotterProject(input)) return;
 
   const sessionId = requireString(input, 'session_id');
+  const transcriptPath = requireString(input, 'transcript_path');
   const stopHookActive = input.stop_hook_active === true;
-  // Claude Code passes the transcript path; the final response is read from there or provided inline.
-  const finalResponse = optionalString(input, 'final_response') ?? '(no final response provided)';
+
+  // Extract only the visible assistant text (thinking and tool_use blocks excluded).
+  // null when the transcript has no assistant text yet — pass a sentinel so the
+  // daemon's schema (final_response: string) is still satisfied.
+  const finalResponse = getLastAssistantText(transcriptPath) ?? '(no final response available)';
 
   let response;
   try {

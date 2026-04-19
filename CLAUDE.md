@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v0.4.3 実装完了** (2026-04-19)。v0.4.2 の prompt hardening が過剰 (自己リポジトリに攻撃者はいない、persona drift は stateless で構造対処済) だったため、攻撃文言リスト・`【最重要】` タグ・末尾の JSON-only 再宣言を削り、プロンプト長を 30-40% 削減。詳細は [CHANGELOG.md](CHANGELOG.md)。
+**v0.4.4 実装完了** (2026-04-19)。Stop hook が **Bell の最終応答を Haiku に渡していなかったバグ**を修正。`input.final_response` (存在しないフィールド) を廃止し、`input.transcript_path` から JSONL 末尾の assistant text だけを抽出する `getLastAssistantText()` を新設 ([src/hooks/transcript-reader.mjs](src/hooks/transcript-reader.mjs))。thinking / tool_use ブロックは除外、ユーザーが見た最終応答テキストのみ Haiku に渡る。Throughline から移植 (MIT, 同作者)。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
+**v0.4.3** (2026-04-19): v0.4.2 の prompt hardening が過剰 (自己リポジトリに攻撃者はいない、persona drift は stateless で構造対処済) だったため、攻撃文言リスト・`【最重要】` タグ・末尾の JSON-only 再宣言を削り、プロンプト長を 30-40% 削減。
 
 **v0.4 系の核心設計** (v0.4.3 でも不変): daemon は依然として session-scoped (hook イベント集約・used_tools 記録) だが、**Haiku 呼び出しは毎ターン stateless** (`--session-id <fresh UUID>` のみ、`--resume` 不使用)。下記 Architecture 節の「Claude 呼び出しは毎回 stateless」原則への回帰であり、session-scoped が引き起こした **Haiku が Bell 会話履歴を聞き続けて persona drift する問題**を構造的に排除する。5 層防御 (`SPOTTER_PARENT_PID` env / `agent_id` gate / `source=startup` 限定 / PID preexist check / 10 秒ウィンドウ) は維持。プラン §18.3 の都度起動型 (daemon レベルでの都度起動) は引き続き棄却、再議論しない。
 

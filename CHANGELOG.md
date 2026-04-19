@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.4
+
+**Stop hook が Bell の最終応答を Haiku に正しく渡すよう修正**。
+
+### 事の発端
+
+「Stop hook で Haiku に渡されるのは Bell の最終応答だけか、それとも thinking も含む膨大なテキストか」というユーザーからの疑問で調査したところ、**実は何も渡していなかった**ことが判明。
+
+[src/hooks/stop.mjs](src/hooks/stop.mjs) は `input.final_response` フィールドを読んでいたが、Claude Code の Stop hook が stdin に渡す標準入力にそんなフィールドは存在しない。標準は `transcript_path` (セッションの JSONL ログファイルパス)。結果、`optionalString` が常に null を返し、daemon には **`'(no final response provided)'`** という sentinel 文字列だけが送られ続けていた。turn_end の Haiku 判定は Bell の応答を 1 文字も見ずに行われていた (したがって Stop 段階でのツール呼び忘れ検出は実質機能していなかった)。
+
+### 変更点
+
+- **[src/hooks/transcript-reader.mjs](src/hooks/transcript-reader.mjs) 新設**: transcript JSONL の末尾から assistant の text ブロックだけを抽出する `getLastAssistantText()`。Throughline (MIT, 同作者) から必要最小限を移植。**thinking ブロック / tool_use ブロックは除外**されるので、ユーザーに見えた最終応答テキストだけが Haiku に渡る。
+- **[src/hooks/stop.mjs](src/hooks/stop.mjs) 書き換え**: `input.final_response` (存在しないフィールド) を廃止、`input.transcript_path` (§0 に従い `requireString` で必須化) から `getLastAssistantText()` 経由で最終応答を取得。
+- **[test/transcript-reader.test.mjs](test/transcript-reader.test.mjs) 追加**: 8 ケース。thinking 除外、tool_use スキップ、複数 text ブロックの連結、欠損ファイル、partial JSONL 末尾 (書き込み途中) への耐性等。
+
+### 効果
+
+- Stop hook の Haiku 判定が Bell の最終応答を実際に読むようになる → ツール呼び忘れ検出 (Stop 段階) が設計通り動く。
+- thinking は渡らないので内部推論の漏洩リスクなし。
+
 ## 0.4.3
 
 **Haiku プロンプトの最小化**。
