@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+**v0.6.0 で `src/version.mjs` を更新し忘れた trivia fix**。`spotter --version` が古い `0.5.2` を返していた。挙動差はない。
+
 ## 0.6.0
 
 **Preamble-once: 初回のみ role+schema+catalog を送り、以降は per-turn delta のみ**。v0.5.x で実測した「resumed 呼び出しが first より遅い」問題の原因に手を入れた構造変更。
