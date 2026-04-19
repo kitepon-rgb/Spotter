@@ -16,7 +16,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { readStdinJson, requireString, die, isChildCall, isSubagentCall, isOutsideSpotterProject } from './lib.mjs';
+import { readStdinJson, requireString, die, isChildCall, isSubagentCall, isOutsideSpotterProject, findSpotterMarker } from './lib.mjs';
 import { sendRequest, TransportError } from '../daemon/transport.mjs';
 
 const READINESS_TIMEOUT_MS = 3_000;
@@ -39,8 +39,12 @@ export async function runSessionStart({ argv = process.argv, now = Date.now } = 
   if (isOutsideSpotterProject(input)) return;
 
   const sessionId = requireString(input, 'session_id');
+  const projectRoot = findSpotterMarker(input.cwd);
+  if (!projectRoot) {
+    die(`SessionStart: failed to locate project root from cwd=${input.cwd}`, 2);
+  }
 
-  spawnDaemon(sessionId, argv);
+  spawnDaemon(sessionId, projectRoot, argv);
 
   const deadline = now() + READINESS_TIMEOUT_MS;
   while (now() < deadline) {
@@ -65,14 +69,20 @@ export async function runSessionStart({ argv = process.argv, now = Date.now } = 
   die(`daemon did not reach readiness within ${READINESS_TIMEOUT_MS}ms for session ${sessionId}`, 2);
 }
 
-function spawnDaemon(sessionId, argv) {
+function spawnDaemon(sessionId, projectRoot, argv) {
   // Invoke `node <spotter-bin> daemon start --session-id ...` detached.
   // v0.6.2: pass --parent-pid so the daemon can self-terminate when Claude Code dies
   // without firing SessionEnd. process.ppid here is Claude Code (this hook's parent).
+  // v0.7.0: pass --project-root for tool-db loading.
   const spotterBin = resolveSpotterBin(argv);
   const child = spawn(
     process.execPath,
-    [spotterBin, 'daemon', 'start', '--session-id', sessionId, '--parent-pid', String(process.ppid)],
+    [
+      spotterBin, 'daemon', 'start',
+      '--session-id', sessionId,
+      '--parent-pid', String(process.ppid),
+      '--project-root', projectRoot,
+    ],
     {
       detached: true,
       stdio: 'ignore',

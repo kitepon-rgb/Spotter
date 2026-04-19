@@ -5,7 +5,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { loadCatalog } from '../catalog/loader.mjs';
+import { loadDb, globalDbPath, localDbPath } from '../tool-db/loader.mjs';
+import { findSpotterMarker } from '../hooks/lib.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -37,21 +38,39 @@ export async function runDoctor() {
 
   // ~/.spotter directories
   const home = join(homedir(), '.spotter');
-  for (const sub of ['tool-catalog', 'runtime', 'workdir', 'logs']) {
+  for (const sub of ['runtime', 'workdir', 'logs']) {
     const path = join(home, sub);
     const ok = await exists(path);
     mark(ok, `dir ${path}`);
     if (!ok) warnings += 1;
   }
 
-  // catalog
-  const catalogPath = join(home, 'tool-catalog', 'tools.yaml');
+  // tool-db (global)
   try {
-    const cat = await loadCatalog(catalogPath);
-    mark(true, `catalog: ${cat.tools.length} tools at ${catalogPath}`);
+    const global = await loadDb(globalDbPath());
+    const count = Object.keys(global.tools).length;
+    if (count === 0) {
+      mark(false, `global tool-db: empty (run \`spotter db refresh\`)`);
+      warnings += 1;
+    } else {
+      mark(true, `global tool-db: ${count} tools at ${globalDbPath()}`);
+    }
   } catch (err) {
-    mark(false, 'catalog', err.message);
+    mark(false, 'global tool-db', err.message);
     failures += 1;
+  }
+
+  // tool-db (local) if cwd is inside a Spotter project
+  const projectRoot = findSpotterMarker(process.cwd());
+  if (projectRoot) {
+    try {
+      const local = await loadDb(localDbPath(projectRoot));
+      const count = Object.keys(local.tools).length;
+      mark(true, `local tool-db: ${count} tools at ${localDbPath(projectRoot)}`);
+    } catch (err) {
+      mark(false, 'local tool-db', err.message);
+      failures += 1;
+    }
   }
 
   console.log('');

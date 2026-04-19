@@ -79,7 +79,7 @@ export async function runUninstall({ target = 'project', autoYes = false, cwd = 
 
   await writeFile(settingsPath, JSON.stringify(updated, null, 2) + '\n', 'utf8');
   console.log(`wrote ${settingsPath}`);
-  console.log('note: ~/.spotter/ (catalog, logs) was not removed. delete manually if no longer needed.');
+  console.log('note: ~/.spotter/ (tool-db, logs) was not removed. delete manually if no longer needed.');
 }
 
 async function removeMarker(cwd) {

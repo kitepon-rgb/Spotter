@@ -62,12 +62,21 @@ const SHARED_HEADER = [
 // output contract, few-shot examples, and the tool catalog. The Anthropic session
 // retains this in history so subsequent --resume calls can judge with only a small
 // per-turn payload.
-export function buildPreamble({ catalog }) {
+//
+// v0.7.0: `tools` is an array of {name, description} pairs (the new tool-db format).
+// `description` is the natural-language explanation supplied by the MCP server (or the
+// hardcoded baseline for Claude Code built-in deferred tools). No schema, no usage —
+// Haiku only needs to decide whether the tool should be called; "how to call" is Bell's
+// responsibility (via ToolSearch).
+export function buildPreamble({ tools }) {
+  if (!Array.isArray(tools)) {
+    throw new TypeError('buildPreamble: tools must be an array of {name, description}');
+  }
   return [
     SHARED_HEADER,
     '',
     '## カタログ',
-    JSON.stringify(projectCatalog(catalog), null, 2),
+    JSON.stringify(tools, null, 2),
   ].join('\n');
 }
 
@@ -97,14 +106,6 @@ export function buildFinalStagePrompt({ userInput, usedTools, finalResponse }) {
     finalResponse,
     '</final_response>',
   ].join('\n');
-}
-
-function projectCatalog(catalog) {
-  return catalog.tools.map((t) => ({
-    name: t.name,
-    purpose: t.purpose,
-    when_to_use: t.when_to_use,
-  }));
 }
 
 // Parse Haiku's response. Throws HaikuError on schema violation.

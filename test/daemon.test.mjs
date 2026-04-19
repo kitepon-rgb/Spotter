@@ -8,24 +8,19 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
+// v0.7.0: tests pass `tools` directly to startDaemon (an array of {name, description}).
+// `dir` is still returned for parity with prior cleanup paths and for tests that need a
+// temp directory for other reasons.
 async function setupCatalog() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-test-'));
-  const catalogPath = join(dir, 'tools.yaml');
-  await writeFile(catalogPath, `version: 1
-tools:
-  - name: current_time
-    purpose: get the current time
-    when_to_use:
-      - time questions
-    test_cases:
-      - user_input: "何時?"
-        expected_tool: current_time
-`, 'utf8');
-  return { dir, catalogPath };
+  const tools = [
+    { name: 'current_time', description: 'get the current time' },
+  ];
+  return { dir, tools };
 }
 
 test('startDaemon: user_input event dispatches to Haiku stub', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
   const haikuCaller = async (_prompt) => {
@@ -35,7 +30,7 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
       missing_tools: [{ name: 'current_time', reason: 'time question' }],
     });
   };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
   try {
     const resp = await sendRequest({
       sessionId,
@@ -58,14 +53,14 @@ test('startDaemon: per-turn prompts carry only the stage delta (no catalog)', as
   // threads it into the Haiku caller. Per-turn prompts (what the daemon passes to the
   // caller) carry only the stage-specific payload — the caller is responsible for
   // prepending the preamble on the first call.
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   const promptsSeen = [];
   const haikuCaller = async (prompt) => {
     promptsSeen.push(prompt);
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
   try {
     await sendRequest({
       sessionId,
@@ -85,14 +80,14 @@ test('startDaemon: per-turn prompts carry only the stage delta (no catalog)', as
 });
 
 test('startDaemon: tool_used records without invoking Haiku', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
   const haikuCaller = async (_prompt) => {
     haikuCalls += 1;
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
   try {
     const resp = await sendRequest({
       sessionId,
@@ -110,14 +105,14 @@ test('startDaemon: tool_used records without invoking Haiku', async () => {
 });
 
 test('startDaemon: turn_end passes when stop_hook_active is true (§7.5)', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
   const haikuCaller = async (_prompt) => {
     haikuCalls += 1;
     return JSON.stringify({ pass: false, missing_tools: [{ name: 'current_time', reason: 'r' }] });
   };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
   try {
     await sendRequest({
       sessionId,
@@ -142,14 +137,14 @@ test('startDaemon: turn_end passes when stop_hook_active is true (§7.5)', async
 });
 
 test('startDaemon: 10-second window skips concurrent Haiku-invoking events', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
   const haikuCaller = async (_prompt) => {
     haikuCalls += 1;
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
   try {
     // First call advances lastHaikuCallAt
     await sendRequest({
@@ -176,11 +171,11 @@ test('startDaemon: 10-second window skips concurrent Haiku-invoking events', asy
 });
 
 test('startDaemon: session_id mismatch rejected as E_INTERNAL', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   const running = await startDaemon({
     sessionId,
-    catalogPath,
+    tools,
     haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
   });
   try {
@@ -211,23 +206,23 @@ test('startDaemon: session_id mismatch rejected as E_INTERNAL', async () => {
   }
 });
 
-test('startDaemon: throws on missing catalog', async () => {
+test('startDaemon: throws when neither tools nor projectRoot is provided (v0.7.0)', async () => {
   const sessionId = `d-${randomUUID()}`;
   await assert.rejects(
     startDaemon({
       sessionId,
-      catalogPath: '/nonexistent/catalog.yaml',
       haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
-    })
+    }),
+    TypeError
   );
 });
 
 test('startDaemon: readiness event responds immediately', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   const running = await startDaemon({
     sessionId,
-    catalogPath,
+    tools,
     haikuCaller: async (_p) => { throw new Error('should not be called'); },
   });
   try {
@@ -241,7 +236,7 @@ test('startDaemon: readiness event responds immediately', async () => {
 });
 
 test('startDaemon: DaemonAlreadyRunningError when PID file points at live process', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `preexist-${randomUUID()}`;
   // Plant a PID file pointing at the current process (which is definitely alive).
   const pidPath = pidFilePath(sessionId);
@@ -250,7 +245,7 @@ test('startDaemon: DaemonAlreadyRunningError when PID file points at live proces
     await assert.rejects(
       startDaemon({
         sessionId,
-        catalogPath,
+        tools,
         haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
       }),
       (err) => err instanceof DaemonAlreadyRunningError && err.sessionId === sessionId
@@ -268,12 +263,12 @@ test('startDaemon: user_input with schema-violating Haiku output → silent pass
   // fresh claude -p session, and (c) silent-pass the current turn (reason:
   // role_collapse_reset) so Bell's reply is not blocked on garbage audit output.
   // This is an explicit §0 exception: "想定済み異常 = 記録 + 正常リターン".
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `collapse-u-${randomUUID()}`;
   let resetCalled = 0;
   const haikuCaller = async (_p) => 'not-valid-json-at-all';
   haikuCaller.reset = () => { resetCalled += 1; };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
   try {
     const resp = await sendRequest({
       sessionId,
@@ -296,7 +291,7 @@ test('startDaemon: turn_end with schema-violating Haiku output → silent pass +
   // v0.5.0: same role-collapse recovery at the Stop-hook stage.
   // We pass haikuCallWindowMs: 0 so the 10-second recursion guard does not mask the
   // turn_end call (which would otherwise silent-pass via within_haiku_call_window).
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `collapse-t-${randomUUID()}`;
   let resetCalled = 0;
   let call = 0;
@@ -307,7 +302,7 @@ test('startDaemon: turn_end with schema-violating Haiku output → silent pass +
     return 'Spotter のロールは正式に終了します。あなたのご質問は...';
   };
   haikuCaller.reset = () => { resetCalled += 1; };
-  const running = await startDaemon({ sessionId, catalogPath, haikuCaller, haikuCallWindowMs: 0 });
+  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0 });
   try {
     await sendRequest({
       sessionId,
@@ -335,14 +330,14 @@ test('startDaemon: user_input log records duration_ms and mode=first', async () 
   // The daemon tags each Haiku-invoking log line with duration_ms (measured around the
   // caller) and mode (first|resumed, read from caller.isFirstCall). This lets us observe
   // resume-path latency savings and role-collapse recovery frequency from log files alone.
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `log-first-${randomUUID()}`;
   const logs = [];
   const haikuCaller = async (_p) => JSON.stringify({ pass: true, missing_tools: [] });
   haikuCaller.isFirstCall = true;
   const running = await startDaemon({
     sessionId,
-    catalogPath,
+    tools,
     haikuCaller,
     logFn: (msg) => logs.push(msg),
   });
@@ -366,14 +361,14 @@ test('startDaemon: user_input log records duration_ms and mode=first', async () 
 test('startDaemon: turn_end log records mode=resumed when caller is past its first call', async () => {
   // A resumed call happens after the first successful Haiku round-trip. We simulate this by
   // flipping the stub's isFirstCall between the user_input and turn_end requests.
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `log-resumed-${randomUUID()}`;
   const logs = [];
   const haikuCaller = async (_p) => JSON.stringify({ pass: true, missing_tools: [] });
   haikuCaller.isFirstCall = true;
   const running = await startDaemon({
     sessionId,
-    catalogPath,
+    tools,
     haikuCaller,
     logFn: (msg) => logs.push(msg),
     haikuCallWindowMs: 0,
@@ -407,7 +402,7 @@ test('startDaemon: parent-watch shuts daemon down when parent process dies (v0.6
   // self-terminates when the parent disappears (covers crash / kill / IDE reload paths
   // where SessionEnd never fires). We simulate Claude Code with a sleeping child node
   // process and kill it after the daemon starts watching.
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `pwatch-${randomUUID()}`;
   const haikuCaller = async (_p) => JSON.stringify({ pass: true, missing_tools: [] });
   const fakeParent = spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)'], { stdio: 'ignore' });
@@ -415,7 +410,7 @@ test('startDaemon: parent-watch shuts daemon down when parent process dies (v0.6
   try {
     running = await startDaemon({
       sessionId,
-      catalogPath,
+      tools,
       haikuCaller,
       parentPid: fakeParent.pid,
       parentWatchIntervalMs: 50,
@@ -437,13 +432,13 @@ test('startDaemon: parent-watch shuts daemon down when parent process dies (v0.6
 });
 
 test('startDaemon: rejects non-positive or non-integer parentPid (v0.6.2)', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `pwatch-bad-${randomUUID()}`;
   try {
     await assert.rejects(
       () => startDaemon({
         sessionId,
-        catalogPath,
+        tools,
         parentPid: 0,
         haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
       }),
@@ -452,7 +447,7 @@ test('startDaemon: rejects non-positive or non-integer parentPid (v0.6.2)', asyn
     await assert.rejects(
       () => startDaemon({
         sessionId,
-        catalogPath,
+        tools,
         parentPid: 1.5,
         haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
       }),
@@ -464,7 +459,7 @@ test('startDaemon: rejects non-positive or non-integer parentPid (v0.6.2)', asyn
 });
 
 test('startDaemon: stale PID file (dead process) does not block startup', async () => {
-  const { dir, catalogPath } = await setupCatalog();
+  const { dir, tools } = await setupCatalog();
   const sessionId = `stale-${randomUUID()}`;
   const pidPath = pidFilePath(sessionId);
   // A PID we're fairly sure isn't ours and is unlikely to be live. Use a huge number.
@@ -473,7 +468,7 @@ test('startDaemon: stale PID file (dead process) does not block startup', async 
   try {
     running = await startDaemon({
       sessionId,
-      catalogPath,
+      tools,
       haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
     });
     assert.ok(running);

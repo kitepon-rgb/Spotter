@@ -10,30 +10,33 @@ import {
   HaikuError,
 } from '../src/daemon/haiku-caller.mjs';
 
-const sampleCatalog = {
-  version: 1,
-  tools: [
-    { name: 'current_time', purpose: 'get time', when_to_use: ['time questions'] },
-    { name: 'web_search', purpose: 'search', when_to_use: ['latest info'] },
-  ],
-};
+const sampleTools = [
+  { name: 'mcp__caveat__caveat_record', description: 'Record a new caveat about an external trap.' },
+  { name: 'WebSearch', description: 'Search the web for up-to-date info.' },
+];
 
-test('buildPreamble contains role, schema, catalog, and few-shot examples', () => {
+test('buildPreamble contains role, schema, tool-db entries, and few-shot examples', () => {
   // v0.6.0: preamble is sent once per session (first call). It carries everything Haiku
   // needs to keep its role and output contract — role statement, JSON schema, both stage
-  // definitions, few-shot examples, and the full tool catalog.
-  const preamble = buildPreamble({ catalog: sampleCatalog });
+  // definitions, few-shot examples, and the full tool list.
+  // v0.7.0: tools are {name, description} pairs from tool-db (replaces YAML catalog).
+  const preamble = buildPreamble({ tools: sampleTools });
   assert.ok(preamble.includes('Spotter'));
   assert.ok(preamble.includes('Bell'));
   assert.ok(preamble.includes('監査役'));
   assert.ok(preamble.includes('会話文は生成せず') || preamble.includes('会話文は生成しません'));
-  assert.ok(preamble.includes('current_time'));
-  assert.ok(preamble.includes('get time'));
+  assert.ok(preamble.includes('mcp__caveat__caveat_record'));
+  assert.ok(preamble.includes('Record a new caveat'));
   assert.ok(preamble.includes('"pass":false'));
   assert.ok(preamble.includes('"pass":true'));
   assert.ok(preamble.includes('stage=user_input'));
   assert.ok(preamble.includes('stage=turn_end'));
   assert.ok(preamble.includes('推測禁止'));
+});
+
+test('buildPreamble throws if tools is not an array', () => {
+  assert.throws(() => buildPreamble({ tools: null }), TypeError);
+  assert.throws(() => buildPreamble({ tools: { foo: 'bar' } }), TypeError);
 });
 
 test('buildFirstStagePrompt is a small per-turn delta — no catalog, no header', () => {
@@ -42,8 +45,8 @@ test('buildFirstStagePrompt is a small per-turn delta — no catalog, no header'
   const prompt = buildFirstStagePrompt({ userInput: '今何時?' });
   assert.ok(prompt.includes('stage=user_input'));
   assert.ok(prompt.includes('今何時?'));
-  assert.ok(!prompt.includes('current_time'), 'catalog must not be in per-turn prompt');
-  assert.ok(!prompt.includes('get time'), 'catalog descriptions must not be in per-turn prompt');
+  assert.ok(!prompt.includes('mcp__caveat'), 'tool-db entries must not be in per-turn prompt');
+  assert.ok(!prompt.includes('Search the web'), 'tool descriptions must not be in per-turn prompt');
   assert.ok(!prompt.includes('Spotter'), 'role text must not be in per-turn prompt');
 });
 
@@ -64,7 +67,7 @@ test('buildFinalStagePrompt is a small per-turn delta — no catalog, no header'
     finalResponse: 'reply',
   });
   assert.ok(prompt.includes('stage=turn_end'));
-  assert.ok(!prompt.includes('current_time'), 'catalog must not be in per-turn prompt');
+  assert.ok(!prompt.includes('mcp__caveat'), 'tool-db entries must not be in per-turn prompt');
   assert.ok(!prompt.includes('Spotter'), 'role text must not be in per-turn prompt');
 });
 

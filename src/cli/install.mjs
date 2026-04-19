@@ -1,12 +1,16 @@
-// `spotter install` — create ~/.spotter/, place template catalog, register hooks in .claude/settings.json.
+// `spotter install` — create ~/.spotter/, register hooks in .claude/settings.json.
 //
 // Per plan §15.4, this shows a diff and asks for confirmation before touching settings.json.
 //
 // v0.3: also writes <cwd>/.spotter/marker.json (project mode) so hooks can detect
 // "this Claude Code session is rooted in a project where Spotter is installed" and
 // silently exit otherwise (prevents Throughline-style proliferation).
+//
+// v0.7.0: tool catalog (the old YAML) is replaced by tool-db.json (auto-discovered MCP
+// + hardcoded built-in deferred). Install no longer seeds a template — user runs
+// `spotter db refresh` after install to populate.
 
-import { mkdir, writeFile, readFile, access, copyFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,11 +19,9 @@ import { version as SPOTTER_VERSION } from '../version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
-const TEMPLATE_CATALOG = join(PACKAGE_ROOT, 'templates', 'tools.yaml');
 const SPOTTER_BIN = join(PACKAGE_ROOT, 'bin', 'spotter.mjs');
 
 const SPOTTER_HOME = join(homedir(), '.spotter');
-const CATALOG_DEST = join(SPOTTER_HOME, 'tool-catalog', 'tools.yaml');
 
 const MARKER_VERSION = '1';
 
@@ -42,20 +44,11 @@ export async function runInstall({ target = 'project', autoYes = false, cwd = pr
 
   // 1. create directories
   await mkdir(SPOTTER_HOME, { recursive: true });
-  await mkdir(join(SPOTTER_HOME, 'tool-catalog'), { recursive: true });
   await mkdir(join(SPOTTER_HOME, 'runtime'), { recursive: true });
   await mkdir(join(SPOTTER_HOME, 'workdir'), { recursive: true });
   await mkdir(join(SPOTTER_HOME, 'logs'), { recursive: true });
 
-  // 2. place catalog template if missing
-  if (!(await exists(CATALOG_DEST))) {
-    await copyFile(TEMPLATE_CATALOG, CATALOG_DEST);
-    console.log(`  wrote ${CATALOG_DEST}`);
-  } else {
-    console.log(`  catalog already present at ${CATALOG_DEST} (not overwritten)`);
-  }
-
-  // 3. project marker (v0.3): hooks use this to detect installed projects.
+  // 2. project marker (v0.3): hooks use this to detect installed projects.
   //    Skipped in user-mode install — user-mode is a deprecated escape hatch and
   //    intentionally has no marker, so all hooks would exit. (Existing user-mode
   //    installs from <0.3 won't surprise-stop working only because of this — they
@@ -103,7 +96,9 @@ export async function runInstall({ target = 'project', autoYes = false, cwd = pr
   await mkdir(dirname(settingsPath), { recursive: true });
   await writeFile(settingsPath, JSON.stringify(updated, null, 2) + '\n', 'utf8');
   console.log(`wrote ${settingsPath}`);
-  console.log('\nnext: reload Claude Code (or open a new session) to activate Spotter.');
+  console.log('\nnext steps:');
+  console.log('  1. run `spotter db refresh` to discover available MCP/deferred tools');
+  console.log('  2. reload Claude Code (or open a new session) to activate Spotter');
 }
 
 async function exists(path) {

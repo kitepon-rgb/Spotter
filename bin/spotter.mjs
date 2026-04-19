@@ -6,7 +6,7 @@ import { runInstall } from '../src/cli/install.mjs';
 import { runUninstall } from '../src/cli/uninstall.mjs';
 import { runDoctor } from '../src/cli/doctor.mjs';
 import { runStatus } from '../src/cli/status.mjs';
-import { runCatalogEdit, runCatalogLint } from '../src/cli/catalog.mjs';
+import { runDbList, runDbRefresh, runDbRebuild } from '../src/cli/db-cmd.mjs';
 import { runDaemonStart } from '../src/cli/daemon-cmd.mjs';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
 import { runUserPrompt } from '../src/hooks/user-prompt.mjs';
@@ -26,8 +26,9 @@ Usage:
   spotter uninstall [-y]                remove spotter hooks from <cwd>/.claude/settings.json
                                         and remove <cwd>/.spotter/marker.json
   spotter uninstall --user [-y]         remove from ~/.claude/settings.json
-  spotter catalog edit                  open tool catalog in $EDITOR
-  spotter catalog lint                  validate catalog + run test_cases (Haiku live call)
+  spotter db list                       show merged tool-db (local + global)
+  spotter db refresh                    discover MCP / deferred tools and update DB
+  spotter db rebuild                    wipe local DB then refresh
   spotter status                        show running daemons
   spotter doctor                        environment diagnostic
   spotter daemon start --session-id ID  (internal) run session daemon
@@ -64,11 +65,12 @@ async function main() {
       await runUninstall({ target, autoYes });
       return;
     }
-    case 'catalog': {
+    case 'db': {
       const sub = rest[0];
-      if (sub === 'edit') { await runCatalogEdit(); return; }
-      if (sub === 'lint') { await runCatalogLint(); return; }
-      process.stderr.write(`unknown catalog subcommand: ${sub}\n${USAGE}`);
+      if (sub === 'list') { await runDbList(); return; }
+      if (sub === 'refresh') { await runDbRefresh(); return; }
+      if (sub === 'rebuild') { await runDbRebuild(); return; }
+      process.stderr.write(`unknown db subcommand: ${sub}\n${USAGE}`);
       process.exit(2);
       return;
     }

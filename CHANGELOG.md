@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.7.0
+
+**カタログを tool-db に置き換え**。手書きの `tools.yaml` (5 つの抽象ツール) を捨て、**実際にセッションで使えるツール (MCP + Claude Code 組込み 遅延ツール) の name + description を自動収集してキャッシュする** 仕組みに置き換え。
+
+### 事の発端
+
+Haiku が「Bell が呼び忘れているツール」を判定するには、Bell が今のセッションで実際に呼べるツールを知っている必要がある。v0.6.x までのカタログは `current_time` / `web_search` / `read_file` のような **抽象的な汎用ツール 5 件** を手書きしていただけで、Caveat や Gmail のような MCP ツール、TodoWrite や WebSearch のような Claude Code 組込みの遅延ツールは Haiku の視野に入っていなかった。結果、ユーザーが「過去に解決したナレッジを残したい」と言っても Spotter は Caveat を推奨できないという的外れな状態だった。
+
+設計思想は [docs/catalog-design-deferred-mcp.md](docs/catalog-design-deferred-mcp.md) に集約。要点:
+
+- **Haiku に渡すのは name + description のペアだけ**。schema は不要 — どう呼ぶかは Bell が ToolSearch で解決する責任 (役割分業)
+- **MCP ツールの description は MCP サーバーから直接取得**。Spotter は中継者に徹し、手書きで言い換えない (single source of truth = MCP server)
+- **3 段階キャッシュ DB**: ローカル (プロジェクト) → グローバル (`~`) → 「調べる」(調査結果は両方に書き込む)
+- **drift 補正**: ローカル ≠ グローバルなら再調査して MCP server の現在値で両方上書き
+- **明示的な無効化機構なし**: drift 補正が間接無効化として機能、TTL なし
+
+### 変更点
+
+- **新規 [src/tool-db/loader.mjs](src/tool-db/loader.mjs)**: JSON DB の atomic 読み書き、`{version, tools: {name → description}}` スキーマ検証
+- **新規 [src/tool-db/lookup.mjs](src/tool-db/lookup.mjs)**: 3 段階 lookup + write-through + drift 補正
+- **新規 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `claude mcp list` / `claude mcp get` で MCP サーバー列挙、stdio サーバーに JSON-RPC で `initialize` + `tools/list` を実行して description 取得
+- **新規 [src/tool-db/deferred-baseline.mjs](src/tool-db/deferred-baseline.mjs)**: Claude Code 組込み 遅延ツール (WebSearch / TodoWrite / 等 17 件) の手書き description ベースライン (Claude Code 自体は MCP 経由で query できないため)
+- **新規 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: 投資 = 利用可能ツール一覧取得 + 各ツールを 3 段階解決 + DB 書き戻し
+- **新規 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs)**: `spotter db list` / `refresh` / `rebuild`
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `loadCatalog` 廃止、`startDaemon({ projectRoot })` で tool-db を読み込み (テスト用に `tools` 直接指定も可)
+- **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `buildPreamble({ catalog })` → `buildPreamble({ tools })`、tools は `[{name, description}]`
+- **編集 [src/cli/daemon-cmd.mjs](src/cli/daemon-cmd.mjs)**, **[src/hooks/session-start.mjs](src/hooks/session-start.mjs)**: `--project-root` を hook → daemon に伝達
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**: `tool-catalog/` 作成と template コピー削除、install 完了時に `spotter db refresh` 実行を案内
+- **編集 [src/cli/doctor.mjs](src/cli/doctor.mjs)**: catalog チェック → tool-db (global + local) のチェック
+- **編集 [bin/spotter.mjs](bin/spotter.mjs)**: `spotter catalog edit/lint` を `spotter db list/refresh/rebuild` に置換
+- **削除**: [src/catalog/](src/catalog/), [src/cli/catalog.mjs](src/cli/catalog.mjs), `templates/tools.yaml`, `test/catalog.test.mjs`, `test/loader.test.mjs`
+- **新規 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 21 件 (loader/lookup/investigate-mcp/deferred-baseline)
+
+### Breaking
+
+- `~/.spotter/tool-catalog/tools.yaml` は読まれなくなる。install 後 `spotter db refresh` を実行して `~/.spotter/tool-db.json` (グローバル) と `<project>/.spotter/tool-db.json` (ローカル) を populate する必要がある
+- `spotter catalog edit/lint` コマンド廃止 → `spotter db list/refresh/rebuild`
+- `startDaemon` シグネチャ変更: `catalogPath` 廃止、`tools` または `projectRoot` のいずれか必須
+- `buildPreamble({ catalog })` → `buildPreamble({ tools })`
+- `src/index.mjs` から `loadCatalog`, `validateCatalog`, `runLint` 等を削除、tool-db API を export
+- `claude mcp list` のエラー / SSE/HTTP transport 未対応のため、これらサーバーの description は取れない (今後の課題)
+
+### 既知の制約
+
+- HTTP/SSE transport の MCP サーバーは investigate でスキップ (将来 HTTP MCP クライアント実装で対応)
+- Claude Code の遅延ツール一覧は hardcoded baseline のみ。Claude Code が新しい built-in を追加したら baseline 更新が必要
+- `claude mcp list` の出力フォーマット変更には脆い (parse 依存)。JSON 出力モードが将来追加されたらそちらに切り替えたい
+
 ## 0.6.2
 
 **親プロセス watch による孤児 daemon 自動回収**。SessionEnd が発火しない経路 (Claude Code crash, kill -9, IDE reload) で daemon が永久に残る問題への対処。

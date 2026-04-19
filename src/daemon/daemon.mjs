@@ -35,12 +35,10 @@ import {
   createHaikuCaller,
   HaikuError,
 } from './haiku-caller.mjs';
-import { loadCatalog } from '../catalog/loader.mjs';
+import { readMerged } from '../tool-db/refresh.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
-
-const DEFAULT_CATALOG_PATH = join(homedir(), '.spotter', 'tool-catalog', 'tools.yaml');
 const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
 // v0.5.0: lowered 60s → 30s. Session-scoped (--resume) means the first call still pays
 // cold-start but subsequent calls skip it. 30s covers the first-call cold path without
@@ -64,7 +62,8 @@ export class DaemonAlreadyRunningError extends Error {
 
 export async function startDaemon({
   sessionId,
-  catalogPath = DEFAULT_CATALOG_PATH,
+  projectRoot,
+  tools,
   haikuCaller,
   logFn = () => {},
   haikuCallWindowMs = DEFAULT_HAIKU_CALL_WINDOW_MS,
@@ -84,14 +83,24 @@ export async function startDaemon({
   // a sibling daemon is already serving this session_id — throw so the caller can exit.
   await assertNoLiveDaemon(sessionId);
 
-  // Load catalog up front — daemon cannot run without it (§14.1).
-  const catalog = await loadCatalog(catalogPath);
-  logFn(`catalog loaded: ${catalog.tools.length} tools from ${catalogPath}`);
+  // v0.7.0: tool list comes from tool-db (local + global merged with local-wins).
+  // For tests, the caller can pass `tools` directly. For production, projectRoot drives
+  // the load from <projectRoot>/.spotter/tool-db.json + ~/.spotter/tool-db.json.
+  let toolList;
+  if (Array.isArray(tools)) {
+    toolList = tools;
+  } else {
+    if (!projectRoot) {
+      throw new TypeError('startDaemon: either `tools` or `projectRoot` must be provided');
+    }
+    toolList = await readMerged({ projectRoot });
+  }
+  logFn(`tool-db loaded: ${toolList.length} tools` + (projectRoot ? ` (project=${projectRoot})` : ''));
 
   // v0.6.0: preamble (role + schema + catalog) is built once and threaded into the Haiku
   // caller. The caller prepends it on the first call only; --resume keeps it in session
   // history for all subsequent calls.
-  const preamble = buildPreamble({ catalog });
+  const preamble = buildPreamble({ tools: toolList });
   const callHaiku = haikuCaller ?? createHaikuCaller({ preamble, timeoutMs: DEFAULT_HAIKU_TIMEOUT_MS });
 
   // Per-turn state, reset on turn_end.

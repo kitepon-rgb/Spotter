@@ -13,7 +13,9 @@ export {
   createHaikuCaller,
   HaikuError,
 } from './daemon/haiku-caller.mjs';
-export { loadCatalog, CatalogLoadError, CatalogSchemaError } from './catalog/loader.mjs';
-export { validateCatalog } from './catalog/schema.mjs';
-export { runLint } from './catalog/lint.mjs';
+export { loadDb, saveDb, emptyDb, ToolDbSchemaError, globalDbPath, localDbPath } from './tool-db/loader.mjs';
+export { resolveAll } from './tool-db/lookup.mjs';
+export { refresh, readMerged, buildInvestigationSnapshot } from './tool-db/refresh.mjs';
+export { listMcpServers, listMcpToolsAll, bellVisibleName, McpInvestigationError } from './tool-db/investigate-mcp.mjs';
+export { DEFERRED_TOOL_BASELINE, getDeferredDescription, listDeferredNames } from './tool-db/deferred-baseline.mjs';
 export { version } from './version.mjs';

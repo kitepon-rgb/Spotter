@@ -1,6 +1,6 @@
 # Spotter
 
-> **v0.6.2 released 2026-04-19**. v0.4 で stateless に回帰したが cold-start レイテンシ (毎ターン 30 秒前後の待ち) が運用で問題化したため、v0.5.0 で **session-scoped Haiku を「JSON パース失敗検知 → session renew + silent pass」の事後回復機構付き**で復活。v0.6.0 で **preamble (role + schema + catalog + few-shot) を初回のみ送信** する形 (preamble-once) に変更して `--resume` 経由の resumed 呼び出しが first より遅くなる v0.5.x の逆転現象を解消。v0.6.2 で **親プロセス (Claude Code) の死を 5 秒間隔で検知して daemon を自動 shutdown** する watch を追加し、SessionEnd が発火しない経路 (crash / kill / IDE reload) での孤児 daemon 残存を解消。詳細は [CHANGELOG](CHANGELOG.md)。
+> **v0.7.0 released 2026-04-19**. **カタログを tool-db に置き換え**: 手書きの抽象ツール 5 件カタログを廃止し、`claude mcp list` + JSON-RPC `tools/list` で MCP ツールの description を自動取得、Claude Code 組込み 遅延ツール (WebSearch/TodoWrite 等) は hardcoded baseline からカバー、3 段階キャッシュ DB (ローカル → グローバル → 調査して両方に追記) で 2 回目以降は通信ゼロ。これで Caveat や Gmail のような MCP ツールが初めて Haiku の視野に入る。設計思想は [docs/catalog-design-deferred-mcp.md](docs/catalog-design-deferred-mcp.md)、変更詳細は [CHANGELOG](CHANGELOG.md)。
 
 **気づく役と実行する役を分離する。** Spotter は Claude Code の横で静かに並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**に指摘する監査役です。
 
@@ -44,7 +44,7 @@ Stop hook → Spotter が応答と使用済みツールを見て最終チェッ�
 見落としあれば差し戻し (max 1 回、Claude Code の stop_hook_active で自動担保)
 ```
 
-`~/.spotter/tool-catalog/tools.yaml` に監査対象のツール用途を記述します。`current_time` / `web_search` / `read_file` / `list_directory` / `run_command` の雛形付き。
+監査対象のツール (name + description) は `~/.spotter/tool-db.json` (グローバル) と `<project>/.spotter/tool-db.json` (ローカル) に格納されます。install 後に `spotter db refresh` を実行すると、`claude mcp list` で MCP サーバーを列挙し、各サーバーの `tools/list` を JSON-RPC で叩いて description を収集、Claude Code 組込み 遅延ツール (WebSearch / TodoWrite 等) は同梱の baseline からカバーします。**手書きでツールリストを管理する必要はありません**。
 
 ## Throughline との関係
 
@@ -61,10 +61,11 @@ Stop hook → Spotter が応答と使用済みツールを見て最終チェッ�
 ## よく使うコマンド
 
 ```bash
-spotter catalog edit     # ツールカタログを $EDITOR で開く
-spotter catalog lint     # YAML 検証 + test_cases を Haiku 実呼びで検証
+spotter db list          # 現在の tool-db (local + global merged) を表示
+spotter db refresh       # MCP サーバーと組込み 遅延ツールから description を収集して DB 更新
+spotter db rebuild       # ローカル DB を消してから refresh (強制再投資)
 spotter status           # 稼働中の daemon 一覧
-spotter doctor           # 環境診断 (Node / claude CLI / カタログ整合性)
+spotter doctor           # 環境診断 (Node / claude CLI / tool-db 整合性)
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ```
 
