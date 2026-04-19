@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v0.11.0** (2026-04-19): **短プロンプトの Haiku スキップ**。ユーザー入力が trim 後 10 文字 (コードポイント) 以下なら UserPromptSubmit hook で早期 return し、daemon へ `user_input` を送らない。結果、daemon は `state.lastUserInput=null` のまま維持され、次の turn_end が `reason=no_user_input` で自動 pass する。挨拶・相槌・短い質問 ("今何時?" "ありがとう" "ok done" 等) でレイテンシ 0、preamble 57 件の無駄打ちを回避。daemon 側に閾値ロジックを足さず hook 層だけで閉じる最小実装。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
 **v0.10.0** (2026-04-19): **project scope `.mcp.json` 対応**。v0.9.0 は user scope (`~/.claude/.mcp.json`) だけ読んでいたため、プロジェクト直下の `.mcp.json` に登録された MCP サーバー (project 固有) の env / headers を拾えなかった。`<projectRoot>/.mcp.json` も読んで user scope に merge (project 勝ち = Claude Code precedence と整合)。`readMcpServers({projectRoot})` シグネチャ変更 + `refresh` → `investigate` → `mcp-config` の経路で projectRoot を伝搬。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
 **v0.9.0** (2026-04-19): **`.mcp.json` を真実源として読み込み、user-registered MCP の認証情報を live fetch に活用**。v0.8.0 の HTTP transport 実装後も `claude mcp list` / `claude mcp get` は secrets を CLI 出力に含めないため x-api が 401 で落ちていた。ユーザー指摘で `~/.claude/.mcp.json` を直接読めば stdio の env / HTTP の headers が手に入ると判明。`src/tool-db/mcp-config.mjs` を新設、`listMcpServers` を CLI + `.mcp.json` 併用に、`spawnAndQuery` が env を merge、`listToolsHttp` が headers を受理。結果 x-api の 9 ツール (get_trends / search_tweets 等) が live fetch で投入されるようになり、手書き baseline 不要に。`.mcp.json` はユーザー自身が secrets を書いた設定ファイル = `.credentials.json` (Anthropic OAuth) とは性格が違い、v0.8.0 の境界線に抵触しない。詳細は [CHANGELOG.md](CHANGELOG.md)。

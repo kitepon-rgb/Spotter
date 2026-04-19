@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.11.0
+
+**短プロンプトの Haiku スキップ**。ユーザーの入力が trim 後 10 文字 (コードポイント) 以下なら、挨拶・相槌・短い確認質問などツール不要な会話が支配的なため、UserPromptSubmit hook で早期 return して Haiku 呼び出しを完全にスキップする。daemon には user_input を送らず、`state.lastUserInput=null` のまま次の turn_end が `reason=no_user_input` で自動 pass する。preamble 57 件の判定コストを、最も的外れになりやすい短文ターンで丸ごと節約する。
+
+### 変更点
+
+- **編集 [src/hooks/user-prompt.mjs](src/hooks/user-prompt.mjs)**: `SHORT_PROMPT_MAX_CHARS = 10` 定数を追加、`[...prompt.trim()].length <= 10` なら daemon へ送信せず hook を終了
+
+### 設計判断
+
+- **閾値 10 の根拠**: 「今何時?」「ありがとう」「ok done」等はいずれも 10 文字以下。逆に 10 文字超なら何らかの意図 (質問・依頼・指示) が入る想定
+- **半角/全角の区別なし**: コードポイント数で一律判定。半角 10 文字 ("thanks ok" 等) もツール不要な短文が支配的なので skip で問題ないと判断
+- **daemon 側の変更なし**: 既存の `no_user_input` pass 経路を流用。user_input を送らない = state そのまま、という副作用で turn_end が勝手に pass するので daemon に閾値ロジックを持たせる必要がない
+
+### 非互換
+
+なし。観測不能な場面 (短文ターン) で Haiku が動かないだけ。
+
 ## 0.10.0
 
 **project scope `.mcp.json` 対応**。v0.9.0 は `~/.claude/.mcp.json` (user scope) だけを読んでいたため、プロジェクト直下の `.mcp.json` に登録された MCP サーバーの認証情報 (env / headers) を拾えなかった。`<projectRoot>/.mcp.json` も読んで user scope に merge (project 勝ち = Claude Code 本体の precedence と整合) するよう変更。

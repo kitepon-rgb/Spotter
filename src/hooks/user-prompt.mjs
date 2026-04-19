@@ -14,6 +14,7 @@ import {
 import { sendRequest } from '../daemon/transport.mjs';
 
 const TIMEOUT_MS = 30_000;
+const SHORT_PROMPT_MAX_CHARS = 10;
 
 export async function runUserPrompt() {
   if (isChildCall()) return;
@@ -23,6 +24,11 @@ export async function runUserPrompt() {
 
   const sessionId = requireString(input, 'session_id');
   const prompt = requireString(input, 'prompt');
+
+  // Short prompts (<=10 codepoints after trim) are almost never tool-required
+  // (greetings, acknowledgements, short questions). Skip Haiku entirely —
+  // daemon keeps lastUserInput=null, so the next turn_end passes with reason=no_user_input.
+  if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) return;
 
   let response;
   try {
