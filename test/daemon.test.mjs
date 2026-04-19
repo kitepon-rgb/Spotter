@@ -52,7 +52,11 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
   }
 });
 
-test('startDaemon: every Haiku invocation receives the full catalog prompt', async () => {
+test('startDaemon: per-turn prompts carry only the stage delta (no catalog)', async () => {
+  // v0.6.0: the daemon builds the preamble (role + schema + catalog) once at startup and
+  // threads it into the Haiku caller. Per-turn prompts (what the daemon passes to the
+  // caller) carry only the stage-specific payload — the caller is responsible for
+  // prepending the preamble on the first call.
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   const promptsSeen = [];
@@ -68,13 +72,11 @@ test('startDaemon: every Haiku invocation receives the full catalog prompt', asy
       payload: { user_input: '何時?' },
       timeoutMs: 2_000,
     });
-    // v0.5.0: session-scoped at the claude -p layer (--resume), but the daemon still sends
-    // the full system-prompt + catalog every call so Haiku's judgment stays anchored even
-    // if Anthropic's session replay gives only partial context.
     assert.equal(promptsSeen.length, 1);
-    assert.ok(promptsSeen[0].includes('current_time'));
-    assert.ok(promptsSeen[0].includes('get the current time'));
-    assert.ok(promptsSeen[0].includes('## 出力'));
+    assert.ok(promptsSeen[0].includes('stage=user_input'));
+    assert.ok(promptsSeen[0].includes('何時?'));
+    assert.ok(!promptsSeen[0].includes('current_time'), 'catalog must not be in per-turn prompt');
+    assert.ok(!promptsSeen[0].includes('## 出力'), 'output schema must not be in per-turn prompt');
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });

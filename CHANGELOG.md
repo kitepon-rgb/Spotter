@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.0
+
+**Preamble-once: 初回のみ role+schema+catalog を送り、以降は per-turn delta のみ**。v0.5.x で実測した「resumed 呼び出しが first より遅い」問題の原因に手を入れた構造変更。
+
+### 事の発端
+
+v0.5.2 で可視化した duration_ms を数ターン観測したところ、`mode=first=7.4s → mode=resumed=12.5s → mode=resumed=20.2s` と、**resumed が first より遅い**結果になった。プラン §5.5 は「`--resume` で cold-start を消せる」を前提にしていたので、この傾向は設計意図と逆。
+
+調べたところ、v0.5.x の daemon は Haiku 呼び出しのたびに `SHARED_HEADER + catalog + user_input + instruction` を full で組み立てて送っていた。つまり `--resume` で session を継いでいるのに、毎回同じ前置きを再送して session を肥大化させていた。`--resume` の prefill caching 節約より、肥大した prompt の送信・prefill コストのほうが大きい、という構造。
+
+同作者の [OpenClaw](https://github.com/kitepon-rgb/OpenClaw) は Discord から同一セッションへ長期間会話を流し続ける運用で、こちらは**初回のみ role を確立し以降は差分だけ送る**形で動いている。Spotter にも同じ形を持ち込めば、resumed のコストが first より重くなる理由は消えるはず。
+
+### 変更点
+
+- **[src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `buildPreamble({ catalog })` を新設。`SHARED_HEADER` に `stage=user_input` / `stage=turn_end` 両方の判定指示と few-shot を集約し、カタログと一緒に初回 1 回だけ送る。`buildFirstStagePrompt` / `buildFinalStagePrompt` はカタログと role を剥がして per-turn payload (stage マーカー + 入力タグ) のみに縮小。`createHaikuCaller({ preamble, ... })` が optional preamble を受け取り、`isFirstCall === true` のときだけ prompt に prepend する。`reset()` は `isFirstCall = true` を復元するので role collapse 回復時は新 session に preamble が再送される。
+- **[src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: startup で `buildPreamble({ catalog })` を 1 回作って `createHaikuCaller` に渡す。`handleUserInput` / `handleTurnEnd` の呼び出し側はカタログを渡さないシンプルな形に戻る (カタログは daemon 内部でのみ保持、preamble に封じ込む)。
+- **[test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `buildPreamble` が role+schema+catalog+few-shot を全て含むこと、per-turn 側のプロンプトが catalog/role を含まないこと、non-string な preamble が TypeError になることを検証。
+- **[test/daemon.test.mjs](test/daemon.test.mjs)**: 既存の「every Haiku invocation receives the full catalog prompt」テストを **逆の主張 (per-turn prompt は catalog を含まない)** に置き換え。
+
+### 期待される効果
+
+- **per-turn prompt サイズが大幅減**: v0.5.x の full prompt (カタログ JSON + SHARED_HEADER + few-shot で 2KB 前後) が、v0.6.0 では stage マーカー + ユーザー入力 (数百バイト) に縮む。Stop hook 側は final_response と used_tools の分だけ増えるが、カタログ再送よりは軽い。
+- **resumed の cold-start 削減が数値で出るはず**: 次セッションで `mode=resumed, duration_ms=<N>` が `mode=first` より短ければ、プラン §5.5 の前提が正しく機能したことが実測で確認できる。
+- **role collapse 耐性**: 既存の reset 機構はそのまま動き、session renew 時に preamble が自動で再送される構造なので、v0.5.x の回復挙動を保存。
+
+### 既知のリスク
+
+- 「preamble を session replay 任せにする」ので、Anthropic 側で session replay が不完全だと Haiku が role を見失う (= role collapse 発生頻度が上がる可能性)。v0.5.0 で入れた `E_HAIKU_SCHEMA → reset()` 回復機構と `role_collapse_reset` ログで観測可能。多発するなら preamble を毎回送る形に戻す判断を v0.6.1 以降で検討。
+
 ## 0.5.2
 
 **Haiku 呼び出しのレイテンシ可視化 (観測性の改善のみ、機能変更なし)**。

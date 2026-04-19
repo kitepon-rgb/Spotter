@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildPreamble,
   buildFirstStagePrompt,
   buildFinalStagePrompt,
   parseHaikuResponse,
@@ -17,33 +18,37 @@ const sampleCatalog = {
   ],
 };
 
-test('buildFirstStagePrompt includes catalog and rules', () => {
-  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?' });
-  assert.ok(prompt.includes('current_time'));
+test('buildPreamble contains role, schema, catalog, and few-shot examples', () => {
+  // v0.6.0: preamble is sent once per session (first call). It carries everything Haiku
+  // needs to keep its role and output contract — role statement, JSON schema, both stage
+  // definitions, few-shot examples, and the full tool catalog.
+  const preamble = buildPreamble({ catalog: sampleCatalog });
+  assert.ok(preamble.includes('Spotter'));
+  assert.ok(preamble.includes('Bell'));
+  assert.ok(preamble.includes('監査役'));
+  assert.ok(preamble.includes('会話文は生成せず') || preamble.includes('会話文は生成しません'));
+  assert.ok(preamble.includes('current_time'));
+  assert.ok(preamble.includes('get time'));
+  assert.ok(preamble.includes('"pass":false'));
+  assert.ok(preamble.includes('"pass":true'));
+  assert.ok(preamble.includes('stage=user_input'));
+  assert.ok(preamble.includes('stage=turn_end'));
+  assert.ok(preamble.includes('推測禁止'));
+});
+
+test('buildFirstStagePrompt is a small per-turn delta — no catalog, no header', () => {
+  // v0.6.0: the first-stage prompt is only the stage marker + wrapped user input. The
+  // catalog / role / few-shot live in the preamble and must NOT be re-transmitted here.
+  const prompt = buildFirstStagePrompt({ userInput: '今何時?' });
+  assert.ok(prompt.includes('stage=user_input'));
   assert.ok(prompt.includes('今何時?'));
-  assert.ok(prompt.includes('pass'));
-  assert.ok(prompt.includes('get time'));
+  assert.ok(!prompt.includes('current_time'), 'catalog must not be in per-turn prompt');
+  assert.ok(!prompt.includes('get time'), 'catalog descriptions must not be in per-turn prompt');
+  assert.ok(!prompt.includes('Spotter'), 'role text must not be in per-turn prompt');
 });
 
-test('buildFirstStagePrompt names Bell and the auditor role clearly', () => {
-  // v0.4.3: minimized prompt — no role-guard enumeration, no 【最重要】 tags.
-  // Must still clearly state who Spotter is and what "Bell" refers to, since Haiku
-  // sees this fresh every call (stateless) with no other context.
-  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '今何時?' });
-  assert.ok(prompt.includes('Spotter'));
-  assert.ok(prompt.includes('Bell'));
-  assert.ok(prompt.includes('監査役'));
-  // Haiku must not generate user-facing chat — enforce explicitly.
-  assert.ok(prompt.includes('会話文は生成せず') || prompt.includes('会話文は生成しません'));
-});
-
-test('buildFirstStagePrompt wraps user input in <user_input> tags for structural clarity', () => {
-  // v0.4.3: tags kept as structural markers (data vs instruction boundary),
-  // not as adversarial injection defence — there is no attacker in a solo project.
-  const prompt = buildFirstStagePrompt({
-    catalog: sampleCatalog,
-    userInput: '時間を教えて',
-  });
+test('buildFirstStagePrompt wraps user input in <user_input> tags', () => {
+  const prompt = buildFirstStagePrompt({ userInput: '時間を教えて' });
   assert.ok(prompt.includes('<user_input>'));
   assert.ok(prompt.includes('</user_input>'));
   const opening = prompt.indexOf('<user_input>');
@@ -52,65 +57,35 @@ test('buildFirstStagePrompt wraps user input in <user_input> tags for structural
   assert.ok(opening < payload && payload < closing, 'payload must be between the tags');
 });
 
-test('buildFirstStagePrompt includes a few-shot example of each pass outcome', () => {
-  // v0.4.3: minimal few-shot — 1 pass:false + 1 pass:true. Improves JSON compliance
-  // without inflating the prompt.
-  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '?' });
-  assert.ok(prompt.includes('"pass":false'));
-  assert.ok(prompt.includes('"pass":true'));
-});
-
-test('buildFirstStagePrompt tail contains the judgment directive (end-anchored)', () => {
-  // v0.4.3: the discriminating instruction ("推測禁止、when_to_use 該当のみ") must be
-  // at the tail so it anchors the model's final action.
-  const prompt = buildFirstStagePrompt({ catalog: sampleCatalog, userInput: '?' });
-  const tail = prompt.slice(-200);
-  assert.ok(tail.includes('when_to_use'));
-  assert.ok(tail.includes('推測禁止'));
-  assert.ok(tail.includes('pass:true'));
-});
-
-test('buildFinalStagePrompt wraps both user input and final response in tags', () => {
-  // v0.4.3: structural delimiters kept.
+test('buildFinalStagePrompt is a small per-turn delta — no catalog, no header', () => {
   const prompt = buildFinalStagePrompt({
-    catalog: sampleCatalog,
     userInput: '?',
     usedTools: [],
+    finalResponse: 'reply',
+  });
+  assert.ok(prompt.includes('stage=turn_end'));
+  assert.ok(!prompt.includes('current_time'), 'catalog must not be in per-turn prompt');
+  assert.ok(!prompt.includes('Spotter'), 'role text must not be in per-turn prompt');
+});
+
+test('buildFinalStagePrompt wraps user_input, used_tools, and final_response in tags', () => {
+  const prompt = buildFinalStagePrompt({
+    userInput: '何時?',
+    usedTools: ['read_file'],
     finalResponse: 'Bell の返答',
   });
   assert.ok(prompt.includes('<user_input>'));
   assert.ok(prompt.includes('</user_input>'));
+  assert.ok(prompt.includes('<used_tools>'));
+  assert.ok(prompt.includes('</used_tools>'));
   assert.ok(prompt.includes('<final_response>'));
   assert.ok(prompt.includes('</final_response>'));
-});
-
-test('buildFinalStagePrompt tail directs Haiku to exclude already-used tools', () => {
-  const prompt = buildFinalStagePrompt({
-    catalog: sampleCatalog,
-    userInput: '?',
-    usedTools: ['read_file'],
-    finalResponse: 'r',
-  });
-  const tail = prompt.slice(-200);
-  assert.ok(tail.includes('既使用'));
-  assert.ok(tail.includes('呼び忘れ'));
-});
-
-test('buildFinalStagePrompt includes used_tools section', () => {
-  const prompt = buildFinalStagePrompt({
-    catalog: sampleCatalog,
-    userInput: '今何時?',
-    usedTools: ['read_file'],
-    finalResponse: '深夜ですね',
-  });
   assert.ok(prompt.includes('read_file'));
-  assert.ok(prompt.includes('深夜ですね'));
-  assert.ok(prompt.includes('get time'));
+  assert.ok(prompt.includes('Bell の返答'));
 });
 
 test('buildFinalStagePrompt handles empty used_tools', () => {
   const prompt = buildFinalStagePrompt({
-    catalog: sampleCatalog,
     userInput: '?',
     usedTools: [],
     finalResponse: 'r',
@@ -125,9 +100,14 @@ test('createHaikuCaller throws on invalid timeout', () => {
   );
 });
 
+test('createHaikuCaller throws if preamble is a non-string', () => {
+  assert.throws(
+    () => createHaikuCaller({ preamble: 123, timeoutMs: 1000 }),
+    TypeError
+  );
+});
+
 test('createHaikuCaller returns a callable with reset() and sessionId (session-scoped)', () => {
-  // v0.5.0: Haiku calls are session-scoped again (--session-id + --resume on follow-ups).
-  // The caller exposes its current session id and a reset() to renew it on role-collapse.
   const caller = createHaikuCaller({ timeoutMs: 1000 });
   assert.equal(typeof caller, 'function');
   assert.equal(typeof caller.reset, 'function');
@@ -136,8 +116,8 @@ test('createHaikuCaller returns a callable with reset() and sessionId (session-s
 });
 
 test('createHaikuCaller: reset() assigns a new session-id', () => {
-  // v0.5.0: reset() is the recovery path for role collapse — it must produce a fresh uuid
-  // so the next call starts a brand-new claude -p session.
+  // reset() is the recovery path for role collapse — it must produce a fresh uuid so the
+  // next call starts a brand-new claude -p session (and re-transmits the preamble).
   const caller = createHaikuCaller({ timeoutMs: 1000 });
   const before = caller.sessionId;
   caller.reset();
@@ -146,8 +126,8 @@ test('createHaikuCaller: reset() assigns a new session-id', () => {
 });
 
 test('createHaikuCaller: isFirstCall starts true and reset() restores it', () => {
-  // The daemon reads isFirstCall to tag log output with mode=first|resumed. Exposing the
-  // flag also lets tests assert the spawn-arg transition without running claude -p.
+  // v0.6.0: isFirstCall also gates whether the preamble is prepended on the next call.
+  // reset() must restore it to true so role-collapse recovery re-primes the fresh session.
   const caller = createHaikuCaller({ timeoutMs: 1000 });
   assert.equal(caller.isFirstCall, true);
   caller.reset();
@@ -155,7 +135,6 @@ test('createHaikuCaller: isFirstCall starts true and reset() restores it', () =>
 });
 
 test('buildSpawnArgs: first call uses --session-id without --resume', () => {
-  // v0.5.0: the very first call of a session has no prior claude -p session to resume.
   const { cmdArgs } = buildSpawnArgs({
     claudeBin: 'claude',
     model: 'haiku',
@@ -169,8 +148,6 @@ test('buildSpawnArgs: first call uses --session-id without --resume', () => {
 });
 
 test('buildSpawnArgs: subsequent call uses --resume alone (no --session-id)', () => {
-  // v0.5.1: claude CLI rejects --session-id + --resume without --fork-session, so the
-  // resume path drops --session-id and passes the id to --resume instead.
   const { cmdArgs } = buildSpawnArgs({
     claudeBin: 'claude',
     model: 'haiku',

@@ -1,17 +1,17 @@
 // claude -p --model claude-haiku-4-5-* wrapper.
 // §5.5: structured JSON I/O, no retries, schema violations throw.
 //
-// v0.5.0: session-scoped Haiku is back. Each daemon holds a single Haiku session-id for
-// the life of the Bell session; the first call uses --session-id only, subsequent calls
-// use --session-id + --resume to reattach to the same claude -p conversation, avoiding
-// per-turn cold-start spawn (observed 20–50s in v0.4.x stateless mode).
+// v0.6.0: preamble-once. The full role + schema + few-shot + catalog (the "preamble") is
+// sent only on the first call of a Haiku session; every subsequent call sends only the
+// per-turn delta. Anthropic's --resume replays the preamble from session history, so
+// Haiku keeps its role and catalog context without us re-transmitting ~2KB of boilerplate
+// per turn. This is the OpenClaw pattern (same author, proven in production with Discord
+// → Claude long-lived sessions). Role collapse remains handled by reset() → fresh session
+// → preamble resent on next call.
 //
-// Role-collapse (Haiku drifting into Bell's persona over long sessions — the failure mode
-// v0.4.0 reverted to stateless to avoid) is now handled by a recovery mechanism instead of
-// structural prevention: if the daemon detects a schema violation (E_HAIKU_SCHEMA) from
-// parseHaikuResponse, it calls reset() on the caller to renew the session-id, then silent-
-// passes the offending turn. See daemon.mjs for the catch site. This makes role collapse a
-// "想定済み異常" (CLAUDE.md §0) — recorded, recovered from, never bubbled up as exit 2.
+// v0.5.x prior behaviour (re-sending full context every turn) made subsequent "resumed"
+// calls *slower* than the first (prompt bloat outweighed --resume prefill savings). v0.6.0
+// puts the catalog only in the first turn's user message; the session retains it for free.
 
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -36,13 +36,8 @@ export async function ensureWorkdir() {
   return WORKDIR;
 }
 
-// v0.4.3 minimization (retained in v0.5.0):
-//   Aggressive trim — no adversarial prompt-injection list, no 【最重要】 tags, no triple
-//   restatement. The judgment-anchoring instruction at the tail stays prominent.
-//
-// Shared header (role + schema + few-shot) is identical between first/final stages, which
-// keeps the Anthropic prompt-cache prefix stable across calls of the same stage.
-
+// Shared header covers BOTH stages — the preamble documents stage=user_input and
+// stage=turn_end so per-turn prompts only need to announce which stage they are.
 const SHARED_HEADER = [
   'あなたは Spotter。Bell (主役の Claude) が呼び忘れるツールを検出する監査役です。',
   'ユーザーへの会話文は生成せず、必ず下記 JSON のみを返します。',
@@ -52,50 +47,55 @@ const SHARED_HEADER = [
   '- pass:true なら missing_tools は空、pass:false なら 1 件以上',
   '- JSON のみ。前置き・コードフェンス禁止',
   '',
+  '## 判定対象',
+  '各ターン、以下いずれかの stage で判定リクエストを受けます:',
+  '- stage=user_input: <user_input> のみ届く。when_to_use に明確に該当するツールを列挙',
+  '- stage=turn_end: <user_input> + <used_tools> + <final_response> が届く。既使用を除き Bell が呼び忘れたツールを列挙',
+  'どちらも推測禁止。該当なしなら pass:true。',
+  '',
   '## 例',
-  '- "今何時?" → {"pass":false,"missing_tools":[{"name":"current_time","reason":"時刻の直接質問"}]}',
-  '- "ありがとう" → {"pass":true,"missing_tools":[]}',
+  '- stage=user_input "今何時?" → {"pass":false,"missing_tools":[{"name":"current_time","reason":"時刻の直接質問"}]}',
+  '- stage=user_input "ありがとう" → {"pass":true,"missing_tools":[]}',
 ].join('\n');
 
-// Build the first-stage prompt — sent on UserPromptSubmit before tools are invoked.
-export function buildFirstStagePrompt({ catalog, userInput }) {
+// Preamble — sent exactly once per Haiku session (first call). Contains the role,
+// output contract, few-shot examples, and the tool catalog. The Anthropic session
+// retains this in history so subsequent --resume calls can judge with only a small
+// per-turn payload.
+export function buildPreamble({ catalog }) {
   return [
     SHARED_HEADER,
     '',
     '## カタログ',
     JSON.stringify(projectCatalog(catalog), null, 2),
-    '',
-    '## ユーザー入力',
-    '<user_input>',
-    userInput,
-    '</user_input>',
-    '',
-    'when_to_use に明確に該当するツールだけを列挙。推測禁止。該当なしなら pass:true。',
   ].join('\n');
 }
 
-// Build the final-stage prompt — Stop hook, after Bell's response.
-export function buildFinalStagePrompt({ catalog, userInput, usedTools, finalResponse }) {
+// Per-turn prompt — UserPromptSubmit stage. Sent as-is on every call (first and resumed);
+// createHaikuCaller prepends the preamble on first call only.
+export function buildFirstStagePrompt({ userInput }) {
   return [
-    SHARED_HEADER,
-    '',
-    '## カタログ',
-    JSON.stringify(projectCatalog(catalog), null, 2),
-    '',
-    '## ユーザー入力',
+    'stage=user_input',
     '<user_input>',
     userInput,
     '</user_input>',
-    '',
-    '## Bell が既に使用したツール',
-    usedTools.length > 0 ? usedTools.map((t) => `- ${t}`).join('\n') : '(なし)',
-    '',
-    '## Bell の応答',
+  ].join('\n');
+}
+
+// Per-turn prompt — Stop hook stage.
+export function buildFinalStagePrompt({ userInput, usedTools, finalResponse }) {
+  const usedList = usedTools.length > 0 ? usedTools.map((t) => `- ${t}`).join('\n') : '(なし)';
+  return [
+    'stage=turn_end',
+    '<user_input>',
+    userInput,
+    '</user_input>',
+    '<used_tools>',
+    usedList,
+    '</used_tools>',
     '<final_response>',
     finalResponse,
     '</final_response>',
-    '',
-    '既使用ツールを除き、when_to_use に明確に該当するのに Bell が呼び忘れたツールを列挙。推測禁止。該当なしなら pass:true。',
   ].join('\n');
 }
 
@@ -167,11 +167,6 @@ function truncate(s, n = 300) {
 // On Windows, the `claude` entry is typically a .cmd shim which Node's spawn cannot locate
 // without going through the shell. We use cmd.exe /c explicitly rather than spawn({ shell:
 // true }) because the latter triggers DEP0190 on Node 24+.
-//
-// v0.5.1: claude CLI rejects `--session-id` together with `--resume` unless `--fork-session`
-// is present (fork would create a new id, defeating the point). So first call uses
-// `--session-id <uuid>` to pin the id; every subsequent call uses `--resume <uuid>` alone to
-// re-attach. buildSpawnArgs is exported so tests can assert flag wiring without spawning.
 export function buildSpawnArgs({ claudeBin, model, sessionId, resume }) {
   const args = resume
     ? ['-p', '--resume', sessionId, '--model', model]
@@ -186,13 +181,17 @@ export function buildSpawnArgs({ claudeBin, model, sessionId, resume }) {
 // §5.5: no retry on failure. §14.1: silent fallback forbidden (role-collapse recovery in
 // daemon.mjs is an explicit §0 exception, not silent fallback).
 //
-// v0.5.0: session-scoped. The caller keeps one session-id for the session's lifetime, and
-// exposes a reset() method that rotates the session-id (used by daemon on E_HAIKU_SCHEMA
-// to recover from role collapse). The returned value is a function (so existing tests that
-// check `typeof caller === 'function'` still pass) with `reset` and `sessionId` attached.
-export function createHaikuCaller({ timeoutMs, claudeBin = 'claude', model = HAIKU_MODEL, env = process.env }) {
+// v0.6.0: accepts an optional `preamble` string that is prepended to the user message on
+// the first call only. Subsequent calls (after a successful first call) send only the
+// per-turn prompt — the preamble lives in Anthropic's session history via --resume. A
+// reset() call (used on role collapse) restores isFirstCall=true so the preamble is
+// re-sent on the next attempt with a fresh session-id.
+export function createHaikuCaller({ preamble, timeoutMs, claudeBin = 'claude', model = HAIKU_MODEL, env = process.env }) {
   if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
     throw new TypeError('timeoutMs must be a positive number');
+  }
+  if (preamble !== undefined && typeof preamble !== 'string') {
+    throw new TypeError('preamble must be a string if provided');
   }
 
   let currentSessionId = randomUUID();
@@ -200,6 +199,7 @@ export function createHaikuCaller({ timeoutMs, claudeBin = 'claude', model = HAI
 
   const callHaiku = async function (prompt) {
     await ensureWorkdir();
+    const wirePrompt = (isFirstCall && preamble) ? `${preamble}\n\n${prompt}` : prompt;
     return new Promise((resolve, reject) => {
       const { cmd, cmdArgs } = buildSpawnArgs({
         claudeBin,
@@ -243,13 +243,13 @@ export function createHaikuCaller({ timeoutMs, claudeBin = 'claude', model = HAI
           return;
         }
         // Flip isFirstCall only after a successful spawn — a failed first call should
-        // still be treated as "session not yet established" so the next attempt uses
-        // --session-id only (not --resume against a non-existent session).
+        // still be treated as "preamble not yet delivered" so the next attempt re-sends
+        // the full prelude against a fresh --session-id (not --resume a non-existent one).
         isFirstCall = false;
         resolve(stdout);
       });
 
-      child.stdin.end(prompt, 'utf8');
+      child.stdin.end(wirePrompt, 'utf8');
     });
   };
 

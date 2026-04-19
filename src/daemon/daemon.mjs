@@ -1,13 +1,17 @@
 // Session-scoped daemon — receives hook events, dispatches to handlers,
 // calls Haiku on user_input / turn_end, keeps used_tools in process memory.
 //
+// v0.6.0: preamble (role + schema + catalog) is sent only on the first Haiku call of the
+// session; subsequent calls send only the per-turn delta, relying on --resume to replay
+// the preamble from session history. This is the OpenClaw pattern and addresses v0.5.x's
+// "resumed calls slower than first" observation (prompt bloat had been outweighing the
+// --resume prefill savings).
+//
 // v0.5.0: Haiku calls are session-scoped at the claude -p layer (--session-id + --resume).
-// The daemon holds one Haiku caller for the session's lifetime; the first call establishes
-// the claude -p session and every subsequent call reattaches, avoiding cold-start spawn.
-// Role collapse (Haiku drifting into Bell's persona, previously the reason v0.4.0 reverted
-// to stateless) is handled by a recovery mechanism rather than structural prevention:
-// E_HAIKU_SCHEMA → haikuCaller.reset() + silent-pass the offending turn. This is the §0
-// "想定済み異常 = 記録 + 正常リターン" classification.
+// Role collapse (Haiku drifting into Bell's persona) is handled by recovery rather than
+// structural prevention: E_HAIKU_SCHEMA → haikuCaller.reset() + silent-pass the offending
+// turn (a §0 "想定済み異常 = 記録 + 正常リターン" classification). reset() restores
+// isFirstCall=true so the next attempt re-sends the preamble on a fresh session.
 //
 // §5.7: event dispatch follows the envelope contract.
 // §14:  unexpected errors are thrown; hooks convert them to exit codes.
@@ -26,6 +30,7 @@ import { createServer, ensureRuntimeDir, socketPath } from './transport.mjs';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
+  buildPreamble,
   parseHaikuResponse,
   createHaikuCaller,
   HaikuError,
@@ -73,7 +78,11 @@ export async function startDaemon({
   const catalog = await loadCatalog(catalogPath);
   logFn(`catalog loaded: ${catalog.tools.length} tools from ${catalogPath}`);
 
-  const callHaiku = haikuCaller ?? createHaikuCaller({ timeoutMs: DEFAULT_HAIKU_TIMEOUT_MS });
+  // v0.6.0: preamble (role + schema + catalog) is built once and threaded into the Haiku
+  // caller. The caller prepends it on the first call only; --resume keeps it in session
+  // history for all subsequent calls.
+  const preamble = buildPreamble({ catalog });
+  const callHaiku = haikuCaller ?? createHaikuCaller({ preamble, timeoutMs: DEFAULT_HAIKU_TIMEOUT_MS });
 
   // Per-turn state, reset on turn_end.
   const state = {
@@ -169,7 +178,7 @@ export async function startDaemon({
     state.lastUserInput = userInput;
     state.usedTools = []; // reset tools for this turn
 
-    const { parsed, meta } = await runHaikuJudgment('user_input', buildFirstStagePrompt({ catalog, userInput }));
+    const { parsed, meta } = await runHaikuJudgment('user_input', buildFirstStagePrompt({ userInput }));
     logFn(
       `user_input: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
         parsed.reason ? `, reason=${parsed.reason}` : ''
@@ -213,7 +222,6 @@ export async function startDaemon({
     const { parsed, meta } = await runHaikuJudgment(
       'turn_end',
       buildFinalStagePrompt({
-        catalog,
         userInput: savedUserInput,
         usedTools: savedUsedTools,
         finalResponse,
