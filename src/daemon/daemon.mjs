@@ -16,6 +16,12 @@
 // §5.7: event dispatch follows the envelope contract.
 // §14:  unexpected errors are thrown; hooks convert them to exit codes.
 //
+// v0.12.0: orphan-cleanup is now heartbeat-based instead of parent-PID watch. Every
+// envelope (including readiness) resets a setTimeout; if no hook event arrives within
+// HEARTBEAT_TIMEOUT_MS (30 min), the daemon self-shuts. Replaces v0.6.2's --parent-pid
+// scheme, which mis-fired in VSCode native-extension environments where process.ppid
+// pointed at a short-lived wrapper. UserPromptSubmit hook auto-resurrects a dead daemon.
+//
 // v0.2 defence layers against daemon proliferation (see plan §18) — still active:
 //   - SPOTTER_PARENT_PID env var (set by haiku-caller when spawning claude -p; hooks skip on presence)
 //   - agent_id gate (subagent hooks exit 0 before reaching the daemon)
@@ -45,11 +51,11 @@ const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
 // being excessive, and a role-collapse recovery cycle (reset → next call is effectively
 // a cold start again) stays within budget.
 const DEFAULT_HAIKU_TIMEOUT_MS = 30_000;
-// v0.6.2: parent-process watch interval. SessionStart hook passes the Claude Code PID;
-// the daemon polls it so it can self-terminate when Claude Code dies without firing
-// SessionEnd (crash, kill -9, IDE reload). 5s is a balance between responsiveness and
-// idle CPU cost — well below the cost of an orphan daemon staying up indefinitely.
-const DEFAULT_PARENT_WATCH_INTERVAL_MS = 5_000;
+// v0.12.0: heartbeat-based orphan cleanup. Every envelope resets a setTimeout; if no
+// hook event arrives within this window, the daemon self-shuts. 30 min is the longest
+// silence we expect from a live Claude Code session. UserPromptSubmit auto-resurrects
+// a dead daemon, so over-aggressive timeout would just cause a visible re-spawn.
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30 * 60 * 1000;
 
 export class DaemonAlreadyRunningError extends Error {
   constructor(sessionId, pid) {
@@ -67,14 +73,13 @@ export async function startDaemon({
   haikuCaller,
   logFn = () => {},
   haikuCallWindowMs = DEFAULT_HAIKU_CALL_WINDOW_MS,
-  parentPid = null,
-  parentWatchIntervalMs = DEFAULT_PARENT_WATCH_INTERVAL_MS,
+  heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
   }
-  if (parentPid !== null && (!Number.isInteger(parentPid) || parentPid <= 0)) {
-    throw new TypeError('parentPid must be a positive integer or null');
+  if (!Number.isFinite(heartbeatTimeoutMs) || heartbeatTimeoutMs <= 0) {
+    throw new TypeError('heartbeatTimeoutMs must be a positive number');
   }
 
   await ensureRuntimeDir();
@@ -141,7 +146,24 @@ export async function startDaemon({
     }
   };
 
+  // v0.12.0: heartbeat. Reset on every envelope; if no event arrives within
+  // heartbeatTimeoutMs the daemon self-shuts. Replaces v0.6.2 parent-PID watch.
+  // The timer itself is created after server.listen() succeeds (see below).
+  let heartbeatHandle = null;
+  const resetHeartbeat = () => {
+    if (heartbeatHandle !== null) clearTimeout(heartbeatHandle);
+    heartbeatHandle = setTimeout(() => {
+      heartbeatHandle = null;
+      logFn(`heartbeat timeout (${heartbeatTimeoutMs}ms), shutting down`);
+      shutdown(server, sessionId, logFn).catch((err) => {
+        logFn(`heartbeat shutdown error: ${err.message}`);
+      });
+    }, heartbeatTimeoutMs);
+    heartbeatHandle.unref();
+  };
+
   const handler = async (envelope) => {
+    resetHeartbeat();
     if (!envelope || typeof envelope !== 'object') {
       const err = new Error('invalid envelope');
       err.code = 'E_INTERNAL';
@@ -276,29 +298,15 @@ export async function startDaemon({
   const pidPath = pidFilePath(sessionId);
   await writeFile(pidPath, String(process.pid), 'utf8');
 
-  // v0.6.2: parent-process watch. SessionEnd is a graceful path; if Claude Code dies
-  // without it (crash, kill, IDE reload), nothing else cleans us up. Poll the parent
-  // PID and self-terminate on its disappearance.
-  let parentWatchHandle = null;
-  if (parentPid !== null) {
-    logFn(`watching parent pid=${parentPid} (interval=${parentWatchIntervalMs}ms)`);
-    parentWatchHandle = setInterval(() => {
-      if (!isProcessAlive(parentPid)) {
-        logFn(`parent pid=${parentPid} gone, shutting down`);
-        clearInterval(parentWatchHandle);
-        parentWatchHandle = null;
-        shutdown(server, sessionId, logFn).catch((err) => {
-          logFn(`parent-watch shutdown error: ${err.message}`);
-        });
-      }
-    }, parentWatchIntervalMs);
-    parentWatchHandle.unref();
-  }
+  // Start the heartbeat. The first hook event (typically SessionStart's readiness
+  // ping moments later) will reset it; if nothing arrives in heartbeatTimeoutMs we self-shut.
+  logFn(`heartbeat armed (timeout=${heartbeatTimeoutMs}ms)`);
+  resetHeartbeat();
 
   const stop = async () => {
-    if (parentWatchHandle !== null) {
-      clearInterval(parentWatchHandle);
-      parentWatchHandle = null;
+    if (heartbeatHandle !== null) {
+      clearTimeout(heartbeatHandle);
+      heartbeatHandle = null;
     }
     return shutdown(server, sessionId, logFn);
   };
@@ -309,18 +317,6 @@ export async function startDaemon({
     pidPath,
     stop,
   };
-}
-
-function isProcessAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    if (err.code === 'ESRCH') return false;
-    if (err.code === 'EPERM') return true; // exists but owned by another user
-    // Unknown errno — be conservative and assume alive (don't auto-kill on transient).
-    return true;
-  }
 }
 
 async function assertNoLiveDaemon(sessionId) {

@@ -1,5 +1,11 @@
 // UserPromptSubmit hook — send user_input to daemon, inject additionalContext (§12.2 transparent).
 // v0.2 gates: see src/hooks/session-start.mjs comment.
+//
+// v0.12.0: auto-resurrect. If sendRequest fails with E_UNREACHABLE (daemon was
+// heartbeat-killed for 30 min idle, crashed, or was never spawned because SessionStart
+// fired in a context we skipped), we spawn a fresh daemon and retry once. This is the
+// natural recovery point — the start of a new turn — so the user's prompt is still
+// audited even after long pauses or daemon failures.
 
 import {
   readStdinJson,
@@ -10,8 +16,10 @@ import {
   isChildCall,
   isSubagentCall,
   isOutsideSpotterProject,
+  findSpotterMarker,
 } from './lib.mjs';
-import { sendRequest } from '../daemon/transport.mjs';
+import { sendRequest, TransportError } from '../daemon/transport.mjs';
+import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
 
 const TIMEOUT_MS = 30_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
@@ -25,22 +33,43 @@ export async function runUserPrompt() {
   const sessionId = requireString(input, 'session_id');
   const prompt = requireString(input, 'prompt');
 
-  // Short prompts (<=10 codepoints after trim) are almost never tool-required
-  // (greetings, acknowledgements, short questions). Skip Haiku entirely —
-  // daemon keeps lastUserInput=null, so the next turn_end passes with reason=no_user_input.
   if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) return;
 
-  let response;
-  try {
-    response = await sendRequest({
+  const sendUserInput = () =>
+    sendRequest({
       sessionId,
       event: 'user_input',
       payload: { user_input: prompt },
       timeoutMs: TIMEOUT_MS,
     });
+
+  let response;
+  try {
+    response = await sendUserInput();
   } catch (err) {
-    die(`user-prompt transport failure: ${err.code ?? '?'}: ${err.message}`, exitCodeFor(err));
-    return;
+    if (err instanceof TransportError && err.code === 'E_UNREACHABLE') {
+      // v0.12.0: daemon is gone (heartbeat shutdown, crash, missing). Resurrect and retry.
+      const projectRoot = findSpotterMarker(input.cwd);
+      if (!projectRoot) {
+        die(`user-prompt: cannot resurrect daemon — no .spotter/marker.json above cwd=${input.cwd}`, 2);
+        return;
+      }
+      try {
+        await spawnDaemonAndWaitReady({ sessionId, projectRoot });
+      } catch (spawnErr) {
+        die(`user-prompt: daemon resurrect failed: ${spawnErr.message}`, spawnErr.exitCode ?? 2);
+        return;
+      }
+      try {
+        response = await sendUserInput();
+      } catch (retryErr) {
+        die(`user-prompt transport failure after resurrect: ${retryErr.code ?? '?'}: ${retryErr.message}`, exitCodeFor(retryErr));
+        return;
+      }
+    } else {
+      die(`user-prompt transport failure: ${err.code ?? '?'}: ${err.message}`, exitCodeFor(err));
+      return;
+    }
   }
 
   if (response.ok !== true) {
@@ -50,7 +79,7 @@ export async function runUserPrompt() {
 
   const result = response.result;
   if (result.pass === true) {
-    return; // no additionalContext to inject
+    return;
   }
 
   const additionalContext = formatTransparentContext(result.missing_tools);

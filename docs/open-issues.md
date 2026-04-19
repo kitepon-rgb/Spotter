@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点 (v0.11.0 時点, 2026-04-19) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点 (v0.12.0 時点, 2026-04-19) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -91,10 +91,6 @@ v0.7.0 〜 v0.10.0 で tool-db が 5 件 (手書き抽象カタログ) → **57 
 
 `.github/workflows/ci.yml` は Node 22.5 / lint / test の想定だが、実装時の lint フロー・PR ゲートは未整備。`node --test` + `eslint` の最小 CI を立ち上げる。
 
-### 孤児 daemon cleanup の追加対策 (v0.2 予定 → v0.6.2 で部分対応)
-
-v0.6.2 で親 PID watch を実装したが、watch 頻度 5 秒は攻撃的に短くするかユーザー設定にするか要判断。
-
 ---
 
 ## 解決済み (参照用)
@@ -107,5 +103,5 @@ v0.6.2 で親 PID watch を実装したが、watch 頻度 5 秒は攻撃的に�
 | Windows `.cmd` で `spawn claude ENOENT` | v0.8.0 |
 | カタログのツール名抽象 (current_time 等) 問題 | v0.7.0 (tool-db 置換で消滅) |
 | 毎ターン full prompt 再送による session 肥大 | v0.6.0 (preamble-once) |
-| 孤児 daemon プロセスの自動回収 | v0.6.2 (親 PID watch) |
+| 孤児 daemon プロセスの自動回収 | v0.6.2 (親 PID watch) → v0.12.0 (heartbeat に置換、VSCode native ext 誤爆を解消) |
 | Stop hook が Bell 最終応答を拾えていないバグ | v0.4.4 |

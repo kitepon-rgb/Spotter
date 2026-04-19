@@ -6,7 +6,6 @@ import { mkdtemp, writeFile, rm, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
 
 // v0.7.0: tests pass `tools` directly to startDaemon (an array of {name, description}).
 // `dir` is still returned for parity with prior cleanup paths and for tests that need a
@@ -397,33 +396,28 @@ test('startDaemon: turn_end log records mode=resumed when caller is past its fir
   }
 });
 
-test('startDaemon: parent-watch shuts daemon down when parent process dies (v0.6.2)', async () => {
-  // SessionStart hook passes Claude Code's PID via --parent-pid. The daemon polls it and
-  // self-terminates when the parent disappears (covers crash / kill / IDE reload paths
-  // where SessionEnd never fires). We simulate Claude Code with a sleeping child node
-  // process and kill it after the daemon starts watching.
+test('startDaemon: heartbeat timeout shuts daemon down after idle (v0.12.0)', async () => {
+  // Replaces v0.6.2's parent-PID watch. Every envelope resets a setTimeout; if no event
+  // arrives within heartbeatTimeoutMs, the daemon self-shuts. Covers the orphan path
+  // where SessionEnd never fires (crash / kill / IDE reload).
   const { dir, tools } = await setupCatalog();
-  const sessionId = `pwatch-${randomUUID()}`;
+  const sessionId = `hb-${randomUUID()}`;
   const haikuCaller = async (_p) => JSON.stringify({ pass: true, missing_tools: [] });
-  const fakeParent = spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)'], { stdio: 'ignore' });
   let running;
   try {
     running = await startDaemon({
       sessionId,
       tools,
       haikuCaller,
-      parentPid: fakeParent.pid,
-      parentWatchIntervalMs: 50,
+      heartbeatTimeoutMs: 200,
     });
     const closed = new Promise((resolve) => running.server.on('close', resolve));
-    fakeParent.kill('SIGKILL');
     const winner = await Promise.race([
       closed.then(() => 'closed'),
       new Promise((res) => setTimeout(() => res('timeout'), 3_000)),
     ]);
-    assert.equal(winner, 'closed', 'daemon should close after parent dies');
+    assert.equal(winner, 'closed', 'daemon should close after heartbeat timeout');
   } finally {
-    if (!fakeParent.killed) fakeParent.kill('SIGKILL');
     if (running) {
       try { await running.stop(); } catch { /* server may already be closed */ }
     }
@@ -431,15 +425,42 @@ test('startDaemon: parent-watch shuts daemon down when parent process dies (v0.6
   }
 });
 
-test('startDaemon: rejects non-positive or non-integer parentPid (v0.6.2)', async () => {
+test('startDaemon: incoming envelopes reset the heartbeat (v0.12.0)', async () => {
   const { dir, tools } = await setupCatalog();
-  const sessionId = `pwatch-bad-${randomUUID()}`;
+  const sessionId = `hb-reset-${randomUUID()}`;
+  const haikuCaller = async (_p) => JSON.stringify({ pass: true, missing_tools: [] });
+  let running;
+  try {
+    running = await startDaemon({
+      sessionId,
+      tools,
+      haikuCaller,
+      heartbeatTimeoutMs: 300,
+    });
+    // Ping every 100ms for ~600ms — far longer than the 300ms timeout. If reset works,
+    // the daemon must still be alive at the end.
+    for (let i = 0; i < 6; i += 1) {
+      await new Promise((res) => setTimeout(res, 100));
+      const resp = await sendRequest({ sessionId, event: 'readiness', timeoutMs: 500 });
+      assert.equal(resp.ok, true, `ping ${i} should succeed (heartbeat must keep daemon alive)`);
+    }
+  } finally {
+    if (running) {
+      try { await running.stop(); } catch { /* */ }
+    }
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: rejects non-positive heartbeatTimeoutMs (v0.12.0)', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `hb-bad-${randomUUID()}`;
   try {
     await assert.rejects(
       () => startDaemon({
         sessionId,
         tools,
-        parentPid: 0,
+        heartbeatTimeoutMs: 0,
         haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
       }),
       TypeError
@@ -448,7 +469,7 @@ test('startDaemon: rejects non-positive or non-integer parentPid (v0.6.2)', asyn
       () => startDaemon({
         sessionId,
         tools,
-        parentPid: 1.5,
+        heartbeatTimeoutMs: -1,
         haikuCaller: async (_p) => JSON.stringify({ pass: true, missing_tools: [] }),
       }),
       TypeError

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.12.0
+
+**親 PID watch を heartbeat 方式に置換 + UserPromptSubmit auto-resurrect**。v0.6.2 で導入した `--parent-pid` watch (Claude Code 本体 PID を `process.kill(pid, 0)` で 5 秒間隔 ping) が VSCode native extension 環境で誤爆する問題を解消。`process.ppid` は extension host から spawn される短命ラッパーを指していて、5 秒で ESRCH → daemon 自死していた (`~/.spotter/logs/ppid-probe.log` の env dump で実測: hook の ppid が毎回 (55692, 46020 等) 変わるのに対し `VSCODE_PID=39964` は固定、CLAUDE_* 系には PID 系 env なし)。
+
+### 設計
+
+- **heartbeat 方式 (b 案)**: daemon が envelope を受信するたびに `setTimeout(selfShutdown, 30min)` を `clearTimeout` + 再 set。ポーリングではなく event-driven で CPU 負荷ゼロ、検出は精密。30 分を超える Claude Code 沈黙は通常の使用では発生しない閾値
+- **OS / 環境依存ゼロ**: VSCODE_PID / CLAUDE_*_PID 等の探索が不要、CLI / native extension / 将来の他クライアント全てで同一挙動
+- **auto-resurrect**: UserPromptSubmit hook が `E_UNREACHABLE` (socket 不在) を検出したら spawn + readiness 待ち + retry。daemon が 30 分 timeout で死んでも crash していても、次のユーザー入力で自動復活する。「daemon が死んでたら pass」(§0 silent fallback 違反) ではなく「daemon が死んでたら起こす」で対処
+- **PreToolUse / Stop は復活させない**: turn の途中で daemon が居なかった場合、used_tools 欠落・preamble 未送信の歪んだ状態で監査再開すると誤検出が増える。次の UserPromptSubmit (新 turn の起点) で復活する設計
+
+### 変更点
+
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: parent-pid watch (`setInterval` + `process.kill(pid, 0)`) を削除、`heartbeatTimeoutMs` パラメータ + `resetHeartbeat()` (clearTimeout + setTimeout の per-envelope re-arm) に置換。`isProcessAlive` も削除 (status.mjs に独立コピー有り)
+- **編集 [src/cli/daemon-cmd.mjs](src/cli/daemon-cmd.mjs)**: `--parent-pid` パース削除、`startDaemon` 呼び出しから `parentPid` 削除
+- **新規 [src/hooks/spawn-daemon.mjs](src/hooks/spawn-daemon.mjs)**: spawn detached + readiness poll を session-start / user-prompt の両方から使えるように共通化
+- **編集 [src/hooks/session-start.mjs](src/hooks/session-start.mjs)**: spawn ロジックを spawn-daemon.mjs に委譲、`--parent-pid` 渡し削除
+- **編集 [src/hooks/user-prompt.mjs](src/hooks/user-prompt.mjs)**: `sendRequest` が `E_UNREACHABLE` で失敗したら `spawnDaemonAndWaitReady` を呼んで retry (1 回のみ)
+- **削除 [src/hooks/ppid-probe.mjs]**: env dump 用の調査 hook、役目終了
+- **編集 [.claude/settings.json](.claude/settings.json)**: probe hook 登録撤去
+- **編集 [test/daemon.test.mjs](test/daemon.test.mjs)**: parent-watch test 2 件を削除、heartbeat timeout / heartbeat reset / heartbeatTimeoutMs validation の 3 件を追加
+
+### 非互換
+
+- `startDaemon({parentPid, parentWatchIntervalMs})` → `startDaemon({heartbeatTimeoutMs})`: API 変更。CLI の `--parent-pid` 引数も廃止 (受け取らなくなる)。Spotter は hook + daemon を同一 npm package で配布するため `npm install -g claude-spotter@latest` で一括更新すれば混在は起きない
+
 ## 0.11.1
 
 **hotfix: `src/version.mjs` を `package.json` から読み取る**。0.11.0 は package.json を 0.11.0 に bump したが `src/version.mjs` のハードコード文字列 (`'0.10.0'`) を上げ忘れていたため、`spotter --version` が `0.10.0` のまま表示される不整合があった。同じミスを防ぐため ESM JSON import (`import pkg from '../package.json' with { type: 'json' }`) で package.json から動的に引くよう変更。以降は package.json の version を bump するだけで CLI 出力も追従する。

@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v0.12.0** (2026-04-19): **親 PID watch を heartbeat 方式に置換 + UserPromptSubmit auto-resurrect**。v0.6.2 で導入した `--parent-pid` watch が VSCode native extension 環境で誤爆する問題 (`process.ppid` が短命ラッパーを指して 5 秒で ESRCH → daemon 自死) を解消。daemon 側は envelope 受信ごとに `setTimeout(selfShutdown, 30min)` を re-arm する heartbeat 方式に変更、OS / 環境依存ゼロ。誤自死しても次の UserPromptSubmit で `E_UNREACHABLE` を検知して spawn + retry する auto-resurrect も合わせて入れたため、孤児発生時のユーザー影響は「次の入力時に一瞬の起動 latency」だけになる。`--parent-pid` 引数と関連 watch ロジックは完全削除 (minor bump 相当の API 変更)。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
 **v0.11.0** (2026-04-19): **短プロンプトの Haiku スキップ**。ユーザー入力が trim 後 10 文字 (コードポイント) 以下なら UserPromptSubmit hook で早期 return し、daemon へ `user_input` を送らない。結果、daemon は `state.lastUserInput=null` のまま維持され、次の turn_end が `reason=no_user_input` で自動 pass する。挨拶・相槌・短い質問 ("今何時?" "ありがとう" "ok done" 等) でレイテンシ 0、preamble 57 件の無駄打ちを回避。daemon 側に閾値ロジックを足さず hook 層だけで閉じる最小実装。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
 **v0.10.0** (2026-04-19): **project scope `.mcp.json` 対応**。v0.9.0 は user scope (`~/.claude/.mcp.json`) だけ読んでいたため、プロジェクト直下の `.mcp.json` に登録された MCP サーバー (project 固有) の env / headers を拾えなかった。`<projectRoot>/.mcp.json` も読んで user scope に merge (project 勝ち = Claude Code precedence と整合)。`readMcpServers({projectRoot})` シグネチャ変更 + `refresh` → `investigate` → `mcp-config` の経路で projectRoot を伝搬。詳細は [CHANGELOG.md](CHANGELOG.md)。
@@ -20,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **v0.7.0** (2026-04-19): **カタログを tool-db に置き換え**。手書きの `tools.yaml` (current_time / web_search 等 5 件の抽象ツール) を廃止し、**実際にセッションで使える MCP ツール + Claude Code 組込み 遅延ツールの name + description を自動収集してキャッシュする** 仕組みに切り替え。Haiku に渡すのは `{name, description}` のペアだけ — schema は不要 (どう呼ぶかは Bell が ToolSearch で解決する役割分業)。MCP description は MCP サーバーから JSON-RPC `tools/list` で直接取得。3 段階キャッシュ (ローカル → グローバル → 調査して両方に追記)、drift 補正、明示的無効化なし。これで Caveat 等の MCP ツールが Haiku の視野に入る。詳細は [CHANGELOG.md](CHANGELOG.md) と設計思想 [docs/catalog-design-deferred-mcp.md](docs/catalog-design-deferred-mcp.md)。
 
-**v0.6.2** (2026-04-19): **親プロセス watch で孤児 daemon を自動回収**。SessionEnd が発火しない経路 (Claude Code crash / kill / IDE reload) で daemon が永久に残る問題への対処。SessionStart hook が `--parent-pid <process.ppid>` (Claude Code 本体 PID) を daemon に渡し、daemon は 5 秒間隔で `process.kill(parentPid, 0)` を ping、ESRCH なら自身を shutdown。実運用で 9 daemon 中 8 個が孤児だった (手動 kill 必要) 状態を解消。詳細は [CHANGELOG.md](CHANGELOG.md)。
+**v0.6.2** (2026-04-19): **親プロセス watch で孤児 daemon を自動回収**。SessionEnd が発火しない経路 (Claude Code crash / kill / IDE reload) で daemon が永久に残る問題への対処。SessionStart hook が `--parent-pid <process.ppid>` (Claude Code 本体 PID) を daemon に渡し、daemon は 5 秒間隔で `process.kill(parentPid, 0)` を ping、ESRCH なら自身を shutdown。実運用で 9 daemon 中 8 個が孤児だった (手動 kill 必要) 状態を解消。詳細は [CHANGELOG.md](CHANGELOG.md)。**(v0.12.0 で heartbeat 方式に置換 — VSCode native extension で `process.ppid` が短命ラッパーを指して誤爆していた)**
 
 **v0.6.0** (2026-04-19): **Preamble-once 化**。v0.5.2 で可視化した duration_ms を実測したところ、`first=7.4s → resumed=12.5s → resumed=20.2s` と resumed のほうが遅いという設計意図と逆の結果。真因は「`--resume` で session を継いでいるのに毎回 full prompt (role + schema + catalog + few-shot) を再送して session を肥大化させていた」こと。`buildPreamble({ catalog })` を新設、初回 1 回だけ送って以降は per-turn delta (stage マーカー + 入力タグ) のみにした。同作者の OpenClaw が Discord → Claude 長期セッションで使っているパターンを持ち込んだ。role collapse 耐性は既存 reset 機構がそのまま機能する (reset 時に preamble 再送)。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
