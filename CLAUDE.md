@@ -4,14 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v0.1.0 / v0.1.1 を npm に公開したが、実 Claude Code 環境で daemon 増殖事故を起こし両バージョンとも deprecate 済** (2026-04-19)。現状は v0.2 設計見直し待ち。詳細はプラン [§18 v0.1 実運用事故と設計見直し](docs/spotter-plan.md#18-v01-実運用事故と設計見直し-2026-04-19-追記) を必読。
+**v0.2.1 実装完了** (2026-04-19)。v0.1.x は deprecate 済、v0.2.0 で §18.4 の 5 層防御 + §18.5 session-scoped Haiku を実装、v0.2.1 で §18.6 A-2 Haiku ウォームアップを追加 (UserPromptSubmit コールドスタート対策)。詳細はプラン [§18](docs/spotter-plan.md#18-v01-実運用事故と設計見直し-2026-04-19-追記) と [CHANGELOG.md](CHANGELOG.md)。
 
-**v0.2 に着手する前に理解しておくべき核心**: プラン §5.4 が前提にしていた「SessionStart = トップレベル 1 回」は間違い。Claude Code は **subagent (Task tool) 毎にも SessionStart を発火**し、session_id も subagent 毎に新 UUID になる。従って v0.1 の「session_id 単位で daemon を立てる」モデルは破綻する。
+**v0.2 系の核心設計**: Claude Code は subagent (Task tool) 毎にも SessionStart を発火し session_id も新 UUID になるため、v0.1 の「session_id 単位で daemon 起動」モデルは破綻する。v0.2.0 の対応は **維持型 daemon + 5 層防御** (`SPOTTER_PARENT_PID` env / `agent_id` gate / `source=startup` 限定 / PID preexist check / 10 秒ウィンドウ)。プラン §18.3 の都度起動型は棄却済、再議論しない。
 
-v0.2 の主な選択肢:
-- **都度起動型** (§18.3) — daemon を完全に廃止、各 hook で `claude -p` を毎回叩く
-- **subagent スキップ型** — trivially subagent セッションでは daemon 起動しない条件分岐を入れる
-- どちらにせよ **preuninstall は使えない** (npm global install は走らせない) — uninstall は `spotter uninstall --user` を明示呼びする設計に戻す
+### 未対応として残っている観測課題 (v0.2.1 時点)
+- **daemon 増殖が完全停止していない**: v0.2.1 実装前の実セッション観測で 20 分 28 daemon 生成・4 個残存。5 層防御のどれかがすり抜けている疑い (別 VSCode セッションの旧 daemon 残存仮説あり)。次タスクで調査
+- **カタログのツール名抽象**: `current_time` 等のエントリが実環境の `Bash:date` 等とマッピングされておらず、Haiku が等価呼び出しを認識できない。v0.3 で lint 拡張予定
 
 ## Product Concept (一行)
 

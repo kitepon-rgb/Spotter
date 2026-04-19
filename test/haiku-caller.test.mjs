@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
+  buildWarmupPrompt,
   parseHaikuResponse,
   createHaikuCaller,
   HaikuError,
@@ -22,6 +23,18 @@ test('buildFirstStagePrompt (isFirst=true) includes catalog and rules', () => {
   assert.ok(prompt.includes('今何時?'));
   assert.ok(prompt.includes('pass'));
   assert.ok(prompt.includes('get time'));
+});
+
+test('buildWarmupPrompt includes catalog and rules, instructs trivial pass response (A-2)', () => {
+  const prompt = buildWarmupPrompt({ catalog: sampleCatalog });
+  assert.ok(prompt.includes('current_time'));
+  assert.ok(prompt.includes('get time'));
+  assert.ok(prompt.includes('ウォームアップ'));
+  // Haiku must return the trivial pass object, parseable by parseHaikuResponse
+  assert.ok(prompt.includes('"pass": true'));
+  assert.ok(prompt.includes('"missing_tools": []'));
+  // System rules (schema etc.) must be present so Haiku loads them on this --session-id call
+  assert.ok(prompt.includes('出力スキーマ'));
 });
 
 test('buildFirstStagePrompt (isFirst=false) omits catalog — incremental form', () => {

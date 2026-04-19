@@ -101,6 +101,30 @@ export function buildFinalStagePrompt({ catalog, userInput, usedTools, finalResp
   ].join('\n');
 }
 
+// Build a warmup prompt — fired by the daemon right after `server.listen` to pay the
+// Haiku cold-start cost before the first user_input arrives. Uses --session-id to create
+// the Haiku conversation with catalog + rules loaded; subsequent real calls hit --resume
+// and respond within the hook timeout.
+// The returned response is discarded by the caller; we instruct Haiku to return the trivial
+// pass object so that parseHaikuResponse does not throw on the warmup result.
+export function buildWarmupPrompt({ catalog }) {
+  const toolsProjection = catalog.tools.map((t) => ({
+    name: t.name,
+    purpose: t.purpose,
+    when_to_use: t.when_to_use,
+  }));
+  return [
+    systemRules(),
+    '## ツールカタログ',
+    JSON.stringify(toolsProjection, null, 2),
+    '',
+    '## ウォームアップ呼び出し',
+    'これはセッション開始直後のウォームアップ呼び出しです。実際のユーザー入力はまだありません。',
+    '以降の判定に備えて、上記カタログと判定ルールをコンテキストに保持してください。',
+    'この呼び出しでは必ず `{"pass": true, "missing_tools": []}` のみを返してください。',
+  ].join('\n');
+}
+
 function systemRules() {
   return [
     'あなたは Spotter — Claude (Bell) が呼び忘れているツールを検出する監査役です。',

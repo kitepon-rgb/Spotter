@@ -21,6 +21,7 @@ import { createServer, ensureRuntimeDir, socketPath } from './transport.mjs';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
+  buildWarmupPrompt,
   parseHaikuResponse,
   createHaikuCaller,
 } from './haiku-caller.mjs';
@@ -48,6 +49,7 @@ export async function startDaemon({
   haikuCaller,
   haikuSessionId,
   logFn = () => {},
+  warmup = false,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -229,11 +231,37 @@ export async function startDaemon({
   const pidPath = pidFilePath(sessionId);
   await writeFile(pidPath, String(process.pid), 'utf8');
 
+  // A-2: fire-and-forget Haiku warmup. Pays the cold-start cost during SessionStart
+  // (while the user is still composing their first prompt) rather than blocking the
+  // first UserPromptSubmit. On success the Haiku conversation is ready for --resume
+  // and subsequent calls respond within the 28s timeout. On failure we log and leave
+  // haikuInitialized=false so the next real call retries as --session-id (no regression).
+  // haikuChain serialises this against any incoming event, preventing double-init.
+  //
+  // After warmup settles (success or failure) we reset lastHaikuCallAt so that the first
+  // real user_input is not spuriously silenced by the 10-second recursion window. The
+  // SPOTTER_PARENT_PID env var and agent_id gate already prevent genuine recursion from
+  // the warmup spawn, so this reset does not regress the defence.
+  let warmupPromise = null;
+  if (warmup) {
+    warmupPromise = callHaikuTracked(() => buildWarmupPrompt({ catalog })).then(
+      () => {
+        logFn('warmup: haiku session initialised');
+        lastHaikuCallAt = 0;
+      },
+      (err) => {
+        logFn(`warmup failed: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
+        lastHaikuCallAt = 0;
+      }
+    );
+  }
+
   return {
     server,
     path,
     pidPath,
     haikuSessionId: ownHaikuSessionId,
+    warmupPromise,
     stop: () => shutdown(server, sessionId, logFn),
   };
 }

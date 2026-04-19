@@ -268,6 +268,90 @@ test('startDaemon: DaemonAlreadyRunningError when PID file points at live proces
   }
 });
 
+test('startDaemon (A-2): warmup=true fires one Haiku call and sets haikuInitialized', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `warmup-${randomUUID()}`;
+  const isFirstSeen = [];
+  const haikuCaller = async (_prompt, opts) => {
+    isFirstSeen.push(opts?.isFirst);
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller, warmup: true });
+  try {
+    assert.ok(running.warmupPromise instanceof Promise);
+    await running.warmupPromise;
+    // warmup call was the first and only call so far, with isFirst=true
+    assert.deepEqual(isFirstSeen, [true]);
+
+    // A real user_input after warmup should reach Haiku as isFirst=false (resumed session)
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: 'hi' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    // Not silenced by the 10s window (warmup reset lastHaikuCallAt)
+    assert.notEqual(resp.result.reason, 'within_haiku_call_window');
+    assert.deepEqual(isFirstSeen, [true, false]);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon (A-2): warmup failure leaves haikuInitialized=false for next call', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `warmup-fail-${randomUUID()}`;
+  const isFirstSeen = [];
+  let callIdx = 0;
+  const haikuCaller = async (_prompt, opts) => {
+    isFirstSeen.push(opts?.isFirst);
+    callIdx += 1;
+    if (callIdx === 1) throw new Error('simulated haiku failure');
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller, warmup: true });
+  try {
+    await running.warmupPromise;
+    // warmup attempt was isFirst=true and failed
+    assert.deepEqual(isFirstSeen, [true]);
+
+    // Next user_input should retry as isFirst=true (no regression from warmup failure)
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: 'hi' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.deepEqual(isFirstSeen, [true, true]);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon (A-2): warmup=false (default) does not call Haiku at startup', async () => {
+  const { dir, catalogPath } = await setupCatalog();
+  const sessionId = `no-warmup-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async (_prompt, _opts) => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, catalogPath, haikuCaller });
+  try {
+    assert.equal(running.warmupPromise, null);
+    // Give the event loop a tick to surface any rogue async call
+    await new Promise((r) => setImmediate(r));
+    assert.equal(haikuCalls, 0);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('startDaemon: stale PID file (dead process) does not block startup', async () => {
   const { dir, catalogPath } = await setupCatalog();
   const sessionId = `stale-${randomUUID()}`;

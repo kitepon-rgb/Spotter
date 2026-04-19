@@ -858,7 +858,36 @@ v0.1 のように「session_id をキーに daemon を立てる」と、subagent
 
 監査役 Haiku の生存期間 = 親セッション単位、という設計が成立。
 
-### 18.6 作業ログ
+### 18.6 A-2 Haiku ウォームアップ (v0.2.1 改修)
+
+v0.2.0 の実運用観測で **UserPromptSubmit 経路でのみ `E_HAIKU_TIMEOUT` が多発** することを確認した (観測: 20 分で 14 件、全て `handler error on user_input`)。Stop hook (`turn_end`) でのタイムアウトはゼロ。
+
+#### 原因
+
+`user_input` は daemon にとって最初の Haiku 呼び出し (新 session_id = 新 daemon = 初回 spawn) になるケースが多く、Windows 上で `cmd.exe /c claude.cmd -p --session-id <uuid> --model haiku ...` を起動してから JSON 応答が返るまでに 28 秒を超えることがある。対して `turn_end` は `--resume` 経由で会話が温まっているため応答が速い。28 秒 timeout が不当に厳しいのではなく、**初回 spawn の場所が UserPromptSubmit hook のブロック中に置かれている**のが本質。
+
+#### 採用した対策 — 非同期ウォームアップ (A-2)
+
+SessionStart → `spotter daemon start` で起動する daemon に `warmup: true` オプションを渡す。daemon は `server.listen` 完了・PID ファイル書き込み後に、**fire-and-forget で Haiku を 1 回呼ぶ** (`claude -p --session-id <uuid>` で新規会話作成、`buildWarmupPrompt` で固定の trivial prompt を送る)。
+
+- SessionStart hook の readiness ping は `daemon listening` 確認だけで即完了 → **ユーザー体感の SessionStart 遅延はゼロ**
+- ユーザーが最初のプロンプトを入力するまでの数秒〜数十秒の間に裏で Haiku がコールドスタートを終える
+- 最初の `user_input` は既存の mutex (`haikuChain`) で warmup 完了を待ち、その後 `--resume` で高速応答
+- warmup 失敗時は `haikuInitialized=false` のままなので、次の real call が仕切り直し (従来動作に戻るだけ、悪化なし)
+- warmup 完了後は `lastHaikuCallAt = 0` にリセットして、10 秒ウィンドウ (layer 5) が warmup 直後の合法的 user_input を潰さないようにする。SPOTTER_PARENT_PID env 他のレイヤーで recursion は既に遮断されているのでこのリセットは安全
+
+#### 却下した代替案
+
+- **A-1 同期ウォーム**: SessionStart で warmup 完了を待つ → Bell 起動が 15〜25 秒遅くなる体感悪化、却下
+- **A-3 CLI 常駐化**: `claude -p` を毎回 spawn せず stdin/stdout ストリーミングで受け渡し → Claude CLI の streaming API 仕様依存が強く Windows 安定性未検証、v0.3 以降の選択肢として棚上げ
+- **A-4 Anthropic API 直叩き**: 認証移植の制約、棚上げ
+- **timeout 値を伸ばす**: UserPromptSubmit hook の 30 秒境界に先に当たるため単独では無効、根本解決にならない
+
+#### 非採用: subagent スキップの追加実装
+
+A-2 とは別に観測された「20 分で 28 daemon 生成」問題 (§18.4 の 5 層防御がすり抜けている疑い) は、既存層のバグ調査として別タスク化。A-2 実装自体は新規層の追加ではなく初回 spawn の前倒しなので、increase 数を直接減らす効果はない (各セッションのコールドスタートを SessionStart 時に移しているだけ)。
+
+### 18.7 作業ログ
 
 - 2026-04-19 02:18 UTC: v0.1.0 publish
 - 2026-04-19 02:30 UTC: v0.1.1 publish (postinstall 追加)
@@ -867,6 +896,7 @@ v0.1 のように「session_id をキーに daemon を立てる」と、subagent
 - 2026-04-19 03:XX UTC: v0.2.0 設計監査 (CRITICAL 2 / HIGH 3 / MEDIUM 3 / LOW 2)、抜け穴を 5 層構成で補完
 - 2026-04-19 04:XX UTC: C2 実機検証 (--bare + --session-id 組み合わせが "Not logged in" で失敗することを確認、--session-id / --resume の組み合わせで会話維持成立することを確認)
 - 2026-04-19 04:XX UTC: v0.2.0 実装完了、tests 52 pass / 1 skip / 0 fail
+- 2026-04-19 13:XX JST: v0.2.0 実セッション観測 — `user_input` 経路の Haiku timeout が 20 分で 14 件 / 全 daemon 28 個生成・4 個残存。A-2 非同期ウォーム + warmup 後の 10 秒ウィンドウリセットを実装 (v0.2.1)、tests 56 pass / 1 skip / 0 fail
 
 ## Appendix A: 参考資料
 

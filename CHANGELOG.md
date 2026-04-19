@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.1
+
+v0.2.0 の実セッション観測で `UserPromptSubmit` 経路に `E_HAIKU_TIMEOUT` が集中していることが判明 (20 分で 14 件、全て `handler error on user_input`)。Stop hook 側はタイムアウトゼロ。原因は初回 Haiku spawn (Windows: `cmd.exe /c claude.cmd -p --session-id ...`) のコールドスタートが 28s 超になるケースで、これが UserPromptSubmit hook のブロック中に直撃していた。
+
+- **Haiku 非同期ウォームアップ (A-2)**: `startDaemon({ warmup: true })` オプションを追加。`daemon-cmd.mjs` (SessionStart 経由のエントリ) で `true` を渡す。daemon は `server.listen` 完了直後に fire-and-forget で `buildWarmupPrompt` を Haiku に送信し、`--session-id` での新規会話作成とカタログ読み込みを前倒しする。SessionStart hook の readiness ping は `daemon listening` 確認のみで完了するためユーザー体感の起動遅延ゼロ。
+- **初回 `user_input` は `--resume` 経由**: ウォームアップ完了後、既存の `haikuChain` mutex が最初の real call に warmup の完了を待たせ、`isFirst=false` で `claude -p --resume` が走る。
+- **warmup 後の 10 秒ウィンドウリセット**: ウォームアップも `claude -p` spawn なので `lastHaikuCallAt` を更新するが、完了時 (成否問わず) に 0 にリセットして layer 5 が warmup 直後の合法的 `user_input` を silent pass にしないようにする。SPOTTER_PARENT_PID env 他のレイヤーで recursion は遮断済みなのでリセットは安全。
+- **`buildWarmupPrompt` 新設**: 既存の `buildFirstStagePrompt` を流用せず、Haiku に trivial pass (`{"pass":true,"missing_tools":[]}`) を返させる固定プロンプトを採用。`parseHaikuResponse` のスキーマチェックを通過する形で warmup が成功し、`haikuInitialized=true` が立つ。
+- **失敗時は従来動作**: warmup が失敗すると `haikuInitialized=false` のまま残り、次の real call が `--session-id` で仕切り直す。悪化なし。
+
+### 観測対象として残した課題 (v0.2.1 では未対応)
+
+- **20 分で 28 daemon 生成**: 実セッション観測で §18.4 の 5 層防御がすり抜けている疑い (状況的には別 VSCode の旧 daemon 残存も仮説)。A-2 とは独立の bug 調査として次タスク化。
+- **カタログのツール名抽象**: 実ツール名 (`current_time` カタログ記載 vs 実環境 `Bash:date`) のマッピング論点、v0.3 持ち越し。
+
 ## 0.2.0
 
 Fixes the v0.1.x daemon proliferation by adding multiple defence layers that together prevent any
