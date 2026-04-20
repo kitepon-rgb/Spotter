@@ -23,11 +23,15 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 // On Windows, `claude` is a .cmd shim; Node's execFile cannot locate it directly without
 // going through cmd.exe. Matches the pattern in src/daemon/haiku-caller.mjs buildSpawnArgs.
 // We use cmd.exe /c rather than shell:true to avoid DEP0190 on Node 24+.
+// `windowsHide: true` is forced at this layer so every caller (listMcpServers,
+// getStdioConfig, etc.) is silent — without it a cmd.exe console window flashes on every
+// refresh, and those flashes steal keyboard focus on Windows.
 async function execClaude(claudeBin, args, opts) {
+  const execOpts = { ...opts, windowsHide: true };
   if (process.platform === 'win32') {
-    return execFileP('cmd.exe', ['/c', claudeBin, ...args], opts);
+    return execFileP('cmd.exe', ['/c', claudeBin, ...args], execOpts);
   }
-  return execFileP(claudeBin, args, opts);
+  return execFileP(claudeBin, args, execOpts);
 }
 
 export class McpInvestigationError extends Error {

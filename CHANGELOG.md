@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.5
+
+**Windows で refresh 毎に cmd.exe console window が flash + 入力フォーカスを奪う UX 回帰を修正**。`listMcpServers` / `getStdioConfig` が `execClaude` 経由で spawn する `cmd.exe /c claude mcp list/get` に `windowsHide: true` が付いておらず、SessionStart 毎の bg refresh と install 時 seed で毎回黒いウィンドウが一瞬表示されキーボード入力が奪われていた。
+
+### 変更点
+
+- **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `execClaude` ヘルパ内で `opts` を spread した上で `windowsHide: true` を強制。呼び出し側 (`listMcpServers`, `getStdioConfig`) の `execOpts` に毎回書かせるのではなく、helper 層で固定することで将来の call site も自動で守られる。
+
+### 背景
+
+Windows の `spawn` / `execFile` は `windowsHide` オプションが `false` のとき、child process の console window を visible で起動する。Spotter の spawn サイトは 6 箇所 (daemon spawn / refresh detached / haiku-caller / MCP stdio spawn / doctor / execClaude) あり、うち 5 箇所は個別に `windowsHide: true` を付けていたが、`execClaude` だけ opts 任せになっていて pass されていなかった。
+
+SessionStart 毎の `spotter db refresh` で `listMcpServers` が 1 回、stdio MCP サーバーの数だけ `getStdioConfig` が呼ばれるため、MCP サーバー N 個の環境では SessionStart 毎に **1 + N 回** の flash が発生。加えて `spotter install` 時の seed でも同じ経路を通る。体感「結構な頻度で入力を奪われる」という UX 回帰の直接原因。
+
+### 設計判断
+
+- **helper 層で windowsHide 強制**: call site 毎に書かせる方針は 2 箇所の execOpts を更新するだけで済むが、新 call site 追加時に忘れるリスクが残る。`execClaude` は外部コマンド (`claude` CLI) 専用で Windows では常に cmd.exe 経由のため、「このヘルパ経由なら silent」という不変条件を layer 内で閉じた方が防御堅牢。
+- **他 5 spawn サイトの監査**: `spawn-daemon.mjs` (daemon + refresh detached), `haiku-caller.mjs` (claude -p), `investigate-mcp.mjs:spawnAndQuery` (MCP stdio), `doctor.mjs` (claude --version) はすべて `windowsHide: true` 済みを確認。この修正で残る穴はゼロ。
+- **テスト追加なし**: Windows console window visibility は cross-platform ユニットテストで検証しづらい (Windows 環境でも Node の test runner 経由で spawn した child の visibility を assert する API がない)。監査対象は 6 spawn サイト全件の源コード上の `windowsHide: true` の存在のみ、これは grep で機械検証できる。
+
 ## 1.1.4
 
 **MCP 投資ロジックの 2 件の穴を修正**。どちらも「名乗っているスコープ」と「実際に参照されるスコープ」が一致していない silent mismatch。前者は projectRoot 引数が効かない経路、後者は baseline が現実を無視して常に 25 件投入される経路。
