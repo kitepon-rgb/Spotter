@@ -136,9 +136,27 @@ export async function startDaemon({
 
   // v0.5.0: shared Haiku-invocation + parse helper. On E_HAIKU_SCHEMA (role collapse),
   // rotates the Haiku session-id and silent-passes the turn (reason: role_collapse_reset).
-  // Other Haiku errors (timeout, spawn failure) still propagate — §14 unexpected → throw.
+  //
+  // v1.1.6: E_HAIKU_TIMEOUT / E_INTERNAL (spawn failure, auth failure, exit != 0) は
+  // §14 unexpected として throw するが、throw の前に必ず callHaiku.reset() で session を
+  // 回転する。haiku-caller は成功時のみ isFirstCall=false を倒す設計なので、失敗が続くと
+  // 同じ UUID を `--session-id` 再送 → claude CLI 側で "Session ID ... is already in use"
+  // に化けて失敗連鎖が固定化していた。reset で次 turn が fresh id + preamble 再送から
+  // やり直せるようにする (真因 — 例えば CLAUDE_CONFIG_DIR 誤継承による auth 失敗 — が
+  // 解消されたら即回復可能な状態を保つ)。silent fallback 新規導入ではない、§0 「想定済み
+  // 異常 = 記録 + 正常リターン」とは別軸の「unexpected でも内部 state は clean に保つ」
+  // 防御。
   const runHaikuJudgment = async (stage, prompt) => {
-    const { raw, meta } = await callHaikuTracked(prompt);
+    let raw, meta;
+    try {
+      ({ raw, meta } = await callHaikuTracked(prompt));
+    } catch (err) {
+      if (err instanceof HaikuError && typeof callHaiku.reset === 'function') {
+        logFn(`${stage}: haiku invocation failed (${err.code}), rotating session before rethrow: ${err.message}`);
+        callHaiku.reset();
+      }
+      throw err;
+    }
     let parsed;
     try {
       parsed = parseHaikuResponse(raw);

@@ -219,6 +219,18 @@ function truncate(s, n = 300) {
   return s.slice(0, n) + '...';
 }
 
+// Bell の isolated CLAUDE_CONFIG_DIR (例: bellbot プロファイル) が hook → daemon → haiku の
+// spawn 連鎖で継承されると、Spotter haiku が credentials 不在の config を読みに行き exit 1。
+// その後 session-id が「already in use」で stuck して user_input hook が非 0 exit し続ける。
+// v1.1.6: spawn env 構築時に CLAUDE_CONFIG_DIR を剥がし、デフォルト ~/.claude/ で Haiku を
+// 起動する。監査対象の Claude CLI 側 (Bell の env で走る `claude mcp list` 等) は意図通り
+// Bell の config を参照するため、strip はこの一点 (credentials が必要な claude -p 呼出し)
+// のみで行う。
+export function sanitizeHaikuEnv(baseEnv) {
+  const { CLAUDE_CONFIG_DIR: _strip, ...rest } = baseEnv;
+  return rest;
+}
+
 // On Windows, the `claude` entry is typically a .cmd shim which Node's spawn cannot locate
 // without going through the shell. We use cmd.exe /c explicitly rather than spawn({ shell:
 // true }) because the latter triggers DEP0190 on Node 24+.
@@ -264,7 +276,7 @@ export function createHaikuCaller({ preamble, timeoutMs, claudeBin = 'claude', m
       });
       const child = spawn(cmd, cmdArgs, {
         cwd: WORKDIR,
-        env: { ...env, SPOTTER_PARENT_PID: String(process.pid) },
+        env: { ...sanitizeHaikuEnv(env), SPOTTER_PARENT_PID: String(process.pid) },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });

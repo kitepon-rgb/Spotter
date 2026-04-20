@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startDaemon, DaemonAlreadyRunningError, pidFilePath } from '../src/daemon/daemon.mjs';
 import { sendRequest } from '../src/daemon/transport.mjs';
+import { HaikuError } from '../src/daemon/haiku-caller.mjs';
 import { mkdtemp, writeFile, rm, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -559,6 +560,61 @@ test('startDaemon: drops Haiku hallucinations not in catalog (v0.13.3)', async (
     assert.equal(resp.result.pass, true);
     assert.deepEqual(resp.result.missing_tools, []);
     assert.equal(resp.result.reason, 'hallucination_filtered');
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: rotates session on E_INTERNAL HaikuError before rethrow (v1.1.6)', async () => {
+  // Bell の isolated CLAUDE_CONFIG_DIR 継承で haiku が exit 1 し、次 turn で同じ session-id が
+  // "already in use" で stuck する失敗連鎖を避けるための回帰テスト。auth / spawn / timeout
+  // などの HaikuError (E_HAIKU_SCHEMA 以外) でも、throw 前に必ず callHaiku.reset() を呼ぶ。
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  let resetCalled = 0;
+  const haikuCaller = async (_p) => {
+    throw new HaikuError('E_INTERNAL', 'haiku exited with code 1: auth failed');
+  };
+  haikuCaller.reset = () => { resetCalled += 1; };
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
+  try {
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '?' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, false, 'E_INTERNAL must surface as non-ok response');
+    assert.equal(resp.error.code, 'E_INTERNAL');
+    assert.equal(resetCalled, 1, 'reset() must run exactly once before rethrow');
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: rotates session on E_HAIKU_TIMEOUT before rethrow (v1.1.6)', async () => {
+  // timeout で子プロセスを kill した直後も session-id は claude CLI 側の認識上「使用中」扱い
+  // になる可能性がある。次 turn は必ず新 uuid から始める。
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  let resetCalled = 0;
+  const haikuCaller = async (_p) => {
+    throw new HaikuError('E_HAIKU_TIMEOUT', 'haiku did not respond within 45000ms');
+  };
+  haikuCaller.reset = () => { resetCalled += 1; };
+  const running = await startDaemon({ sessionId, tools, haikuCaller });
+  try {
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '?' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, false);
+    assert.equal(resp.error.code, 'E_HAIKU_TIMEOUT');
+    assert.equal(resetCalled, 1);
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });

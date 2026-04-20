@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.1.6
+
+**Bell の isolated `CLAUDE_CONFIG_DIR` が Spotter haiku の auth を破壊する bug を修正**。bellbot 等で CLAUDE_CONFIG_DIR を分離する運用 (user scope MCP を流入させない隔離設計、credentials 非共有) のとき、hook → daemon → haiku の spawn 連鎖で Bell の isolated config が継承され、Spotter haiku が credentials 不在の config を読みに行き exit 1。その後同じ session-id が claude CLI 側で "already in use" と判定されて失敗が固定化し、user_input hook が非 0 exit し続けてベル本体のプロンプト処理が破綻していた。
+
+### 変更点
+
+- **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: 純粋関数 `sanitizeHaikuEnv(baseEnv)` を named export として新設、`createHaikuCaller` の spawn env 構築時に `CLAUDE_CONFIG_DIR` を strip。haiku はデフォルト `~/.claude/` で起動する
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `runHaikuJudgment` で `E_HAIKU_TIMEOUT` / `E_INTERNAL` (auth / spawn / exit != 0) 発生時も throw 前に `callHaiku.reset()` で session を rotate。haiku-caller は成功時のみ `isFirstCall=false` を倒す設計なので、失敗が続くと同じ UUID を `--session-id` で再送して claude CLI 側の "already in use" に化ける経路を塞ぐ
+- **編集 [test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `sanitizeHaikuEnv` の回帰テスト 2 件 (strip 動作 / absent 時 no-op + 原本非破壊)
+- **編集 [test/daemon.test.mjs](test/daemon.test.mjs)**: `runHaikuJudgment` が E_INTERNAL / E_HAIKU_TIMEOUT で reset() を呼ぶ回帰テスト 2 件
+
+### 背景
+
+#### 指摘経路
+
+2026-04-20 外部指摘で、bellbot 相当の運用 (`CLAUDE_CONFIG_DIR=~/.bellbot-claude-config` + `--dangerously-skip-permissions`) で Discord → Bell ベース agent が無反応になる障害が報告された。daemon log に以下の連鎖:
+
+```
+[13:28:57] handler error on user_input: E_INTERNAL: haiku exited with code 1:
+[13:29:11] handler error on user_input: E_INTERNAL: haiku exited with code 1: Error: Session ID 4625feeb-... is already in use.
+[13:30:25] handler error on user_input: E_INTERNAL: haiku exited with code 1: Error: Session ID 4625feeb-... is already in use.
+```
+
+コード監査で (1) Bell の CLAUDE_CONFIG_DIR が spawn 継承で剥がされずに daemon / haiku まで到達していること、(2) [haiku-caller.mjs:311-313](src/daemon/haiku-caller.mjs#L311-L313) が `isFirstCall` を成功時のみ false に倒す設計のため失敗した uuid が固定化すること、の二点を実コードで確認。
+
+#### strip 範囲をなぜ haiku-caller だけに限定したか
+
+Spotter の catalog 調査 (`claude mcp list`, `claude mcp get`) は Bell が実際に見える MCP セットを反映する必要があるため、Bell の CLAUDE_CONFIG_DIR を尊重する。Haiku の推論エンジンだけが Spotter 側の credentials を必要とする。したがって strip は `claude -p` 呼出し (credentials-requiring call) のみで行う。`investigate-mcp.mjs` の `execClaude` や stdio MCP spawn は env 無加工継承を維持。
+
+#### session rotate を追加した理由
+
+CLAUDE_CONFIG_DIR の strip だけでは、将来の auth / network / quota / CLI crash 等の異なる失敗源でも同じ "session-id 固定化 → 失敗連鎖" 構造を再生産する。haiku-caller が isFirstCall を成功時のみ倒す設計である以上、daemon 側で HaikuError を掴んだ時点で必ず reset を呼ぶのが構造的な解。これは §0 silent fallback 禁止とは別軸の「unexpected でも内部 state は clean に保つ」防御。
+
+### 設計判断
+
+- **`SPOTTER_CLAUDE_CONFIG_DIR` 等のユーザー向け override は未導入**: 指摘の proposed direction で副次案として挙がっていたが、現状 strip で十分解決。ユーザーが Spotter の config を別 dir にしたい具体的ユースケース (例: Spotter 専用 API key の隔離) が出たら再検討
+- **他 env (`ANTHROPIC_API_KEY` 等) は strip しない**: ユーザーが明示的に設定した API key は両方に適用されるべき。strip 対象は「Bell セッション固有で、Haiku にとって誤動作源になる」 `CLAUDE_CONFIG_DIR` 一点のみ
+- **reset 箇所は `runHaikuJudgment` の catch 一点に集約**: handler 毎 (handleUserInput / handleTurnEnd) に書かない。haiku 呼出しは必ず runHaikuJudgment を通る設計なのでそこで閉じる
+
 ## 1.1.5
 
 **Windows で refresh 毎に cmd.exe console window が flash + 入力フォーカスを奪う UX 回帰を修正**。`listMcpServers` / `getStdioConfig` が `execClaude` 経由で spawn する `cmd.exe /c claude mcp list/get` に `windowsHide: true` が付いておらず、SessionStart 毎の bg refresh と install 時 seed で毎回黒いウィンドウが一瞬表示されキーボード入力が奪われていた。

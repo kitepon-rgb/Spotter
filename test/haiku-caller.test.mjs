@@ -8,6 +8,7 @@ import {
   filterCatalogMisses,
   createHaikuCaller,
   buildSpawnArgs,
+  sanitizeHaikuEnv,
   HaikuError,
 } from '../src/daemon/haiku-caller.mjs';
 
@@ -275,4 +276,29 @@ test('filterCatalogMisses: accepts array form of catalogNames', () => {
   const { parsed: out, dropped } = filterCatalogMisses(parsed, ['WebSearch']);
   assert.equal(out.pass, true);
   assert.deepEqual(dropped, []);
+});
+
+test('sanitizeHaikuEnv: strips CLAUDE_CONFIG_DIR so haiku uses default ~/.claude/ (v1.1.6)', () => {
+  // Bell の isolated CLAUDE_CONFIG_DIR (例 bellbot) が hook → daemon → haiku 連鎖で継承されると
+  // credentials 不在の config を読みに行き auth 失敗 exit 1。Spotter haiku はデフォルト
+  // ~/.claude/ で走る必要があるため spawn env 構築時点で剥がす。
+  const input = {
+    PATH: '/usr/bin',
+    HOME: '/home/user',
+    CLAUDE_CONFIG_DIR: '/tmp/bellbot-isolated',
+    ANTHROPIC_API_KEY: 'keep-me',
+  };
+  const out = sanitizeHaikuEnv(input);
+  assert.equal('CLAUDE_CONFIG_DIR' in out, false);
+  assert.equal(out.PATH, '/usr/bin');
+  assert.equal(out.HOME, '/home/user');
+  assert.equal(out.ANTHROPIC_API_KEY, 'keep-me');
+  // 原本は変更しない
+  assert.equal(input.CLAUDE_CONFIG_DIR, '/tmp/bellbot-isolated');
+});
+
+test('sanitizeHaikuEnv: no-op when CLAUDE_CONFIG_DIR is absent', () => {
+  const input = { PATH: '/usr/bin' };
+  const out = sanitizeHaikuEnv(input);
+  assert.deepEqual(out, { PATH: '/usr/bin' });
 });
