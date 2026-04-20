@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点 (v1.0.0 時点, 2026-04-20) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点 (v1.1.4 時点, 2026-04-20) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -78,11 +78,11 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **次アクション**: v1.0.0 リリース後の daemon ログで `mode=first, duration_ms=N` を集計。40s 付近に張り付くようなら (a) description truncate、(b) timeout 60s 緩和、(c) プラグイン単位の選別機構 のどれかを検討。timeout 突破頻発なら緊急対処。
 
-### claude.ai MCP (Gmail/Calendar/Drive) の過検出率
+### claude.ai MCP (Gmail/Calendar/Drive) の過検出率 — 連携環境でのみ残存
 
-**背景**: v0.8.0 で Gmail 10 + Calendar 8 + Drive 7 = 25 件を hardcoded baseline として Haiku 視野に追加した。ただし Bell のデフォルト行動としてこれらは on-demand (「メール下書きして」等の明示指示がないと呼ばない) なので、Haiku が過剰に「Gmail 呼び忘れ」を指摘する懸念あり (2026-04-19 のセッションで議論済み)。
+**背景**: v0.8.0 で Gmail 10 + Calendar 8 + Drive 7 = 25 件を hardcoded baseline として Haiku 視野に追加した。v1.1.4 で `filterClaudeAiBaseline` を入れ、`claude mcp list` に該当サーバーが実在する環境のみ注入する構造に変更 (Bell 側実環境で 25 件消失を実測確認済み、隔離 `CLAUDE_CONFIG_DIR` / 未連携 / 部分連携環境での幻ツール問題は解消)。**連携している環境では 25 件の注入は継続**するため、Bell のデフォルト行動として on-demand (「メール下書きして」等の明示指示がないと呼ばない) なこれらを Haiku が過剰に指摘する懸念は連携環境下で残る。
 
-**次アクション**: 実運用で「Gmail/Calendar/Drive 関連の指摘が出た回数」と「そのうち妥当だったもの」を観測。誤検出が目立つなら 3 択 — (a) baseline 削除 (b) description に判定条件を強く書く (c) 優先度を下げる扱いの仕組みを新設 — から選択。
+**次アクション**: claude.ai 連携ありの実運用環境で「Gmail/Calendar/Drive 関連の指摘が出た回数」と「そのうち妥当だったもの」を観測。誤検出が目立つなら 2 択 — (a) description に判定条件を強く書く (b) 優先度を下げる扱いの仕組みを新設 — から選択。(a) の baseline 削除は v1.1.4 の filter で部分的に既出。
 
 ### Haiku JSON schema 遵守率
 
@@ -172,6 +172,8 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 | 課題 | 解決版 |
 |---|---|
+| claude.ai baseline (Gmail/Calendar/Drive 25 件) が `claude mcp list` の実在確認なしに全環境で無条件注入 (隔離 `CLAUDE_CONFIG_DIR` / 未連携 / 部分連携環境で幻ツール) | v1.1.4 |
+| `listMcpServers` / `getStdioConfig` が `projectRoot` を受けながら `claude mcp list / get` spawn 時に `cwd` を渡していなかった silent mismatch | v1.1.4 |
 | カタログ対象を Claude Code 本体側から切り離し (deferred-baseline 撤去 + skill/agent 収集新設) | v1.0.0 |
 | project scope `.mcp.json` 未対応 | v0.10.0 |
 | x-api が 401 で Haiku 視野に入らない | v0.9.0 (`.mcp.json` 読み込み) |

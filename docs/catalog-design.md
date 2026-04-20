@@ -85,7 +85,7 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 - **ニュアンスが落ちる**: ツール作者が一番よく分かっているはずの説明を人間が再解釈する意味がない
 - **責任の所在が明確になる**: description の品質は提供者の責任。Spotter は中継者に徹する
 
-例外として `claude.ai` ブランドの MCP サーバー (Gmail / Calendar / Drive) は OAuth proxy 経由で動いており、credentials を読まない方針の Spotter からは description を live fetch できない。[src/tool-db/claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) に公式情報から起こした description を手書きで置いている。これは例外であって規則ではない。
+例外として `claude.ai` ブランドの MCP サーバー (Gmail / Calendar / Drive) は OAuth proxy 経由で動いており、credentials を読まない方針の Spotter からは description を live fetch できない。[src/tool-db/claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) に公式情報から起こした description を server 単位で手書きで保持し、[refresh.mjs](../src/tool-db/refresh.mjs) の `filterClaudeAiBaseline` で `claude mcp list` に該当サーバーが実在する環境のみ注入する (v1.1.4 以降)。これは例外であって規則ではない。
 
 ## description の取得フロー — 3 段階のキャッシュ DB
 
@@ -124,7 +124,7 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 | 対象 | 実装 | 取得元 |
 |---|---|---|
 | MCP (stdio / HTTP / SSE) | [investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) + [investigate-mcp-http.mjs](../src/tool-db/investigate-mcp-http.mjs) | `claude mcp list` + `<projectRoot>/.mcp.json` + `~/.claude/.mcp.json` merge、各サーバーに `tools/list` |
-| claude.ai MCP (OAuth) | [claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) | 手書き baseline (Gmail / Calendar / Drive の 25 件) |
+| claude.ai MCP (OAuth) | [claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) + [refresh.mjs](../src/tool-db/refresh.mjs) の `filterClaudeAiBaseline` | 手書き baseline (Gmail / Calendar / Drive の 25 件) を server 単位で保持し、`claude mcp list` に該当サーバーが実在する環境のみ注入 (v1.1.4 以降) |
 | スキル | [investigate-skills.mjs](../src/tool-db/investigate-skills.mjs) | user scope `~/.claude/skills/`、project scope `<projectRoot>/.claude/skills/`、有効化プラグインの `skills/` |
 | サブエージェント | [investigate-agents.mjs](../src/tool-db/investigate-agents.mjs) | user scope `~/.claude/agents/`、project scope `<projectRoot>/.claude/agents/`、有効化プラグインの `agents/` |
 
@@ -142,3 +142,4 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 - v0.7.0〜v0.13.3: カタログは「MCP + Claude Code 組込み遅延ツール」17 件を手書き baseline で保持。理由は「遅延ツールは Bell が呼び忘れやすい」という仮定
 - v1.0.0: 実測で「Claude Code 組込みツールは Bell が使いこなしており、呼び忘れ率は低い」と確認。遅延 / 即時の境界も Claude Code バージョンで動的に変わることが判明。**本体側は全面除外**、ユーザー追加分 (MCP + スキル + サブエージェント) のみに監査範囲を絞る設計転換
 - v1.1.x: 収集タイミングの自動化。install 時同期 seed + SessionStart bg refresh で手動 `spotter db refresh` を不要化、drift 自動追従を実現
+- v1.1.4: MCP 投資経路の 2 件の silent mismatch を修正。(1) `listMcpServers` / `getStdioConfig` の `claude mcp list / get` spawn 時に `cwd: projectRoot` を付与、名乗っている project scope と claude CLI が walk-up で見つける project scope の乖離を解消。(2) claude.ai baseline を server 単位構造に再編、`filterClaudeAiBaseline` で `claude mcp list` に該当サーバーが実在する環境のみ注入。隔離 `CLAUDE_CONFIG_DIR` / 未連携 / 部分連携環境で最大 25 件の幻ツールが catalog に残る問題を解消 (Bell 側実環境で 25 件消失を実測確認済み)
