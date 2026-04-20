@@ -31,6 +31,12 @@ Spotter で現時点 (v1.0.0 時点, 2026-04-20) に **塞がっていない穴*
 
 **次アクション**: v0.13.1 リリース後の daemon ログで `E_HAIKU_TIMEOUT` が 45s でも発生するか集計。発生率が下がらなければ (b) retry or (c) 動的延長を検討。発生率がゼロに近ければこの項目は closable。
 
+### install.mjs の hook timeout が v0.13.1 の緩和を反映していない (2026-04-20 監査で発見)
+
+**背景**: [src/cli/install.mjs:28-34](../src/cli/install.mjs#L28-L34) の `HOOK_EVENTS` が settings.json に書く timeout は **Stop=15s / UserPromptSubmit=30s** のまま。一方 hook 側 IPC は 50s ([src/hooks/stop.mjs:18](../src/hooks/stop.mjs#L18), [src/hooks/user-prompt.mjs:24](../src/hooks/user-prompt.mjs#L24))、Haiku は 45s ([src/daemon/daemon.mjs:53](../src/daemon/daemon.mjs#L53))。Claude Code 本体は settings.json 値で hook プロセスを kill するため、**実効 timeout は install.mjs の 15s/30s で頭打ち** = v0.13.1 の 45s 緩和は既存 install ユーザー環境に届いていない。上記 E_HAIKU_TIMEOUT 再発率観測が「45s でも発生するか」を前提にしているが、install 側が 15s/30s で刈っている限りこの観測自体が成立しない。
+
+**次アクション**: 次回 bump で install.mjs の Stop/UserPromptSubmit timeout を 60s (Haiku 45s + IPC 往復 + 余裕) に引き上げ、既存ユーザーに再 install を促す。CHANGELOG で v0.13.1 の hotfix として明記。
+
 ### daemon プロセスが shutdown ログなしに死ぬ (v0.13.2 で診断 handler 投入済み、真因特定は再現待ち)
 
 **背景**: [daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15 (E_HAIKU_TIMEOUT) の 53 秒後、同じ `session_id` で **shutdown ログなしに daemon が再起動** している (line 16-19 の `tool-db loaded` → `daemon listening` → `heartbeat armed` → `started`)。SessionEnd も heartbeat expire も走っていない。
@@ -108,6 +114,20 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **次アクション**: Gmail/Calendar/Drive は Anthropic 製品の一部、API 変更頻度は低い想定。半年に一度見直す運用で十分か要判断。頻度上がるなら自動監視スクリプトの導入を検討。
 
+### daemon IPC に認証なし (2026-04-20 監査で発見)
+
+**背景**: [src/daemon/transport.mjs:17-20,102-142](../src/daemon/transport.mjs#L17-L142) の Windows Named Pipe は DACL 未設定で default Everyone、Unix socket も `~/.spotter/runtime/` が `mkdir(..., {recursive:true})` の mode 0777 + umask 継承で他プロセスから connect 可能。daemon 側の認証は session_id 一致チェック ([src/daemon/daemon.mjs:185-189](../src/daemon/daemon.mjs#L185-L189)) のみで、session_id は pipe/socket 名から読めるため認証にならず。同一ユーザー内の別プロセスから `tool_used` 偽造で used_tools 汚染 → Haiku 指摘抑制、または偽 `user_input` で Haiku spend をドライブする攻撃経路が理論上成立する。OWASP A01 Broken Access Control。
+
+**補足**: Spotter は個人用ローカル CLI で、同一ユーザー内の別プロセスが敵対的である想定は通常しない = blast radius は「同端末で別のマルウェアが動いている場合のみ」。それでも cheap fix があるので塞ぎたい。
+
+**次アクション**: Unix 側は socket 生成直後に `fs.chmodSync(socketPath, 0o600)` を入れるだけで完了 (runtime dir も 0o700)。Windows 側 Named Pipe DACL 制限は `net.createServer` に pipeMode オプションがないため、プロセス起動時の SECURITY_DESCRIPTOR 設定か、別モジュール経由が必要 — 設計が重いので P2 送り候補。
+
+### frontmatter パーサが YAML block scalar 非対応 (2026-04-20 監査で発見)
+
+**背景**: [src/tool-db/frontmatter.mjs:26-45](../src/tool-db/frontmatter.mjs#L26-L45) は 1 行ずつ `key: value` を取るだけで、`description: >` / `description: |` の block scalar および quote 内エスケープに非対応。description が取れなかったエントリは [src/tool-db/investigate-skills.mjs:73](../src/tool-db/investigate-skills.mjs#L73) で `length === 0` で silent skip され log も残らない。v1.0.0 の 268 件 (特に ECC 181 スキル) のうち block scalar を使っている SKILL.md が recall から消えている可能性。
+
+**次アクション**: (a) 実際に ECC スキルの SKILL.md で block scalar 使用頻度を確認 (grep)、(b) block scalar 未対応の場合のみ silent skip ではなく warn log を残す、(c) 実害があるなら最小パーサを拡張。YAML ライブラリ追加はゼロ依存志向 (CLAUDE.md) に反するので最後の手段。
+
 ### `--resume` の実効 spawn 削減量未検証
 
 **背景**: v0.5.0 で session-scoped Haiku を導入して resumed 経路を 30s → 30s (timeout) に短縮した想定。ただし `claude -p --resume` のプロセス起動・認証自体は毎回発生する可能性があり、ネットの仮定ほど削減できていないかも。
@@ -131,6 +151,12 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 ### CI 回帰テスト整備 (v0.4+)
 
 `.github/workflows/ci.yml` は Node 22.5 / lint / test の想定だが、実装時の lint フロー・PR ゲートは未整備。`node --test` + `eslint` の最小 CI を立ち上げる。
+
+### MCP clientInfo.version が package.json と drift (2026-04-20 監査で発見)
+
+**背景**: [src/tool-db/investigate-mcp.mjs:250](../src/tool-db/investigate-mcp.mjs#L250) と [src/tool-db/investigate-mcp-http.mjs:90](../src/tool-db/investigate-mcp-http.mjs#L90) の `clientInfo: { name: 'spotter', version: '0.10.0' }` が hardcode で v1.0.0 と drift している。動作影響なし (MCP server 側が client version を使う実装はほぼない)、cosmetic 問題。MEMORY.md の "package.json bump 時は src/version.mjs も同期" の同類。
+
+**次アクション**: [src/version.mjs](../src/version.mjs) から `SPOTTER_VERSION` を import して使う形に置換。次の bump のタイミングで同梱。
 
 ---
 
