@@ -7,8 +7,9 @@
 // silently exit otherwise (prevents Throughline-style proliferation).
 //
 // v0.7.0: tool catalog (the old YAML) is replaced by tool-db.json (auto-discovered MCP
-// + hardcoded built-in deferred). Install no longer seeds a template — user runs
-// `spotter db refresh` after install to populate.
+// servers, skills, sub-agents — see docs/catalog-design.md for v1.0.0 scope).
+// Install seeds the DB automatically via `refresh` (project-mode only — user-mode
+// has no projectRoot so DB seeding is skipped there).
 
 import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -16,6 +17,8 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { version as SPOTTER_VERSION } from '../version.mjs';
+import { refresh } from '../tool-db/refresh.mjs';
+import { localDbPath, globalDbPath } from '../tool-db/loader.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
@@ -33,7 +36,7 @@ const HOOK_EVENTS = [
   { event: 'SessionEnd', sub: 'session-end', timeout: 3 },
 ];
 
-export async function runInstall({ target = 'project', autoYes = false, cwd = process.cwd() } = {}) {
+export async function runInstall({ target = 'project', autoYes = false, cwd = process.cwd(), skipRefresh = false } = {}) {
   const settingsPath = target === 'user'
     ? join(homedir(), '.claude', 'settings.json')
     : join(cwd, '.claude', 'settings.json');
@@ -96,9 +99,21 @@ export async function runInstall({ target = 'project', autoYes = false, cwd = pr
   await mkdir(dirname(settingsPath), { recursive: true });
   await writeFile(settingsPath, JSON.stringify(updated, null, 2) + '\n', 'utf8');
   console.log(`wrote ${settingsPath}`);
+
+  // Seed the tool-db so the first session has something to audit against.
+  // Skipped for user-mode (deprecated — no projectRoot) and when caller opts out
+  // (tests set skipRefresh=true to avoid scanning the real user environment).
+  if (target === 'project' && !skipRefresh) {
+    console.log('\ndiscovering MCP servers, skills, and sub-agents...');
+    const log = (msg) => process.stderr.write(`  ${msg}\n`);
+    const resolved = await refresh({ projectRoot: cwd, logFn: log });
+    console.log(`  ${resolved.size} tool(s) resolved`);
+    console.log(`  local DB:  ${localDbPath(cwd)}`);
+    console.log(`  global DB: ${globalDbPath()}`);
+  }
+
   console.log('\nnext steps:');
-  console.log('  1. run `spotter db refresh` to discover available MCP/deferred tools');
-  console.log('  2. reload Claude Code (or open a new session) to activate Spotter');
+  console.log('  reload Claude Code (or open a new session) to activate Spotter');
 }
 
 async function exists(path) {

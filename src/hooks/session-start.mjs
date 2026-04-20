@@ -17,7 +17,7 @@
 // now heartbeat-based inside the daemon.
 
 import { readStdinJson, requireString, die, isChildCall, isSubagentCall, isOutsideSpotterProject, findSpotterMarker } from './lib.mjs';
-import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
+import { spawnDaemonAndWaitReady, spawnRefreshDetached } from './spawn-daemon.mjs';
 
 export async function runSessionStart({ now = Date.now } = {}) {
   if (isChildCall()) return;
@@ -35,6 +35,7 @@ export async function runSessionStart({ now = Date.now } = {}) {
   }
 
   await spawnDaemonAndWaitReady({ sessionId, projectRoot, now });
+  spawnRefreshDetached({ projectRoot });
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {

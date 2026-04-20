@@ -13,7 +13,7 @@ import { join } from 'node:path';
 test('install: creates hooks in fresh settings.json', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-install-'));
   try {
-    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
     const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
     assert.ok(settings.hooks);
     for (const event of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'Stop', 'SessionEnd']) {
@@ -29,8 +29,8 @@ test('install: creates hooks in fresh settings.json', async () => {
 test('install: idempotent — re-run does not duplicate entries', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-install-'));
   try {
-    await runInstall({ target: 'project', autoYes: true, cwd: dir });
-    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
     const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
     for (const event of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'Stop', 'SessionEnd']) {
       assert.equal(
@@ -57,7 +57,7 @@ test('install: preserves pre-existing unrelated hooks', async () => {
       }),
       'utf8'
     );
-    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
     const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
     // Existing hook must still be there, alongside spotter
     const stopCommands = settings.hooks.Stop.flatMap((g) => g.hooks.map((h) => h.command));
@@ -71,7 +71,7 @@ test('install: preserves pre-existing unrelated hooks', async () => {
 test('install (project): writes .spotter/marker.json with version metadata', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-marker-'));
   try {
-    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
     const marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
     assert.equal(marker.markerVersion, '1');
     assert.ok(typeof marker.spotterVersion === 'string' && marker.spotterVersion.length > 0);
@@ -84,11 +84,11 @@ test('install (project): writes .spotter/marker.json with version metadata', asy
 test('install (project): re-run refreshes marker (installedAt updates on each install)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-marker-refresh-'));
   try {
-    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
     const first = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
     // Ensure wall-clock advances at least 1ms so installedAt differs.
     await new Promise((r) => setTimeout(r, 5));
-    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
     const second = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
     assert.equal(second.markerVersion, first.markerVersion);
     assert.equal(second.spotterVersion, first.spotterVersion);
@@ -101,7 +101,7 @@ test('install (project): re-run refreshes marker (installedAt updates on each in
 test('uninstall (project): removes .spotter/marker.json but keeps .spotter dir', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-uninstall-marker-'));
   try {
-    await runInstall({ target: 'project', autoYes: true, cwd: dir });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
     // sanity: marker present after install
     await stat(join(dir, '.spotter', 'marker.json'));
     await runUninstall({ target: 'project', autoYes: true, cwd: dir });

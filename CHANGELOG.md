@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.1.0
+
+**`spotter install` が tool-db を自動構築 + SessionStart hook がバックグラウンド refresh**。install 直後から audit 対象が揃うようになり、以降の session でも MCP / スキル / サブエージェントの追加・削除が自動追従する。
+
+### 背景
+
+v1.0.0 以前は `spotter install` が hook 登録だけで tool-db を作らず、別途 `spotter db refresh` を手動実行する必要があった。初回セッションで daemon が空 DB を掴むと Haiku に preamble が届かず audit が機能しない状態で起動してしまう。また、install 後に MCP や スキルを追加しても rebuild/refresh を手動で叩くまで視野に入らず、drift が常に発生していた。
+
+### 変更点
+
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**: settings.json 書き込み後に project-mode で `refresh({projectRoot})` を同期実行し tool-db を seed。失敗時は §0 準拠で throw (hook だけ登録されて DB が無い中途半端な状態を残さない)。`skipRefresh` オプションを新設 (既存テストが user 環境をスキャンしないように)。"next steps" メッセージから `spotter db refresh` の手動実行指示を削除
+- **編集 [src/hooks/session-start.mjs](src/hooks/session-start.mjs)**: daemon readiness 確立後に `spawnRefreshDetached({projectRoot})` を発火。hook 自体は即 return、refresh は detached child として bg 実行。**現セッションの daemon は起動時の tool-db で固定**のため反映は次セッション以降
+- **編集 [src/hooks/spawn-daemon.mjs](src/hooks/spawn-daemon.mjs)**: `spawnRefreshDetached` を追加 export。`node <spotterBin> db refresh` を `detached: true, stdio: 'ignore', unref()` で起動、hook を遅延させない
+- **テスト更新 [test/install.test.mjs](test/install.test.mjs)**: 全 6 件が `skipRefresh: true` を渡すよう更新
+
+### 設計判断
+
+- **rebuild ではなく refresh を採用**: 当初 user 指示は rebuild (local+global wipe + 全再スキャン) だったが、(1) 既適用プロジェクトの global キャッシュを毎 SessionStart で破壊するのは副作用が大きい、(2) 並列セッション (Project A rebuild 中に Project B SessionStart) で書き込み競合が発生する、の 2 点から refresh に変更。差分更新でも新規・削除の drift 追従は効く。description drift (同一名の description 更新) のみ取りこぼすが、これは `spotter db rebuild` の手動実行でカバー
+- **SessionStart の refresh は bg detached**: session-start hook の timeout は 5s で、MCP 全サーバー spawn + skills 181 件スキャンは秒単位かかるため同期実行は不可能。detached + unref で hook を遅延させない代わりに、反映は次セッション以降 (現セッションの daemon は既に古い tool-db をロード済みで、実行中の差し替えはしない)
+- **install 時の refresh 失敗は throw**: "hook 登録済みだが DB なし" という中途半端な状態を残すくらいなら install 自体を失敗扱いにするほうがクリーン。再試行は `spotter install` の再実行で、hook 登録は `nothing to change` で skip され refresh だけ走る
+
+### 破壊変更
+
+なし (skipRefresh オプションはデフォルト false で既存挙動より機能追加、CLI 利用者には透過)。
+
+### 影響範囲
+
+- 新規 `spotter install` 実行時は MCP/skills/agents の discover でセットアップ時間が数秒〜10 秒増える
+- 毎 SessionStart でバックグラウンド `spotter db refresh` プロセスが 1 つ発火 (bg unref なので UX 影響なし)
+- global tool-db への書き込みが session 起動ごとに発生 (atomic write なので corruption リスクなし、last-write-wins の並列 race は idempotent なので次 refresh で収束)
+
 ## 1.0.0
 
 **監査対象をユーザー追加分 (MCP / スキル / サブエージェント) に絞り込み**。Claude Code 本体が提供するツール (即時 + 遅延) は監査カタログから全面除外。設計転換の major bump。
