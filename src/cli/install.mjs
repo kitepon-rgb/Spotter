@@ -36,7 +36,7 @@ const HOOK_EVENTS = [
   { event: 'SessionEnd', sub: 'session-end', timeout: 3 },
 ];
 
-export async function runInstall({ target = 'project', autoYes = false, cwd = process.cwd(), skipRefresh = false } = {}) {
+export async function runInstall({ target = 'project', autoYes = false, cwd = process.cwd(), skipRefresh = false, refreshFn = refresh } = {}) {
   const settingsPath = target === 'user'
     ? join(homedir(), '.claude', 'settings.json')
     : join(cwd, '.claude', 'settings.json');
@@ -108,10 +108,19 @@ export async function runInstall({ target = 'project', autoYes = false, cwd = pr
   if (target === 'project' && !skipRefresh) {
     console.log('\ndiscovering MCP servers, skills, and sub-agents...');
     const log = (msg) => process.stderr.write(`  ${msg}\n`);
-    const resolved = await refresh({ projectRoot: cwd, logFn: log });
-    console.log(`  ${resolved.size} tool(s) resolved`);
-    console.log(`  local DB:  ${localDbPath(cwd)}`);
-    console.log(`  global DB: ${globalDbPath()}`);
+    try {
+      const resolved = await refreshFn({ projectRoot: cwd, logFn: log });
+      console.log(`  ${resolved.size} tool(s) resolved`);
+      console.log(`  local DB:  ${localDbPath(cwd)}`);
+      console.log(`  global DB: ${globalDbPath()}`);
+    } catch (err) {
+      // §0: throw (fallback 禁止). But surface the recovery path so the user isn't
+      // left with "hooks registered, tool-db missing" and no clue what to run.
+      process.stderr.write(`\nspotter install: tool-db seeding failed.\n`);
+      process.stderr.write(`  hooks are registered but tool-db is not ready.\n`);
+      process.stderr.write(`  recover with: spotter db refresh\n`);
+      throw err;
+    }
   }
 
   console.log('\nnext steps:');

@@ -98,6 +98,52 @@ test('install (project): re-run refreshes marker (installedAt updates on each in
   }
 });
 
+test('install: re-run seeds tool-db even when hooks are unchanged (v1.1.1 regression guard)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-refresh-'));
+  try {
+    let callCount = 0;
+    const mockRefresh = async () => {
+      callCount++;
+      return new Map();
+    };
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh });
+    // Both calls must invoke refresh. The 2nd is the direct regression test for
+    // the early-return that v1.1.1 removed — before that fix, the 2nd call
+    // short-circuited at "hooks already registered" and never touched refresh.
+    assert.equal(callCount, 2, 'refresh should run on both fresh and re-install');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install: refresh failure surfaces recovery hint on stderr', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-refresh-fail-'));
+  const origWrite = process.stderr.write.bind(process.stderr);
+  const captured = [];
+  process.stderr.write = (chunk) => {
+    captured.push(typeof chunk === 'string' ? chunk : chunk.toString());
+    return true;
+  };
+  try {
+    const failingRefresh = async () => {
+      throw new Error('simulated MCP enumeration failure');
+    };
+    await assert.rejects(
+      runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: failingRefresh }),
+      /simulated MCP/
+    );
+    const stderrText = captured.join('');
+    assert.ok(
+      stderrText.includes('spotter db refresh'),
+      `recovery hint missing from stderr. got: ${stderrText}`
+    );
+  } finally {
+    process.stderr.write = origWrite;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('uninstall (project): removes .spotter/marker.json but keeps .spotter dir', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-uninstall-marker-'));
   try {

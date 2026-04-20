@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.2
+
+**v1.1.1 の code-review で発見した 2 件を修正**。Spotter 自身が監査役として指摘し、実装を補正する自己ドッグフーディング。
+
+### 変更点
+
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**: `refresh` 呼び出しを try/catch で包み、throw 直前に stderr で復旧経路 (`spotter db refresh`) を露出。§0 の fallback 禁止は守りつつ、「hook 登録済み + tool-db なし」状態に陥ったユーザーに次の一手を示す診断メッセージを追加
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**: `runInstall` に `refreshFn` パラメータを追加 (default: 実 refresh)。テストから mock を注入できるようにした
+- **編集 [test/install.test.mjs](test/install.test.mjs)**: 新規 2 件追加 — (1) 2 回目 install でも refresh が呼ばれる回帰ガード (v1.1.1 fix の直接検証)、(2) refresh 失敗時に stderr に復旧ヒントが出ることを確認
+- **編集 [docs/open-issues.md](docs/open-issues.md)**: P2 に「tool-db.json の並列書き込み race condition」を追記 (install と SessionStart bg refresh が同時に走ると last-writer-wins、実害観測なしなので放置)
+
+### 設計判断
+
+- **race condition は v1.1.2 で修正しない**: 実運用で install はユーザー対話的に 1 回叩く想定 = 並列発生頻度は極低、失われた差分は次 refresh で再投入されるので最終収束。lock 機構は over-engineering
+
 ## 1.1.1
 
 **既 install プロジェクトで `spotter install` が refresh を skip してしまう bug の hot-fix**。v1.1.0 で追加した tool-db 自動構築が、hook 登録済みの場合に [install.mjs](src/cli/install.mjs) の早期 return に引っかかって走らない穴があった。これでは「既に install 済みのプロジェクトで tool-db.json が作られない」という v1.1.0 が解決すべき症状がそのまま残る。

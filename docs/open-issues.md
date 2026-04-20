@@ -152,6 +152,14 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 `.github/workflows/ci.yml` は Node 22.5 / lint / test の想定だが、実装時の lint フロー・PR ゲートは未整備。`node --test` + `eslint` の最小 CI を立ち上げる。
 
+### tool-db.json の並列書き込み race condition (2026-04-20 v1.1.1 review で発見)
+
+**背景**: v1.1.0 で `spotter install` と `SessionStart` hook 両方から `refresh({projectRoot})` が走る構造になった。同一プロジェクトで `spotter install` 実行中に別 Claude Code セッションが SessionStart で bg refresh を起動すると、両者が `localDbPath(cwd)` を同時に書き込む。`saveDb` は tmp+rename で atomic なのでファイル corruption は起きないが、last-writer-wins で一方の snapshot が失われる可能性。
+
+**影響**: 失われた差分は次回 refresh で再投入されるので最終的に収束 = 一時的な snapshot 後退のみ。実運用では install はユーザーが対話的に 1 回叩く想定 = 並列発生頻度は極低。`spotter db refresh` / `spotter db rebuild` と SessionStart bg refresh の間も同じ構造。
+
+**次アクション**: P2 (機会があれば)。対処するなら (a) file lock (`~/.spotter/runtime/tool-db.lock`) で refresh を mutex、(b) saveDb 層で既存ファイルとの merge 差分書き込み、のどちらか。現状は実害観測なしなので放置で可。
+
 ### MCP clientInfo.version が package.json と drift (2026-04-20 監査で発見)
 
 **背景**: [src/tool-db/investigate-mcp.mjs:250](../src/tool-db/investigate-mcp.mjs#L250) と [src/tool-db/investigate-mcp-http.mjs:90](../src/tool-db/investigate-mcp-http.mjs#L90) の `clientInfo: { name: 'spotter', version: '0.10.0' }` が hardcode で v1.0.0 と drift している。動作影響なし (MCP server 側が client version を使う実装はほぼない)、cosmetic 問題。MEMORY.md の "package.json bump 時は src/version.mjs も同期" の同類。
