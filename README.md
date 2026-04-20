@@ -1,6 +1,6 @@
 # Spotter
 
-> **v1.0.0 released 2026-04-20**. **監査対象をユーザー追加分 (MCP / スキル / サブエージェント) に絞り込み**。Claude Code 本体が提供するツールは監査から外す — Bell は本体側を使いこなしており呼び忘れ率が低い、また即時 / 遅延の境界がバージョンで動的に変わり手書き baseline が追従できない、の 2 点による設計転換。新規にスキル (SKILL.md frontmatter) とサブエージェント (.md frontmatter) の自動収集を追加、ECC プラグイン有効化状態から 181 skills + 38 agents を live 取得。設計思想は [docs/catalog-design.md](docs/catalog-design.md)、変更詳細は [CHANGELOG](CHANGELOG.md)。
+> **v1.1.2 released 2026-04-20**. **install が tool-db を自動構築 + SessionStart で drift 自動追従**。`spotter install` 実行時に MCP / スキル / サブエージェントを discover して tool-db.json を seed、以降 Claude Code セッション起動ごとに SessionStart hook が detached で `spotter db refresh` を bg 発火 (反映は次セッション以降)。手動の `spotter db refresh` は不要に。監査対象は v1.0.0 でユーザー追加分 (MCP / スキル / サブエージェント) に絞り込み済み、本プロジェクトでの実測で 268 件 resolved (MCP 40 + skills 181 + agents/bare 47)。設計思想は [docs/catalog-design.md](docs/catalog-design.md)、変更詳細は [CHANGELOG](CHANGELOG.md)。
 
 **気づく役と実行する役を分離する。** Spotter は Claude Code の横で静かに並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**に指摘する監査役です。
 
@@ -44,7 +44,7 @@ Stop hook → Spotter が応答と使用済みツールを見て最終チェッ�
 見落としあれば差し戻し (max 1 回、Claude Code の stop_hook_active で自動担保)
 ```
 
-監査対象のツール (name + description) は `~/.spotter/tool-db.json` (グローバル) と `<project>/.spotter/tool-db.json` (ローカル) に格納されます。install 後に `spotter db refresh` を実行すると、`claude mcp list` で MCP サーバーを列挙し、各サーバーの `tools/list` を JSON-RPC で叩いて description を収集、Claude Code 組込み 遅延ツール (WebSearch / TodoWrite 等) は同梱の baseline からカバーします。**手書きでツールリストを管理する必要はありません**。
+監査対象のツール (name + description) は `~/.spotter/tool-db.json` (グローバル) と `<project>/.spotter/tool-db.json` (ローカル) に格納されます。**v1.1.0 以降、`spotter install` が初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、通常の運用で手動コマンドを叩く必要はありません。収集経路は (1) MCP サーバー: user/project scope の `.mcp.json` + `claude mcp list` で列挙、各サーバーの `tools/list` を JSON-RPC で取得、HTTP/SSE transport にも対応、(2) スキル: user/project/プラグインの SKILL.md frontmatter から `{name, description}` を抽出、(3) サブエージェント: user/project/プラグインの agent .md frontmatter から抽出、(4) claude.ai baseline: OAuth proxy 経由の Gmail/Calendar/Drive 25 件は手書き baseline で補完。**手書きでツールリストを管理する必要はありません**。
 
 ## Throughline との関係
 
@@ -62,8 +62,9 @@ Stop hook → Spotter が応答と使用済みツールを見て最終チェッ�
 
 ```bash
 spotter db list          # 現在の tool-db (local + global merged) を表示
-spotter db refresh       # MCP サーバーと組込み 遅延ツールから description を収集して DB 更新
-spotter db rebuild       # ローカル DB を消してから refresh (強制再投資)
+spotter db refresh       # MCP / スキル / サブエージェントから description を収集して DB 更新
+                         # (v1.1.0 以降、install 時と SessionStart 時に自動実行されるので通常は不要)
+spotter db rebuild       # local + global DB を両方消してから refresh (カタログ設計変更時のクリーン用)
 spotter status           # 稼働中の daemon 一覧
 spotter doctor           # 環境診断 (Node / claude CLI / tool-db 整合性)
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
@@ -71,12 +72,15 @@ spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 
 ## 設計ドキュメント
 
-全ての設計判断 — 透明化 vs 不可視化、JSON I/O、socket 抽象、メッセージ契約、SessionStart の readiness 戦略、§0 実装規範 — は [docs/spotter-plan.md](docs/spotter-plan.md) に記載しています。**実装を変更する前に必ず参照してください。**
+- **現行設計 (カタログ / 収集経路 / 分類軸)**: [docs/catalog-design.md](docs/catalog-design.md) — v1.0.0 以降の真実源
+- **現時点で塞がっていない穴 + 実測未検証の懸念**: [docs/open-issues.md](docs/open-issues.md) — 新規作業に入る前に必読
+- **実装規範と不変条件 (§0)**: [CLAUDE.md](CLAUDE.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止
+- **歴史記録 (v0.1 時点の設計議事録)**: [docs/spotter-plan.md](docs/spotter-plan.md) — 作成時点で固定された議論過程のスナップショット、現行設計は上記 3 点を参照
 
 ## 既知の制約
 
 - Stop hook は Bell の最初の応答が**出力された後**に発火するため、Spotter が Stop で差し戻した場合、ユーザーは「最初の応答 + 補正応答」の 2 連続を見ます (Claude Code の hook 仕様による制約)。UserPromptSubmit 段階での先回り検出を精度の軸にしています
-- **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Bell に届かない症状として顕在化します (timeout は v0.5.0 で 30s に短縮)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
+- **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Bell に届かない症状として顕在化します (timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
 
 ## ライセンス
 

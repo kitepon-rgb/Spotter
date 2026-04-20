@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.1.3** (2026-04-20): **v1.1.x の実装進展にドキュメントを追従させる docs-only リリース**。コード変更なし、npm package tarball 同梱の README が古い手順を指していたため再 publish。[README.md](README.md) のバナー / install 手順 / カタログ収集経路 / コマンド表 / 設計ドキュメント節 / timeout 記述を v1.1.2 時点に更新、[docs/catalog-design.md](docs/catalog-design.md) に「収集タイミング (v1.1.0 以降)」節を新設 (install 同期 seed / SessionStart bg refresh / db refresh / db rebuild の 4 経路を整理)、[docs/spotter-plan.md](docs/spotter-plan.md) 冒頭に v0.1 設計議事録である旨のブリッジ追加。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
 **v1.1.2** (2026-04-20): **v1.1.1 の code-review で発見した 2 件を修正**。Spotter 自身が監査役として指摘し実装を補正する自己ドッグフーディング。変更: [install.mjs](src/cli/install.mjs) の `refresh` 呼び出しを try/catch で包み throw 直前に stderr で復旧経路 (`spotter db refresh`) を露出 (§0 fallback 禁止は守りつつ「hook 登録済み + tool-db なし」状態のユーザーに次の一手を示す診断メッセージ)、`runInstall` に `refreshFn` DI パラメータ追加、[test/install.test.mjs](test/install.test.mjs) に回帰ガード 2 件追加 (2 回目 install でも refresh 呼ばれる / refresh 失敗時に stderr 復旧ヒント)、[docs/open-issues.md](docs/open-issues.md) P2 に「tool-db.json の並列書き込み race condition」追記 (実害観測なしなので放置判断)。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
 **v1.1.1** (2026-04-20): **既 install プロジェクトで refresh が skip される bug の hot-fix**。v1.1.0 で追加した tool-db 自動構築が、hook 登録済みの場合に [install.mjs](src/cli/install.mjs) の早期 return に引っかかって走らない穴があった。if/else 構造に組み直して **settings.json の差分有無に関わらず refresh が走る** ようにした。v1.1.0 升級後の既 install プロジェクトでも `spotter install` 再実行で tool-db.json が seed される。詳細は [CHANGELOG.md](CHANGELOG.md)。

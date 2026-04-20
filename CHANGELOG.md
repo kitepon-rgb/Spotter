@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.1.3
+
+**v1.1.x の実装進展にドキュメントを追従させる docs-only リリース**。コード変更なし。npm package tarball 同梱の README が古い手順を指していたため再 publish。
+
+### 変更点
+
+- **編集 [README.md](README.md)**:
+  - 先頭バナーを v1.0.0 → v1.1.2 に更新、install 自動 seed + SessionStart bg refresh の新挙動を要約
+  - 「install 後に `spotter db refresh` を手動実行」の古い手順を削除、v1.1.0 以降の自動化を明記
+  - カタログ収集経路を 4 系統 (MCP / 組込み 遅延ツール) → (MCP / スキル / サブエージェント / claude.ai baseline) に書き直し (v1.0.0 の設計転換反映)
+  - コマンド表の `spotter db refresh` コメント更新 (「組込み 遅延ツール」削除、v1.1.0 以降は通常不要な旨追記)、`spotter db rebuild` の挙動を local+global wipe に訂正
+  - 設計ドキュメント節を 4 本立て (catalog-design / open-issues / CLAUDE.md §0 / spotter-plan 歴史記録) に再編
+  - Haiku timeout 表記を v0.5.0 (30s) → v0.13.1 (45s) に訂正
+- **編集 [docs/catalog-design.md](docs/catalog-design.md)**:
+  - 新節「収集タイミング (v1.1.0 以降)」追加 — install 同期 seed / SessionStart bg refresh / db refresh / db rebuild の 4 経路を整理
+  - 歴史節に v1.1.x の「収集タイミング自動化」を追記
+- **編集 [docs/spotter-plan.md](docs/spotter-plan.md)**:
+  - 冒頭に「v0.1 時点の設計議事録」である旨のブリッジ追加、現行設計の真実源 (catalog-design.md / open-issues.md / CLAUDE.md) へのリンクを明示
+
 ## 1.1.2
 
 **v1.1.1 の code-review で発見した 2 件を修正**。Spotter 自身が監査役として指摘し、実装を補正する自己ドッグフーディング。

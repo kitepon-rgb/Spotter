@@ -130,7 +130,15 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 
 プラグインの有効化判定: user scope `~/.claude/settings.json` と project scope `.claude/settings.local.json` の `enabledPlugins` を両方見て、どちらかで `true` なら有効。`~/.claude/plugins/installed_plugins.json` の `installPath` から実体にアクセスする。
 
+## 収集タイミング (v1.1.0 以降)
+
+- **`spotter install` 時**: `refresh({projectRoot})` を同期実行。初回 setup で tool-db.json を seed、install 完了時点で次セッションの daemon が audit に使える状態にする。refresh throw 時は hook 登録も含めて install 自体を失敗扱い (§0 準拠)
+- **SessionStart hook 発火時**: `spotter db refresh` を detached child として bg 起動 ([session-start.mjs](../src/hooks/session-start.mjs) の `spawnRefreshDetached`)。hook 自体は即 return、drift 追従 (新規 MCP / スキル / サブエージェントの追加、削除) は**次セッション以降**に反映される (現セッションの daemon は起動時の tool-db を固定保持)
+- **`spotter db refresh` CLI**: 明示的に叩いた場合も同じ refresh ロジック。install / SessionStart の自動化で通常運用では手動不要
+- **`spotter db rebuild` CLI**: local + global DB を wipe してから refresh。カタログ設計変更時 (v1.0.0 の切り替え等) のクリーンスレート用、通常運用では不使用
+
 ## 歴史
 
 - v0.7.0〜v0.13.3: カタログは「MCP + Claude Code 組込み遅延ツール」17 件を手書き baseline で保持。理由は「遅延ツールは Bell が呼び忘れやすい」という仮定
 - v1.0.0: 実測で「Claude Code 組込みツールは Bell が使いこなしており、呼び忘れ率は低い」と確認。遅延 / 即時の境界も Claude Code バージョンで動的に変わることが判明。**本体側は全面除外**、ユーザー追加分 (MCP + スキル + サブエージェント) のみに監査範囲を絞る設計転換
+- v1.1.x: 収集タイミングの自動化。install 時同期 seed + SessionStart bg refresh で手動 `spotter db refresh` を不要化、drift 自動追従を実現
