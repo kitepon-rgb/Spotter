@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+**既 install プロジェクトで `spotter install` が refresh を skip してしまう bug の hot-fix**。v1.1.0 で追加した tool-db 自動構築が、hook 登録済みの場合に [install.mjs](src/cli/install.mjs) の早期 return に引っかかって走らない穴があった。これでは「既に install 済みのプロジェクトで tool-db.json が作られない」という v1.1.0 が解決すべき症状がそのまま残る。
+
+### 変更点
+
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**: hook 登録不要時の早期 return を削除、if/else 構造に組み直して **settings.json の差分有無に関わらず refresh が走る** ようにした。v1.1.0 升級後の既 install プロジェクトでも `spotter install` 再実行で tool-db.json が seed される。副次効果として `spotter install` 再実行が「hook 登録 + tool-db drift 補正」の標準オペレーションとして使える
+
 ## 1.1.0
 
 **`spotter install` が tool-db を自動構築 + SessionStart hook がバックグラウンド refresh**。install 直後から audit 対象が揃うようになり、以降の session でも MCP / スキル / サブエージェントの追加・削除が自動追従する。

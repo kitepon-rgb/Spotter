@@ -79,28 +79,30 @@ export async function runInstall({ target = 'project', autoYes = false, cwd = pr
 
   if (diff === null) {
     console.log('  hooks already registered — nothing to change');
-    return;
-  }
+  } else {
+    console.log('\n--- proposed .claude/settings.json changes ---');
+    console.log(diff);
+    console.log('---------------------------------------------\n');
 
-  console.log('\n--- proposed .claude/settings.json changes ---');
-  console.log(diff);
-  console.log('---------------------------------------------\n');
-
-  if (!autoYes) {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await rl.question('apply these changes? [y/N] ');
-    rl.close();
-    if (!/^y(es)?$/i.test(answer.trim())) {
-      console.log('aborted.');
-      return;
+    if (!autoYes) {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await rl.question('apply these changes? [y/N] ');
+      rl.close();
+      if (!/^y(es)?$/i.test(answer.trim())) {
+        console.log('aborted.');
+        return;
+      }
     }
-  }
 
-  await mkdir(dirname(settingsPath), { recursive: true });
-  await writeFile(settingsPath, JSON.stringify(updated, null, 2) + '\n', 'utf8');
-  console.log(`wrote ${settingsPath}`);
+    await mkdir(dirname(settingsPath), { recursive: true });
+    await writeFile(settingsPath, JSON.stringify(updated, null, 2) + '\n', 'utf8');
+    console.log(`wrote ${settingsPath}`);
+  }
 
   // Seed the tool-db so the first session has something to audit against.
+  // Runs regardless of whether settings.json changed — re-running `spotter install`
+  // on an already-installed project is the canonical way to refresh tool-db drift
+  // (skills added, MCP servers registered, etc.) alongside upgrades.
   // Skipped for user-mode (deprecated — no projectRoot) and when caller opts out
   // (tests set skipRefresh=true to avoid scanning the real user environment).
   if (target === 'project' && !skipRefresh) {
