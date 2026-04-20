@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadDb, saveDb, emptyDb, ToolDbSchemaError } from '../src/tool-db/loader.mjs';
 import { resolveAll } from '../src/tool-db/lookup.mjs';
 import { parseMcpListOutput, bellVisibleName } from '../src/tool-db/investigate-mcp.mjs';
-import { getDeferredDescription, listDeferredNames } from '../src/tool-db/deferred-baseline.mjs';
+import { parseFrontmatter } from '../src/tool-db/frontmatter.mjs';
+import { listSkillsAll } from '../src/tool-db/investigate-skills.mjs';
+import { listAgentsAll } from '../src/tool-db/investigate-agents.mjs';
 import { describeServer, readMcpServers } from '../src/tool-db/mcp-config.mjs';
 
 async function setupPaths() {
@@ -207,21 +209,100 @@ test('bellVisibleName: hyphens preserved', () => {
   assert.equal(bellVisibleName('x-api', 'fetch_tweet'), 'mcp__x-api__fetch_tweet');
 });
 
-test('deferred baseline: WebSearch is present and described', () => {
-  const desc = getDeferredDescription('WebSearch');
-  assert.equal(typeof desc, 'string');
-  assert.ok(desc.length > 0);
+test('parseFrontmatter: extracts name and description', () => {
+  const text = `---
+name: council
+description: Convene a four-voice council for ambiguous decisions.
+origin: ECC
+---
+
+# Body`;
+  const fm = parseFrontmatter(text);
+  assert.equal(fm.name, 'council');
+  assert.equal(fm.description, 'Convene a four-voice council for ambiguous decisions.');
+  assert.equal(fm.origin, 'ECC');
 });
 
-test('deferred baseline: unknown tool returns null', () => {
-  assert.equal(getDeferredDescription('NoSuchTool__'), null);
+test('parseFrontmatter: strips quotes around values', () => {
+  const text = `---
+name: "quoted-name"
+description: 'single-quoted'
+---`;
+  const fm = parseFrontmatter(text);
+  assert.equal(fm.name, 'quoted-name');
+  assert.equal(fm.description, 'single-quoted');
 });
 
-test('deferred baseline: listDeferredNames returns an array', () => {
-  const names = listDeferredNames();
-  assert.ok(Array.isArray(names));
-  assert.ok(names.length > 0);
-  assert.ok(names.includes('TodoWrite'));
+test('parseFrontmatter: absent frontmatter returns empty object', () => {
+  assert.deepEqual(parseFrontmatter('# Just a markdown file'), {});
+  assert.deepEqual(parseFrontmatter(''), {});
+});
+
+test('listSkillsAll: reads user-scope skills from projectRoot if configured', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-skill-'));
+  try {
+    const skillDir = join(projectRoot, '.claude', 'skills', 'my-skill');
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, 'SKILL.md'),
+      `---\nname: my-skill\ndescription: Does a project-specific thing.\n---\n\nBody\n`,
+      'utf8'
+    );
+    const skills = await listSkillsAll({ projectRoot });
+    assert.equal(skills.get('my-skill'), 'Does a project-specific thing.');
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('listSkillsAll: skips skill with missing description', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-skill-'));
+  try {
+    const skillDir = join(projectRoot, '.claude', 'skills', 'no-desc');
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, 'SKILL.md'),
+      `---\nname: no-desc\n---\n\nBody\n`,
+      'utf8'
+    );
+    const skills = await listSkillsAll({ projectRoot });
+    assert.equal(skills.has('no-desc'), false);
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('listAgentsAll: reads project-scope agents', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-agent-'));
+  try {
+    const agentsDir = join(projectRoot, '.claude', 'agents');
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(
+      join(agentsDir, 'my-agent.md'),
+      `---\nname: my-agent\ndescription: Expert in project-specific reviews.\n---\n\nBody\n`,
+      'utf8'
+    );
+    const agents = await listAgentsAll({ projectRoot });
+    assert.equal(agents.get('my-agent'), 'Expert in project-specific reviews.');
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('listAgentsAll: skips non-.md files in project scope', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-agent-'));
+  try {
+    const agentsDir = join(projectRoot, '.claude', 'agents');
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(join(agentsDir, 'README.txt'), 'not an agent\n', 'utf8');
+    const agents = await listAgentsAll({ projectRoot });
+    // Bare name must not appear. (Other user/plugin scope agents may legitimately
+    // populate the Map — we only assert the non-md file wasn't picked up.)
+    assert.equal(agents.has('README'), false);
+    assert.equal(agents.has('README.txt'), false);
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
 });
 
 test('describeServer: stdio entry with env', () => {

@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.0.0
+
+**監査対象をユーザー追加分 (MCP / スキル / サブエージェント) に絞り込み**。Claude Code 本体が提供するツール (即時 + 遅延) は監査カタログから全面除外。設計転換の major bump。
+
+### 背景
+
+v0.13.x までは「Claude Code 組込みの遅延ツール (WebSearch / TodoWrite 等 17 件) は Bell が呼び忘れやすい」という仮定で手書き baseline を保持していた。今回の設計会議で 2 点が判明し、前提自体を撤回:
+
+1. **Bell は本体側ツールを使いこなしている**。WebSearch / WebFetch / NotebookEdit / Cron 系 / Worktree / 通知は自発率が十分高く、Spotter が提案すべき呼び忘れ対象ではない
+2. **即時 / 遅延の境界は Claude Code バージョンで動的に変わる**。現セッションの実測で、`AskUserQuestion` / `TodoWrite` / `EnterPlanMode` / `ExitPlanMode` / `TaskOutput` / `TaskStop` は baseline に「遅延」と書かれているが実際には **即時ツール**として扱われていた。手書き baseline は構造的に drift するので追従は不可能
+
+Spotter の役割は「Bell にとって**言われないと思い出さない** MCP / スキル / サブエージェントを視野に入れさせる」こと。本体側は Bell の手中にある。
+
+### 変更点
+
+- **削除 [src/tool-db/deferred-baseline.mjs](src/tool-db/deferred-baseline.mjs)**: 手書き 17 件の baseline を撤去。`DEFERRED_TOOL_BASELINE` / `getDeferredDescription` / `listDeferredNames` の export も削除 (破壊変更)
+- **新規 [src/tool-db/frontmatter.mjs](src/tool-db/frontmatter.mjs)**: SKILL.md / agent .md の YAML frontmatter から `name` + `description` を抽出する最小パーサー (ゼロ依存)
+- **新規 [src/tool-db/investigate-skills.mjs](src/tool-db/investigate-skills.mjs)**: スキルを 3 scope (user / project / 有効化プラグイン) から収集。プラグイン由来は `<plugin>:<skill>` に名前空間化、ユーザー / プロジェクト由来は素の名前。`enabledPlugins` の有効化判定は user scope + project scope の union、`~/.claude/plugins/installed_plugins.json` の `installPath` から実体にアクセス
+- **新規 [src/tool-db/investigate-agents.mjs](src/tool-db/investigate-agents.mjs)**: サブエージェントを同じく 3 scope から収集。名前は素の名前、衝突は project > user > plugin の優先順で解決
+- **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `buildInvestigationSnapshot` から deferred 経路を削除、スキル / サブエージェント経路を追加。MCP live fetch + `claude.ai` baseline (Gmail / Calendar / Drive) は維持
+- **編集 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs)**: `spotter db rebuild` が local DB に加えて **global DB も wipe** するように仕様変更。旧バージョンから上がってきたユーザーが古い deferred エントリを抱えたままにならないため
+- **編集 [src/index.mjs](src/index.mjs)**: `listSkillsAll` / `listActivePlugins` / `listAgentsAll` の export 追加
+- **リネーム [docs/catalog-design-deferred-mcp.md](docs/catalog-design.md) → [docs/catalog-design.md](docs/catalog-design.md)**: 大幅書き直し。対象範囲・分類軸・収集経路を v1.0.0 仕様で更新
+- **テスト更新 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: deferred baseline テスト 3 件削除、frontmatter テスト 3 件 + skill テスト 2 件 + agent テスト 2 件を追加。計 32 件全通過
+
+### 結果
+
+本プロジェクトで `buildInvestigationSnapshot` を走らせると **268 件 resolved**:
+
+- MCP: 40 件 (caveat 6 + claude.ai Gmail/Calendar/Drive 25 + x-api 9)
+- スキル (名前空間付き): 181 件 (ECC が大半)
+- サブエージェント + bare スキル: 47 件 (ECC 38 agents + 他)
+
+preamble 初回送信サイズ推定 15-25K tokens (Haiku 4.5 の 200K コンテキストに対し 12% 程度)。v0.6.0 preamble-once で 2 回目以降は per-turn delta のみ、セッション 1 回あたりの追加コストは初回のみ。
+
+### 設計判断
+
+- **ECC プラグインの全スキル (181 件) をそのまま投入**: 「使う可能性があるなら視野に入れる」が Spotter の本旨。description の semantic 判定は Haiku に任せる (preamble 肥大より recall 優先)
+- **learned/ などの空ディレクトリは silent に素通り**: SKILL.md が無ければスキルではない、ENOENT だけログを抑制
+- **名前衝突の解決**: スキルは `<plugin>:<name>` で namespace 分離されるので衝突せず。サブエージェントは bare name なので project > user > plugin 優先で Map 上書き
+- **破壊変更を major bump で明示**: カタログ契約が変わる + 公開 export 削除 + db rebuild 仕様変更、の 3 点で semver major
+
+### 残課題
+
+- **初回 Haiku latency の観測**: 268 件 preamble で `duration_ms` が 45s timeout に接近しないか実運用で確認。超えるようなら再緩和か件数絞り込みを再検討
+- **baseline 自動追従機構**: `claude.ai` MCP baseline は手書きのまま。Claude 側で追加があっても検知できない。長期的には監視機構が必要 ([docs/open-issues.md](docs/open-issues.md) P1 継続)
+- **v0.13.0 新軸の過検出**: turn_end 軸 (ツール適用機会監査) の誤爆パターンは別問題、継続観測
+
 ## 0.13.3
 
 **カタログ外ツール名の推奨を遮断 (prompt 明示 + 事後 filter の二重防御)**。v0.13.2 リリース直後の実セッション ([daemon-f047521c.log](../../.spotter/logs/daemon-f047521c-9cce-4822-9555-90b206b8341e.log) line 9) で `turn_end: pass=false, missing=Skill(tl)` を観測。**`Skill(tl)` はカタログ (tool-db.json 57 件) に存在しない**。Haiku が training 記憶 or few-shot の `current_time` / `Skill` 表記から cargo-cult してカタログ外名を提案していた。これが恒常化するとユーザーが無効な推奨に混乱する + /tl など description を直しても Haiku は参照していないため修正が届かない、という構造問題になる。

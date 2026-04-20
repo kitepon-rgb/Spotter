@@ -1,6 +1,6 @@
 # Spotter
 
-> **v0.7.0 released 2026-04-19**. **カタログを tool-db に置き換え**: 手書きの抽象ツール 5 件カタログを廃止し、`claude mcp list` + JSON-RPC `tools/list` で MCP ツールの description を自動取得、Claude Code 組込み 遅延ツール (WebSearch/TodoWrite 等) は hardcoded baseline からカバー、3 段階キャッシュ DB (ローカル → グローバル → 調査して両方に追記) で 2 回目以降は通信ゼロ。これで Caveat や Gmail のような MCP ツールが初めて Haiku の視野に入る。設計思想は [docs/catalog-design-deferred-mcp.md](docs/catalog-design-deferred-mcp.md)、変更詳細は [CHANGELOG](CHANGELOG.md)。
+> **v1.0.0 released 2026-04-20**. **監査対象をユーザー追加分 (MCP / スキル / サブエージェント) に絞り込み**。Claude Code 本体が提供するツールは監査から外す — Bell は本体側を使いこなしており呼び忘れ率が低い、また即時 / 遅延の境界がバージョンで動的に変わり手書き baseline が追従できない、の 2 点による設計転換。新規にスキル (SKILL.md frontmatter) とサブエージェント (.md frontmatter) の自動収集を追加、ECC プラグイン有効化状態から 181 skills + 38 agents を live 取得。設計思想は [docs/catalog-design.md](docs/catalog-design.md)、変更詳細は [CHANGELOG](CHANGELOG.md)。
 
 **気づく役と実行する役を分離する。** Spotter は Claude Code の横で静かに並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**に指摘する監査役です。
 

@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点 (v0.13.3 時点, 2026-04-20) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点 (v1.0.0 時点, 2026-04-20) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -47,7 +47,7 @@ v0.12.0 の UserPromptSubmit auto-resurrect が次のユーザー入力で `E_UN
 
 ## P0 — 実運用観測タスク
 
-v0.7.0 〜 v0.10.0 で tool-db が 5 件 (手書き抽象カタログ) → **57 件** (実 MCP + deferred + baseline) に膨らんだ。さらに v0.13.0 で Stop 判定軸を「要請充足チェック」から「ツール適用機会の監査」に転換した。これらの変化を実測で評価する。
+v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件 (MCP + deferred + baseline) → **268 件** (MCP + スキル + サブエージェント) に拡大した。さらに v0.13.0 で Stop 判定軸を「要請充足チェック」から「ツール適用機会の監査」に転換、v1.0.0 でカタログ対象を Claude Code 本体側から切り離した。これらの変化を実測で評価する。
 
 ### v0.13.0 新軸 (ツール適用機会の監査) の過検出率 / pass 率
 
@@ -60,17 +60,17 @@ v0.7.0 〜 v0.10.0 で tool-db が 5 件 (手書き抽象カタログ) → **57 
 
 **次アクション**: 数日の実運用 → daemon ログから turn_end の `pass=false, missing=...` 件数と内訳を集計、ユーザーが受け入れた指摘 / 却下した指摘の比率を観測。過検出が目立つなら (a) few-shot 増量、(b) カテゴリ別優先度付け、(c) カタログ description 側での「on-demand only」明示、のいずれかを検討。v0.13.3 の `dropped catalog-external names: ...` ログで filter 発動回数も併せて観測可能。
 
-### preamble 57 件時の Haiku 判定品質
+### preamble 268 件時の Haiku 判定品質
 
-**背景**: v0.6.0 で preamble-once 化したため、57 件全部が初回 preamble に載る。5 件時代と比べて情報過多で Haiku が散漫にならないか。false positive (的外れな指摘) と false negative (本当に呼ぶべき時に見逃し) の両方を観測したい。
+**背景**: v1.0.0 で preamble が 57 件 → 268 件に急拡大 (MCP 40 + スキル 181 + サブエージェント等 47)。preamble-once で投入コストは初回のみだが、情報過多で Haiku が散漫にならないか。false positive (的外れな指摘) と false negative (本当に呼ぶべき時に見逃し) の両方を観測したい。ECC プラグインが 181 スキル占めているので、プラグイン 1 つで preamble の 7 割が埋まる偏りも評価対象。
 
-**次アクション**: 数日の実運用 → daemon ログから指摘件数・指摘内容を集計 → 「ユーザーが無視した指摘」と「Bell が受け入れて実行した指摘」の比率を見る。誤検出率が許容範囲を超えたら description 強化 (when_to_use の明文化) を検討。
+**次アクション**: 数日の実運用 → daemon ログから指摘件数・指摘内容を集計 → 「ユーザーが無視した指摘」と「Bell が受け入れて実行した指摘」の比率を見る。誤検出率が許容範囲を超えたら対応策の候補 — (a) description 短縮で preamble 圧縮、(b) プラグイン単位の opt-in / opt-out 機構、(c) 低頻度ツールの取捨選択の仕組み — を検討。
 
 ### preamble 肥大による first call レイテンシ悪化
 
-**背景**: v0.6.1 の実測で first=22.4s だった。preamble が 5 件 → 57 件に膨らんで first がさらに伸びていないか未検証。prompt caching が効いていれば 2 回目以降は問題ないはずだが、cold の first は直撃する。
+**背景**: v0.13.1 実測で first=22-32s、45s timeout に対して 50-70% 域。v1.0.0 で preamble が 4 倍以上に膨らんだため first の悪化が懸念される。prompt caching が効けば 2 回目以降は問題ないが、cold の first は直撃する。45s timeout を超えたら daemon が `E_HAIKU_TIMEOUT` で落ちる。
 
-**次アクション**: daemon ログの `mode=first, duration_ms=N` を v0.10.0 後の新規セッションで集計、v0.6.1 時点の数字と比較。閾値 (例: 30s 超) を超えたら preamble 圧縮 (description 短縮 / 低頻度ツール除外) を検討。
+**次アクション**: v1.0.0 リリース後の daemon ログで `mode=first, duration_ms=N` を集計。40s 付近に張り付くようなら (a) description truncate、(b) timeout 60s 緩和、(c) プラグイン単位の選別機構 のどれかを検討。timeout 突破頻発なら緊急対処。
 
 ### claude.ai MCP (Gmail/Calendar/Drive) の過検出率
 
@@ -100,13 +100,13 @@ v0.7.0 〜 v0.10.0 で tool-db が 5 件 (手書き抽象カタログ) → **57 
 
 **次アクション**: `claude mcp list --json` の有無を定期的に再確認し、提供されたら即切り替え。それまでは `.mcp.json` 直読み (v0.9.0 で導入) でカバー、CLI パースは fallback 扱いに格下げ済み。
 
-### baseline の自動追従機構なし
+### claude.ai baseline の自動追従機構なし
 
-**背景**: [src/tool-db/deferred-baseline.mjs](../src/tool-db/deferred-baseline.mjs) (Claude Code 組込み遅延ツール 17 件) と [src/tool-db/claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) (Gmail/Calendar/Drive 25 件) は手書き。Anthropic 側で追加・変更があっても検知できず、手で追う必要あり。
+**背景**: [src/tool-db/claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) (Gmail/Calendar/Drive 25 件) は手書き。OAuth proxy 経由のため credentials 非読方針の Spotter では live fetch できず、Anthropic 側で追加・変更があっても検知できない。
 
-**次アクション**:
-- deferred: Claude Code のリリースノートを watch する仕組み (スラッシュコマンド / CI ジョブ) を検討
-- claude.ai: Gmail/Calendar/Drive は Anthropic 製品の一部、API 変更頻度は低い想定。半年に一度見直す運用で十分か要判断
+**補足**: v1.0.0 で deferred baseline (Claude Code 本体 17 件) は撤去されたので、本項目は claude.ai baseline にのみ残る課題。
+
+**次アクション**: Gmail/Calendar/Drive は Anthropic 製品の一部、API 変更頻度は低い想定。半年に一度見直す運用で十分か要判断。頻度上がるなら自動監視スクリプトの導入を検討。
 
 ### `--resume` の実効 spawn 削減量未検証
 
@@ -138,6 +138,7 @@ v0.7.0 〜 v0.10.0 で tool-db が 5 件 (手書き抽象カタログ) → **57 
 
 | 課題 | 解決版 |
 |---|---|
+| カタログ対象を Claude Code 本体側から切り離し (deferred-baseline 撤去 + skill/agent 収集新設) | v1.0.0 |
 | project scope `.mcp.json` 未対応 | v0.10.0 |
 | x-api が 401 で Haiku 視野に入らない | v0.9.0 (`.mcp.json` 読み込み) |
 | HTTP/SSE MCP transport 未実装 | v0.8.0 |

@@ -35,7 +35,7 @@ export async function runDbList() {
 export async function runDbRefresh() {
   const projectRoot = requireProjectRoot();
   const log = (msg) => process.stderr.write(`spotter db refresh: ${msg}\n`);
-  log('discovering MCP servers and built-in deferred tools...');
+  log('discovering MCP servers, skills, and sub-agents...');
   const resolved = await refresh({ projectRoot, logFn: log });
   const counts = { local: 0, global: 0, investigated: 0 };
   for (const { source } of resolved.values()) counts[source] = (counts[source] ?? 0) + 1;
@@ -48,8 +48,12 @@ export async function runDbRefresh() {
 
 export async function runDbRebuild() {
   const projectRoot = requireProjectRoot();
-  // Wipe local DB so every tool's resolution falls through to global → investigate.
+  // v1.0.0: wipe BOTH local and global DB. Rationale: the catalog scope changed in
+  // v1.0.0 (Claude Code built-ins removed; skills + sub-agents added). Stale entries
+  // from older versions would otherwise linger in the global DB since `refresh` only
+  // touches names currently produced by investigation. Users need a clean slate.
   await saveDb(localDbPath(projectRoot), emptyDb());
-  process.stderr.write(`spotter db rebuild: cleared local DB, refreshing...\n`);
+  await saveDb(globalDbPath(), emptyDb());
+  process.stderr.write(`spotter db rebuild: cleared local + global DB, refreshing...\n`);
   await runDbRefresh();
 }
