@@ -11,11 +11,25 @@
 // sub-agents.
 
 import { resolveAll } from './lookup.mjs';
-import { listMcpToolsAll, bellVisibleName } from './investigate-mcp.mjs';
-import { getClaudeAiDescription, listClaudeAiNames } from './claude-ai-baseline.mjs';
+import { listMcpToolsAll, listMcpServers, bellVisibleName } from './investigate-mcp.mjs';
+import { getClaudeAiBaselineByServer } from './claude-ai-baseline.mjs';
 import { listSkillsAll } from './investigate-skills.mjs';
 import { listAgentsAll } from './investigate-agents.mjs';
 import { localDbPath, globalDbPath } from './loader.mjs';
+
+// Pure filter: returns the subset of the claude.ai baseline whose server name is
+// present in `presentServerNames`. Accepts a Set for O(1) membership. Extracted as
+// a named export so it can be unit-tested without a live `claude` CLI.
+export function filterClaudeAiBaseline(presentServerNames) {
+  const out = new Map();
+  for (const [serverName, tools] of getClaudeAiBaselineByServer()) {
+    if (!presentServerNames.has(serverName)) continue;
+    for (const [toolName, description] of Object.entries(tools)) {
+      out.set(toolName, description);
+    }
+  }
+  return out;
+}
 
 // Build the (name → description) map for an investigation pass across all sources:
 //   - claude.ai MCP baseline (Gmail / Calendar / Drive — OAuth, not locally introspectable)
@@ -27,11 +41,19 @@ import { localDbPath, globalDbPath } from './loader.mjs';
 export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin = 'claude', projectRoot } = {}) {
   const snapshot = new Map();
 
-  // Anthropic-provided `claude.ai ...` MCP servers — hardcoded because the OAuth proxy
+  // Anthropic-provided `claude.ai ...` MCP servers. Hardcoded because the OAuth proxy
   // is not reachable without reading ~/.claude/.credentials.json (deliberately avoided).
-  // If a live HTTP investigate for the same name later succeeds below, it overrides.
-  for (const name of listClaudeAiNames()) {
-    snapshot.set(name, getClaudeAiDescription(name));
+  // Injected only for servers actually present in `claude mcp list` — otherwise phantom
+  // tools (Gmail/Calendar/Drive) leak into environments where those servers are not
+  // connected. See filterClaudeAiBaseline above.
+  const servers = await listMcpServers({ claudeBin, projectRoot });
+  const presentServerNames = new Set(servers.map((s) => s.name));
+  const baseline = filterClaudeAiBaseline(presentServerNames);
+  for (const [name, description] of baseline) {
+    snapshot.set(name, description);
+  }
+  if (baseline.size > 0) {
+    logFn(`claude.ai baseline injected: ${baseline.size} tools from ${[...presentServerNames].filter((n) => n.startsWith('claude.ai ')).join(', ')}`);
   }
 
   // MCP servers (stdio + user-registered HTTP/SSE). projectRoot forwards for

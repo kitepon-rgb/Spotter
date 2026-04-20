@@ -45,7 +45,7 @@ export async function listMcpToolsAll({ logFn = () => {}, claudeBin = 'claude', 
   const out = new Map();
   for (const server of servers) {
     try {
-      const tools = await listMcpToolsOne({ server, logFn });
+      const tools = await listMcpToolsOne({ server, logFn, claudeBin, projectRoot });
       out.set(server.name, tools);
     } catch (err) {
       logFn(`mcp investigate failed for "${server.name}": ${err.message}`);
@@ -64,9 +64,15 @@ export async function listMcpToolsAll({ logFn = () => {}, claudeBin = 'claude', 
 // full descriptor (with env/headers). Otherwise we fall back to the parsed CLI line,
 // which at minimum gives us name + transport + url (or triggers `claude mcp get` for
 // stdio command tokenisation).
+//
+// We pass `cwd: projectRoot` to the CLI so its project-scope walk-up lands in the same
+// directory we read `.mcp.json` from. Without this, `claude` walks up from the parent
+// process's cwd and can resolve a different project than `readMcpServers` does.
 export async function listMcpServers({ claudeBin = 'claude', projectRoot } = {}) {
+  const execOpts = { encoding: 'utf8' };
+  if (projectRoot) execOpts.cwd = projectRoot;
   const [{ stdout }, mcpServers] = await Promise.all([
-    execClaude(claudeBin, ['mcp', 'list'], { encoding: 'utf8' }),
+    execClaude(claudeBin, ['mcp', 'list'], execOpts),
     readMcpServers({ projectRoot }),
   ]);
   const cliList = parseMcpListOutput(stdout);
@@ -115,12 +121,12 @@ export function parseMcpListOutput(text) {
 // Fetch tools/list from a single MCP server. The `server` descriptor either came
 // from `.mcp.json` (carries env / headers) or from CLI output (bare). For stdio
 // entries without full config we fall back to `claude mcp get`.
-export async function listMcpToolsOne({ server, logFn = () => {}, claudeBin = 'claude' }) {
+export async function listMcpToolsOne({ server, logFn = () => {}, claudeBin = 'claude', projectRoot }) {
   if (server.transport === 'stdio') {
     const hasFullConfig = server.command !== undefined;
     const config = hasFullConfig
       ? { command: server.command, args: server.args ?? [], env: server.env ?? {} }
-      : await getStdioConfig({ name: server.name, claudeBin });
+      : await getStdioConfig({ name: server.name, claudeBin, projectRoot });
     return spawnAndQuery(config, server.name);
   }
   if (server.transport === 'http' || server.transport === 'sse') {
@@ -135,8 +141,12 @@ export async function listMcpToolsOne({ server, logFn = () => {}, claudeBin = 'c
 }
 
 // Parse `claude mcp get <name>` to extract Command + Args for stdio servers.
-async function getStdioConfig({ name, claudeBin }) {
-  const { stdout } = await execClaude(claudeBin, ['mcp', 'get', name], { encoding: 'utf8' });
+// `cwd: projectRoot` pins the CLI's scope walk-up to the same directory used for
+// `.mcp.json` reading — see listMcpServers for the rationale.
+async function getStdioConfig({ name, claudeBin, projectRoot }) {
+  const execOpts = { encoding: 'utf8' };
+  if (projectRoot) execOpts.cwd = projectRoot;
+  const { stdout } = await execClaude(claudeBin, ['mcp', 'get', name], execOpts);
   let command = null;
   let argsRaw = null;
   for (const rawLine of stdout.split('\n')) {

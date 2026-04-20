@@ -75,12 +75,19 @@ const DRIVE = {
     'List who has access to a Drive file and their role (reader/commenter/writer/owner). Use when the user asks who can see or edit a file.',
 };
 
-const ALL = { ...GMAIL, ...CALENDAR, ...DRIVE };
+// Server-level structure. Keys are the literal server names as reported by
+// `claude mcp list` — the callers in refresh.mjs filter by this name so that the
+// baseline is only injected for servers actually visible in the current session.
+// Without this filter, 25 phantom tools leak into the catalog in any environment
+// where Claude.ai OAuth is not connected (isolated CLAUDE_CONFIG_DIR, Max plan
+// users without Desktop integration, or partial Gmail-only / Calendar-only setups).
+const BY_SERVER = {
+  'claude.ai Gmail': GMAIL,
+  'claude.ai Google Calendar': CALENDAR,
+  'claude.ai Google Drive': DRIVE,
+};
 
-export function listClaudeAiNames() {
-  return Object.keys(ALL);
-}
-
-export function getClaudeAiDescription(name) {
-  return ALL[name] ?? null;
+// Returns Map<serverName, {toolName: description}>.
+export function getClaudeAiBaselineByServer() {
+  return new Map(Object.entries(BY_SERVER));
 }

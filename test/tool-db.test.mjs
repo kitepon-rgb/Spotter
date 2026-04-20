@@ -10,6 +10,7 @@ import { parseFrontmatter } from '../src/tool-db/frontmatter.mjs';
 import { listSkillsAll } from '../src/tool-db/investigate-skills.mjs';
 import { listAgentsAll } from '../src/tool-db/investigate-agents.mjs';
 import { describeServer, readMcpServers } from '../src/tool-db/mcp-config.mjs';
+import { filterClaudeAiBaseline } from '../src/tool-db/refresh.mjs';
 
 async function setupPaths() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-tooldb-'));
@@ -383,4 +384,28 @@ test('readMcpServers: missing project file falls back to user only', async () =>
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
   }
+});
+
+test('filterClaudeAiBaseline: all three servers present → full 25-tool baseline', () => {
+  const present = new Set(['claude.ai Gmail', 'claude.ai Google Calendar', 'claude.ai Google Drive']);
+  const out = filterClaudeAiBaseline(present);
+  assert.equal(out.size, 25);
+  assert.ok(out.has('mcp__claude_ai_Gmail__search_threads'));
+  assert.ok(out.has('mcp__claude_ai_Google_Calendar__list_events'));
+  assert.ok(out.has('mcp__claude_ai_Google_Drive__search_files'));
+});
+
+test('filterClaudeAiBaseline: only Gmail present → only Gmail tools injected', () => {
+  const present = new Set(['claude.ai Gmail', 'unrelated-server']);
+  const out = filterClaudeAiBaseline(present);
+  assert.equal(out.size, 10);
+  assert.ok(out.has('mcp__claude_ai_Gmail__search_threads'));
+  assert.ok(!out.has('mcp__claude_ai_Google_Calendar__list_events'));
+  assert.ok(!out.has('mcp__claude_ai_Google_Drive__search_files'));
+});
+
+test('filterClaudeAiBaseline: none of the three present → empty result', () => {
+  const present = new Set(['openclaw-tools', 'local-tools']);
+  const out = filterClaudeAiBaseline(present);
+  assert.equal(out.size, 0);
 });

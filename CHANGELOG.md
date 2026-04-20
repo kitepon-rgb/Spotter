@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.1.4
+
+**MCP 投資ロジックの 2 件の穴を修正**。どちらも「名乗っているスコープ」と「実際に参照されるスコープ」が一致していない silent mismatch。前者は projectRoot 引数が効かない経路、後者は baseline が現実を無視して常に 25 件投入される経路。
+
+### 変更点
+
+- **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `listMcpServers` / `getStdioConfig` が projectRoot を受け取っておきながら `execClaude(claude mcp list / mcp get)` に `cwd` を渡していなかったため、`.mcp.json` 読み込みと claude CLI の walk-up が別プロジェクトを見る可能性があった。`cwd: projectRoot` を付与し、`listMcpToolsOne` を通じて projectRoot を伝搬するシグネチャに変更。通常は `process.cwd() === projectRoot` で表面化しないが、API の意味論を実装に揃える
+- **編集 [src/tool-db/claude-ai-baseline.mjs](src/tool-db/claude-ai-baseline.mjs)**: flat な `listClaudeAiNames` / `getClaudeAiDescription` を削除、server 単位の `getClaudeAiBaselineByServer()` に再編。Gmail / Calendar / Drive を個別集合として保持し、呼び出し側で現実に存在するサーバーのみ注入できるようにした
+- **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `buildInvestigationSnapshot` で `listMcpServers` の結果に基づき baseline を filter。`claude mcp list` に `claude.ai Gmail` / `claude.ai Google Calendar` / `claude.ai Google Drive` が存在しない環境 (隔離 `CLAUDE_CONFIG_DIR`, claude.ai OAuth 未連携, 部分連携) では該当 baseline は投入されない。純粋関数 `filterClaudeAiBaseline` を named export として切り出しテスト可能にした
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: `filterClaudeAiBaseline` の回帰テスト 3 件追加 — 全 3 サーバー存在 / Gmail のみ存在 / 全不在
+
+### 背景
+
+#### projectRoot の silent mismatch
+
+v0.10.0 で `.mcp.json` の project scope 対応を入れた際、`readMcpServers({projectRoot})` は projectRoot を尊重するようにしたが、同じ関数内で spawn している `claude mcp list` / `claude mcp get` には `cwd` を渡し忘れていた。claude CLI は cwd から親方向に walk-up して `.mcp.json` を探すため、Spotter が引数で指定した projectRoot と claude CLI が勝手に見つけた project scope が乖離する可能性が残っていた。
+
+#### claude.ai baseline の無条件注入
+
+v0.8.0 で claude.ai OAuth 系 MCP (Gmail / Calendar / Drive) を手書き baseline として導入した際、「live HTTP investigate が成功した場合 override される」という想定で無条件注入ロジックを置いていた。しかし claude.ai 系は `.mcp.json` に載らず OAuth proxy 経由のため、`listMcpToolsAll` の investigate 対象にそもそも入らない = override 経路は発動不能。結果、claude.ai 未連携 / 部分連携環境 (隔離 `CLAUDE_CONFIG_DIR` での bellbot 等) で最大 25 件の幻ツールが catalog に残り、Bell が呼べないツールを Spotter が推奨する誤検出源になっていた。
+
+### 設計判断
+
+- **`listMcpToolsAll` のシグネチャは触らない**: baseline filter 用に `listMcpServers` を buildInvestigationSnapshot で先に呼ぶと、内部で listMcpToolsAll がもう一度 CLI spawn する。pre-resolved servers 引数で避けられるが、API 表面を増やすコストに対し `claude mcp list` は 0.5-2s の 1 度だけなので受容
+- **診断ログ追加**: baseline 注入時に `claude.ai baseline injected: N tools from <server list>` を logFn に出力。どの環境で何件入ったか後から追えるようにした
+- **後方互換 export は削除**: `listClaudeAiNames` / `getClaudeAiDescription` は [src/index.mjs](src/index.mjs) に re-export されておらず、外部利用の形跡なし。残しても drift 源になるため削除
+
 ## 1.1.3
 
 **v1.1.x の実装進展にドキュメントを追従させる docs-only リリース**。コード変更なし。npm package tarball 同梱の README が古い手順を指していたため再 publish。
