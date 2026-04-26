@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadDb, saveDb, emptyDb, ToolDbSchemaError } from '../src/tool-db/loader.mjs';
 import { resolveAll } from '../src/tool-db/lookup.mjs';
+import { readLocal } from '../src/tool-db/refresh.mjs';
 import { parseMcpListOutput, bellVisibleName } from '../src/tool-db/investigate-mcp.mjs';
 import { parseFrontmatter } from '../src/tool-db/frontmatter.mjs';
 import { listSkillsAll } from '../src/tool-db/investigate-skills.mjs';
@@ -408,4 +409,67 @@ test('filterClaudeAiBaseline: none of the three present → empty result', () =>
   const present = new Set(['openclaw-tools', 'local-tools']);
   const out = filterClaudeAiBaseline(present);
   assert.equal(out.size, 0);
+});
+
+test('resolveAll: prunes local entries no longer in toolNames (project shed a tool)', async () => {
+  const { dir, localPath, globalPath } = await setupPaths();
+  // Local has two tools; this refresh discovers only `keep`.
+  await saveDb(localPath, { version: 1, tools: { keep: 'kept desc', gone: 'stale desc' } });
+  await saveDb(globalPath, { version: 1, tools: { keep: 'kept desc', gone: 'stale desc' } });
+  const investigate = async () => { throw new Error('should not be called when local hits'); };
+  const resolved = await resolveAll({
+    toolNames: ['keep'],
+    localPath,
+    globalPath,
+    investigate,
+  });
+  assert.equal(resolved.has('gone'), false);
+  assert.equal(resolved.get('keep').description, 'kept desc');
+  // Local file pruned `gone`, kept `keep`.
+  const localAfter = await loadDb(localPath);
+  assert.equal(localAfter.tools.keep, 'kept desc');
+  assert.equal(localAfter.tools.gone, undefined);
+  // Global remains untouched (knowledge store is append-only).
+  const globalAfter = await loadDb(globalPath);
+  assert.equal(globalAfter.tools.gone, 'stale desc');
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('resolveAll: investigate failure on requested tool keeps existing local value (no prune)', async () => {
+  const { dir, localPath, globalPath } = await setupPaths();
+  await saveDb(localPath, { version: 1, tools: { foo: 'cached desc' } });
+  // Force re-investigation by creating drift (global differs), then have investigate fail.
+  await saveDb(globalPath, { version: 1, tools: { foo: 'old global' } });
+  const investigate = async () => null;
+  const resolved = await resolveAll({
+    toolNames: ['foo'],
+    localPath,
+    globalPath,
+    investigate,
+  });
+  // Local existing value retained because foo is still requested (just transiently uninvestigable).
+  assert.equal(resolved.get('foo').description, 'cached desc');
+  const localAfter = await loadDb(localPath);
+  assert.equal(localAfter.tools.foo, 'cached desc');
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('readLocal: returns ONLY local entries — global tools must not leak in', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-readlocal-'));
+  try {
+    // Manually seed only the local DB; readLocal must ignore the global DB entirely.
+    const { localDbPath } = await import('../src/tool-db/loader.mjs');
+    await saveDb(localDbPath(projectRoot), {
+      version: 1,
+      tools: { 'mcp__local__only': 'local-only desc' },
+    });
+    const tools = await readLocal({ projectRoot });
+    const names = tools.map((t) => t.name);
+    assert.deepEqual(names, ['mcp__local__only']);
+    // Sanity: even if the real ~/.spotter/tool-db.json exists with hundreds of tools,
+    // readLocal must only return the single local entry above.
+    assert.equal(tools.length, 1);
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
 });

@@ -42,7 +42,7 @@ import {
   createHaikuCaller,
   HaikuError,
 } from './haiku-caller.mjs';
-import { readMerged } from '../tool-db/refresh.mjs';
+import { readLocal } from '../tool-db/refresh.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
@@ -90,9 +90,11 @@ export async function startDaemon({
   // a sibling daemon is already serving this session_id — throw so the caller can exit.
   await assertNoLiveDaemon(sessionId);
 
-  // v0.7.0: tool list comes from tool-db (local + global merged with local-wins).
-  // For tests, the caller can pass `tools` directly. For production, projectRoot drives
-  // the load from <projectRoot>/.spotter/tool-db.json + ~/.spotter/tool-db.json.
+  // v1.2.0: tool list comes from the LOCAL tool-db only. The audit must reflect what
+  // this specific project can use — mixing in the global DB caused phantom suggestions
+  // from previously-visited projects (Gmail tools popping up in projects with no Gmail
+  // MCP, etc.). For tests, the caller can pass `tools` directly. For production,
+  // projectRoot drives the load from <projectRoot>/.spotter/tool-db.json.
   let toolList;
   if (Array.isArray(tools)) {
     toolList = tools;
@@ -100,7 +102,7 @@ export async function startDaemon({
     if (!projectRoot) {
       throw new TypeError('startDaemon: either `tools` or `projectRoot` must be provided');
     }
-    toolList = await readMerged({ projectRoot });
+    toolList = await readLocal({ projectRoot });
   }
   logFn(`tool-db loaded: ${toolList.length} tools` + (projectRoot ? ` (project=${projectRoot})` : ''));
 

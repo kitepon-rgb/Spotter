@@ -97,13 +97,13 @@ export async function refresh({ projectRoot, logFn = () => {}, claudeBin = 'clau
   });
 }
 
-// Read-only: load the current tool-db (local + global merged with local-wins) for use
-// by daemon at session start. Does NOT perform discovery or write — that's `refresh`'s
-// job, run via CLI or install hook.
-export async function readMerged({ projectRoot }) {
+// Read-only: load the LOCAL tool-db only — the daemon's audit must reflect what this
+// specific project can actually use. The global DB is a knowledge store written by
+// `refresh` (so other projects can pick up descriptions cheaply) but is NEVER mixed
+// into the daemon's audit catalog. Mixing global in caused phantom-tool suggestions
+// from previously-visited projects bleeding into unrelated ones.
+export async function readLocal({ projectRoot }) {
   const { loadDb } = await import('./loader.mjs');
   const local = await loadDb(localDbPath(projectRoot));
-  const global = await loadDb(globalDbPath());
-  const merged = { ...global.tools, ...local.tools }; // local overrides
-  return Object.entries(merged).map(([name, description]) => ({ name, description }));
+  return Object.entries(local.tools).map(([name, description]) => ({ name, description }));
 }

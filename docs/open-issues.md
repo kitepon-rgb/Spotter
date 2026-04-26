@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点 (v1.1.6 時点, 2026-04-20) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点 (v1.2.0 時点, 2026-04-26) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -172,6 +172,7 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 | 課題 | 解決版 |
 |---|---|
+| 当該プロジェクトで使えないツールが Haiku 視野に幻として漏れる構造的バグ。`readMerged` が global DB の中身を local-wins マージで daemon の audit に流し込んでいた経路 + `resolveAll` が snapshot にもう存在しないローカルエントリを削除しなかった経路の二重バグ。daemon 入力を `readLocal` (local DB only) に切替 + `resolveAll` 末尾に prune ループ追加 (investigate 失敗時は既存値保持) | v1.2.0 |
 | Bell の isolated `CLAUDE_CONFIG_DIR` (例 bellbot) が hook → daemon → haiku の spawn 連鎖で継承され、Spotter haiku が credentials 不在の config を読みに行き auth 失敗で exit 1 → 次 turn で同じ session-id が "already in use" で stuck し user_input hook が非 0 exit 連鎖する bug。`sanitizeHaikuEnv` で haiku spawn 時のみ `CLAUDE_CONFIG_DIR` を strip + `runHaikuJudgment` で E_INTERNAL / E_HAIKU_TIMEOUT 時も session を rotate してから throw | v1.1.6 |
 | Windows で `execClaude` 経由の `cmd.exe /c claude mcp list/get` に `windowsHide: true` が付いておらず、SessionStart 毎の refresh で console window が flash + 入力フォーカスを奪う UX 回帰 | v1.1.5 |
 | claude.ai baseline (Gmail/Calendar/Drive 25 件) が `claude mcp list` の実在確認なしに全環境で無条件注入 (隔離 `CLAUDE_CONFIG_DIR` / 未連携 / 部分連携環境で幻ツール) | v1.1.4 |

@@ -1,13 +1,13 @@
 // `spotter db` — manage the tool-db.
 //
-//   spotter db list             — print merged tool-db (local overrides global)
+//   spotter db list             — print the LOCAL tool-db (what the daemon actually audits)
 //   spotter db refresh          — discover available tools and update DB (3-tier resolve)
 //   spotter db rebuild          — wipe local DB then refresh (forces re-investigation)
 //
 // Run inside a project that has been `spotter install`-ed.
 
 import { findSpotterMarker } from '../hooks/lib.mjs';
-import { refresh, readMerged } from '../tool-db/refresh.mjs';
+import { refresh, readLocal } from '../tool-db/refresh.mjs';
 import { localDbPath, globalDbPath, loadDb, saveDb, emptyDb } from '../tool-db/loader.mjs';
 import { writeFile } from 'node:fs/promises';
 
@@ -22,7 +22,7 @@ function requireProjectRoot() {
 
 export async function runDbList() {
   const projectRoot = requireProjectRoot();
-  const tools = await readMerged({ projectRoot });
+  const tools = await readLocal({ projectRoot });
   if (tools.length === 0) {
     process.stdout.write('(empty — run `spotter db refresh` to populate)\n');
     return;

@@ -1,6 +1,6 @@
 # Spotter
 
-> **v1.1.4 released 2026-04-20**. **MCP 投資経路の 2 件の silent mismatch を修正**。(1) `claude mcp list / get` spawn 時の `cwd: projectRoot` 未指定、(2) claude.ai baseline (Gmail/Calendar/Drive 25 件) の無条件注入 — `claude mcp list` の実在確認を入れ、隔離 `CLAUDE_CONFIG_DIR` / 未連携環境で最大 25 件の幻ツールが catalog に残っていた状態を解消 (Bell 側実環境で 25 件消失を実測確認済み)。v1.1.0 からの柱 (install 時 tool-db 自動構築 + SessionStart での drift 自動追従) は継続、手動 `spotter db refresh` は通常不要。監査対象は v1.0.0 でユーザー追加分 (MCP / スキル / サブエージェント) に絞り込み済み、本プロジェクトでの実測で 268 件 resolved (MCP 40 + skills 181 + agents/bare 47)。設計思想は [docs/catalog-design.md](docs/catalog-design.md)、変更詳細は [CHANGELOG](CHANGELOG.md)。
+> **v1.2.0 released 2026-04-26**. **当該プロジェクトで使えないツールが提案される回帰を構造的に修正**。daemon が監査に使うカタログを**ローカル DB のみ**に変更し、グローバル DB は他プロジェクトでの description 再利用キャッシュに役割を限定。`resolveAll` 末尾に prune ループ追加で、現プロジェクトの discovery 結果に含まれない既存ローカルエントリを削除 (= 過去の別プロジェクトで discover された MCP / スキル / サブエージェントが居座る経路を遮断)。既 install プロジェクトは npm global update 後、次の SessionStart で自動 refresh が走り、次の次のセッションから幽霊が消える (即時反映は `spotter db refresh` 手動)。v1.1.0 からの柱 (install 時 tool-db 自動構築 + SessionStart での drift 自動追従) は継続。監査対象は v1.0.0 でユーザー追加分 (MCP / スキル / サブエージェント) に絞り込み済み。設計思想は [docs/catalog-design.md](docs/catalog-design.md)、変更詳細は [CHANGELOG](CHANGELOG.md)。
 
 **気づく役と実行する役を分離する。** Spotter は Claude Code の横で静かに並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**に指摘する監査役です。
 
@@ -44,7 +44,9 @@ Stop hook → Spotter が応答と使用済みツールを見て最終チェッ�
 見落としあれば差し戻し (max 1 回、Claude Code の stop_hook_active で自動担保)
 ```
 
-監査対象のツール (name + description) は `~/.spotter/tool-db.json` (グローバル) と `<project>/.spotter/tool-db.json` (ローカル) に格納されます。**v1.1.0 以降、`spotter install` が初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、通常の運用で手動コマンドを叩く必要はありません。収集経路は (1) MCP サーバー: user/project scope の `.mcp.json` + `claude mcp list` で列挙、各サーバーの `tools/list` を JSON-RPC で取得、HTTP/SSE transport にも対応、(2) スキル: user/project/プラグインの SKILL.md frontmatter から `{name, description}` を抽出、(3) サブエージェント: user/project/プラグインの agent .md frontmatter から抽出、(4) claude.ai baseline: OAuth proxy 経由の Gmail/Calendar/Drive 25 件は手書き baseline で補完 (v1.1.4 以降、`claude mcp list` に該当サーバーが存在する環境でのみ注入)。**手書きでツールリストを管理する必要はありません**。
+監査対象のツール (name + description) は `<project>/.spotter/tool-db.json` (ローカル) に格納されます。**daemon が監査に使うのはローカル DB のみ** (v1.2.0 以降) で、グローバル DB `~/.spotter/tool-db.json` は他プロジェクトでの description 再利用キャッシュとしてのみ機能します (live fetch コスト削減のため初回 refresh で参照、結果は local に write-through)。各プロジェクトの local DB は **そのプロジェクトの現時点の discovery 結果と一致** (refresh 時に prune される) ため、過去にインストールしていた MCP / スキル / サブエージェントが他プロジェクトに混入することはありません。
+
+**v1.1.0 以降、`spotter install` が初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、通常の運用で手動コマンドを叩く必要はありません。収集経路は (1) MCP サーバー: user/project scope の `.mcp.json` + `claude mcp list` で列挙、各サーバーの `tools/list` を JSON-RPC で取得、HTTP/SSE transport にも対応、(2) スキル: user/project/プラグインの SKILL.md frontmatter から `{name, description}` を抽出、(3) サブエージェント: user/project/プラグインの agent .md frontmatter から抽出、(4) claude.ai baseline: OAuth proxy 経由の Gmail/Calendar/Drive 25 件は手書き baseline で補完 (v1.1.4 以降、`claude mcp list` に該当サーバーが存在する環境でのみ注入)。**手書きでツールリストを管理する必要はありません**。
 
 ## Throughline との関係
 
@@ -61,7 +63,7 @@ Stop hook → Spotter が応答と使用済みツールを見て最終チェッ�
 ## よく使うコマンド
 
 ```bash
-spotter db list          # 現在の tool-db (local + global merged) を表示
+spotter db list          # 現在のローカル tool-db (daemon が実際に audit に使う) を表示
 spotter db refresh       # MCP / スキル / サブエージェントから description を収集して DB 更新
                          # (v1.1.0 以降、install 時と SessionStart 時に自動実行されるので通常は不要)
 spotter db rebuild       # local + global DB を両方消してから refresh (カタログ設計変更時のクリーン用)

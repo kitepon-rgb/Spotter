@@ -6,6 +6,12 @@
 //   3. both miss          → investigate, write to BOTH
 //   * local≠global hit    → re-investigate (MCP server is source of truth), overwrite BOTH
 //
+// Local DB pruning: after resolution, any tool currently in the local DB but NOT in
+// `toolNames` (i.e. no longer discoverable in this project — server uninstalled, skill
+// deleted, agent moved away) is removed. The local DB MUST mirror "what this project
+// can use right now" since it is the sole input to the audit. Global DB is the
+// long-term knowledge store and is never pruned.
+//
 // `investigate(name)` is supplied by the caller. Returns description string, or null
 // if the tool cannot be resolved (keep going, don't throw).
 
@@ -70,6 +76,18 @@ export async function resolveAll({ toolNames, localPath, globalPath, investigate
     localDirty = true;
     globalDirty = true;
     resolved.set(name, { description: fresh, source: 'investigated' });
+  }
+
+  // Prune local entries no longer present in this project's discovery.
+  // Skip names that were requested but failed to resolve (investigation may be a
+  // transient failure — keep the existing description rather than blanking the audit).
+  const requested = new Set(toolNames);
+  for (const name of Object.keys(local.tools)) {
+    if (!requested.has(name)) {
+      delete local.tools[name];
+      localDirty = true;
+      logFn(`pruned local entry "${name}" (no longer in this project's discovery)`);
+    }
   }
 
   if (localDirty) await saveDb(localPath, local);

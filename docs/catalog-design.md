@@ -111,13 +111,14 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 ### この設計の意図
 
 - **作業負荷の軽減**: 毎セッション全部問い合わせると遅い・無駄。一度引いた description はキャッシュして使い回す
-- **二重書き込みの理由**:
-  - **グローバル**: 他のプロジェクトでも同じツールが出てきたときに即ヒットさせる
-  - **ローカル**: そのプロジェクト固有のスナップショットを残す
+- **二重書き込みの理由 (v1.2.0 以降の役割再定義)**:
+  - **ローカル**: **daemon が監査に使う唯一の入力源**。そのプロジェクトの現時点の discovery 結果と一致する
+  - **グローバル**: **他プロジェクトでの description 再利用キャッシュ**。daemon の audit には混ぜない (混ぜると過去の別プロジェクトで discover したツールが現プロジェクトの Haiku 視野に幻として漏れる)
 - **グローバル → ローカル の write-through**: 次セッションでローカル単独ヒットになり余計な参照が走らない
 - **drift 補正**: ローカルとグローバルで同一ツールの description が異なるとき、再調査して両方を上書きする。提供者の description が単一の真実源として優先される
 - **明示的な無効化機構は持たない**: TTL や version tracking のような仕組みは入れない。drift 補正が間接的な無効化として機能する
-- **ツールが利用可能リストから消えても DB エントリは削除しない**: 削除作業のコストに対して得るものがない
+- **ローカル DB は prune される (v1.2.0 以降)**: refresh 時に「現プロジェクトの discovery 結果に含まれない既存ローカルエントリ」は削除される。MCP サーバーをアンインストールした / スキルを消した / サブエージェントを別プロジェクトに移したケースで、過去のエントリが居座って Haiku 視野に残る経路を塞ぐ。investigate が transient failure (auth / network / quota) で null を返した場合は、toolNames に含まれている限り既存値を保持して prune しない (audit 範囲を縮めない防御)
+- **グローバル DB は prune されない (v1.2.0 以降)**: 他プロジェクト用キャッシュとしての性格上、append-only で蓄積する。古いエントリは `spotter db rebuild` でしか消えない
 
 ## 収集経路 (v1.0.0)
 
@@ -143,3 +144,4 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 - v1.0.0: 実測で「Claude Code 組込みツールは Bell が使いこなしており、呼び忘れ率は低い」と確認。遅延 / 即時の境界も Claude Code バージョンで動的に変わることが判明。**本体側は全面除外**、ユーザー追加分 (MCP + スキル + サブエージェント) のみに監査範囲を絞る設計転換
 - v1.1.x: 収集タイミングの自動化。install 時同期 seed + SessionStart bg refresh で手動 `spotter db refresh` を不要化、drift 自動追従を実現
 - v1.1.4: MCP 投資経路の 2 件の silent mismatch を修正。(1) `listMcpServers` / `getStdioConfig` の `claude mcp list / get` spawn 時に `cwd: projectRoot` を付与、名乗っている project scope と claude CLI が walk-up で見つける project scope の乖離を解消。(2) claude.ai baseline を server 単位構造に再編、`filterClaudeAiBaseline` で `claude mcp list` に該当サーバーが実在する環境のみ注入。隔離 `CLAUDE_CONFIG_DIR` / 未連携 / 部分連携環境で最大 25 件の幻ツールが catalog に残る問題を解消 (Bell 側実環境で 25 件消失を実測確認済み)
+- v1.2.0: daemon の audit 入力をローカル DB のみに変更し、グローバル DB は他プロジェクトでの description 再利用キャッシュに役割を限定 (`readMerged` → `readLocal`)。同時に `resolveAll` 末尾に prune ループ追加で「現プロジェクトの discovery 結果に含まれない既存ローカルエントリ」を削除。過去の別プロジェクトで discover した MCP / スキル / サブエージェントが Haiku 視野に幻として漏れる構造的バグを解消

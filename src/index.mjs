@@ -15,7 +15,7 @@ export {
 } from './daemon/haiku-caller.mjs';
 export { loadDb, saveDb, emptyDb, ToolDbSchemaError, globalDbPath, localDbPath } from './tool-db/loader.mjs';
 export { resolveAll } from './tool-db/lookup.mjs';
-export { refresh, readMerged, buildInvestigationSnapshot } from './tool-db/refresh.mjs';
+export { refresh, readLocal, buildInvestigationSnapshot } from './tool-db/refresh.mjs';
 export { listMcpServers, listMcpToolsAll, bellVisibleName, McpInvestigationError } from './tool-db/investigate-mcp.mjs';
 export { listSkillsAll, listActivePlugins } from './tool-db/investigate-skills.mjs';
 export { listAgentsAll } from './tool-db/investigate-agents.mjs';

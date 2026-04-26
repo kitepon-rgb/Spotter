@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.2.0
+
+**当該プロジェクトで使えないツールが提案される回帰を構造的に修正**。daemon が監査に使うカタログを **ローカル DB のみ** に変更し、グローバル DB は他プロジェクトでの description 再利用のためのキャッシュ層に役割を限定。同時に `resolveAll` で「現プロジェクトの discovery 結果に含まれないローカルエントリ」を prune するよう変更し、過去にインストールされていた MCP / スキル / サブエージェントが local に居座って Haiku 視野に残る経路を塞いだ。
+
+### 変更点
+
+- **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `readMerged` を `readLocal` にリネーム + 実装を local DB 限定に変更。global DB を一切混ぜない。コメントで「他プロジェクトの幻ツール混入」が起きていた経路を明示
+- **編集 [src/tool-db/lookup.mjs](src/tool-db/lookup.mjs)**: `resolveAll` 末尾に prune ループ追加。`toolNames` (現プロジェクトの discovery 結果) に含まれない既存ローカルエントリを削除。investigate が null を返した (transient failure) ツールは toolNames に含まれている限り既存値を保持して prune しない (auth / network / quota の一過性失敗で audit 範囲を縮めない防御)
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: tool-db 読み込みを `readLocal` に切り替え、コメントで設計意図を明記
+- **編集 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs)**: `spotter db list` も local DB 限定に変更 (daemon と表示の整合)
+- **編集 [src/index.mjs](src/index.mjs)**: 公開 export を `readMerged` → `readLocal` にリネーム (programmatic API の破壊変更 = minor bump)
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 回帰テスト 3 件追加 — (1) prune 挙動 (snapshot に無いツールは local から消える、global は append-only で残る)、(2) investigate 失敗時の保持 (toolNames に含まれている限り既存値を残す)、(3) `readLocal` 単独動作 (global DB の中身が leak しない)
+
+### 背景
+
+#### 何が起きていたか
+
+`readMerged` は `{ ...global.tools, ...local.tools }` で local-wins マージしたツール一覧を daemon の preamble (Haiku のカタログ) に渡していた。local に**ない**が global に**ある**ツール (= 過去の別プロジェクトで discover したが現プロジェクトでは未インストール) が Haiku 視野に入り、Haiku が「Gmail の検索を提案」「別プロジェクトの skill を推奨」等を出す症状を生んでいた。
+
+加えて `resolveAll` は snapshot ベースで write-through するだけで、過去 discover されて local に残った後に削除された MCP / skill / agent を local DB から取り除く機構が無かった。両者が組み合わさって「一度 local に書き込まれた幽霊が居座り続ける」状態が定着していた。
+
+#### なぜ global DB は残すか
+
+global DB を廃止せず「他プロジェクト用キャッシュ」に格下げした理由: 同じ MCP サーバー / 同じスキル / 同じサブエージェントを別プロジェクトでも使うとき、global にヒットすれば live fetch (MCP の `tools/list` JSON-RPC、frontmatter パース) を skip できる。`resolveAll` の 3-tier (local → global → investigate) フローはそのために残し、daemon の audit 入力からだけ global を切り離した。
+
+#### 自動追従の経路
+
+既に Spotter を導入済みのプロジェクトは npm の global update 後、次の Claude Code SessionStart で v1.1.0 機構の `spawnRefreshDetached` が走り、その refresh が prune ループ入りの `resolveAll` を実行する。**次の次のセッション**から幽霊が消えた状態で daemon が起動する (detached の仕様)。即時反映したい場合は `spotter db refresh` を手動実行する逃げ道は既存。
+
+### 設計判断
+
+- **global を完全廃止しなかった**: live fetch コストが軽くないため (MCP stdio spawn 数百ミリ秒〜秒、HTTP MCP も auth 込みでそれ以上)、初回 refresh の体感を損ねない
+- **prune を `resolveAll` 末尾に置いた理由**: snapshot 構築 (buildInvestigationSnapshot) と prune を別関数に分けると「snapshot に基づいて local を upsert する」契約が複数箇所に散る。Single source of truth として `resolveAll` 内で完結させた
+- **investigate failure 時の prune skip**: live fetch が失敗したからといって audit 範囲を縮めると、auth が一時的に通らない / MCP サーバーが一時的に応答しない場合に Haiku 視野が穴だらけになる。toolNames (= 現プロジェクトに**実在する**サーバー / skill / agent の name 一覧) に含まれているなら local の既存 description を保持し、次回成功時に上書きする方が頑健
+- **public API の minor bump**: `readMerged` → `readLocal` は import 名の変更を含むので破壊変更扱い。programmatic に Spotter を埋め込んでいる第三者が居る前提 (内部利用想定でも安全側に倒す)
+
 ## 1.1.6
 
 **Bell の isolated `CLAUDE_CONFIG_DIR` が Spotter haiku の auth を破壊する bug を修正**。bellbot 等で CLAUDE_CONFIG_DIR を分離する運用 (user scope MCP を流入させない隔離設計、credentials 非共有) のとき、hook → daemon → haiku の spawn 連鎖で Bell の isolated config が継承され、Spotter haiku が credentials 不在の config を読みに行き exit 1。その後同じ session-id が claude CLI 側で "already in use" と判定されて失敗が固定化し、user_input hook が非 0 exit し続けてベル本体のプロンプト処理が破綻していた。
