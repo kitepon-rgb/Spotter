@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/og.svg" alt="Spotter — Audit agent for Claude Code" width="100%">
+  <img src=".github/og.png" alt="Spotter — Audit agent for Claude Code" width="100%">
 </p>
 
 # Spotter
