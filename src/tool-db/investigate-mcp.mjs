@@ -170,13 +170,36 @@ function splitArgs(s) {
   return s.split(/\s+/).filter((t) => t.length > 0);
 }
 
-// On Windows, `.cmd` / `.bat` shims cannot be spawned directly without cmd.exe.
-// Unix-like paths or `.exe` binaries go through spawn as-is.
-function buildStdioSpawn(command, args) {
-  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
-    return { cmd: 'cmd.exe', cmdArgs: ['/c', command, ...args] };
+// On Windows, npm-global CLI tools (e.g. `claude-mermaid`) ship as `<name>.cmd`
+// batch wrappers. Node's `child_process.spawn` without `shell: true` calls Windows
+// `CreateProcess`, which only directly executes `.exe` files — it does NOT search
+// PATHEXT for `.cmd`/`.bat` shims when given a bare command name. So
+// `spawn('claude-mermaid', ...)` fails with ENOENT even though `claude-mermaid.cmd`
+// is on PATH.
+//
+// Until v1.2.1 this function only wrapped commands whose name literally ended in
+// `.cmd`/`.bat`, which missed the common case where the registered command is a
+// bare name (the CLI as installed). v1.2.2 routes any non-`.exe` command through
+// `cmd.exe /c` on Windows, which makes PATHEXT lookup apply and runs both `.cmd`
+// shims and bare names transparently.
+//
+// We keep absolute `.exe` paths un-wrapped because (a) they spawn correctly as-is
+// and (b) wrapping them through `cmd.exe /c "<path with spaces>" args` runs into
+// cmd.exe's quoting rules for paths containing spaces, which add risk for zero
+// benefit.
+//
+// We use `cmd.exe /c` explicitly rather than `spawn({ shell: true })` because the
+// latter triggers DEP0190 on Node 24+ and re-introduces argument-quoting risks
+// (matches the rationale in haiku-caller's buildSpawnArgs and the caveat
+// `windows-node-spawn-claude-fails-with-enoent-because-claude-is-a-cmd-wrapper`).
+export function buildStdioSpawn(command, args) {
+  if (process.platform !== 'win32') {
+    return { cmd: command, cmdArgs: args };
   }
-  return { cmd: command, cmdArgs: args };
+  if (/\.exe$/i.test(command)) {
+    return { cmd: command, cmdArgs: args };
+  }
+  return { cmd: 'cmd.exe', cmdArgs: ['/c', command, ...args] };
 }
 
 async function spawnAndQuery({ command, args, env = {} }, serverName) {

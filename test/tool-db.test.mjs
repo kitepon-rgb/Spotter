@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { loadDb, saveDb, emptyDb, ToolDbSchemaError } from '../src/tool-db/loader.mjs';
 import { resolveAll } from '../src/tool-db/lookup.mjs';
 import { readLocal } from '../src/tool-db/refresh.mjs';
-import { parseMcpListOutput, bellVisibleName } from '../src/tool-db/investigate-mcp.mjs';
+import { parseMcpListOutput, bellVisibleName, buildStdioSpawn } from '../src/tool-db/investigate-mcp.mjs';
 import { parseFrontmatter } from '../src/tool-db/frontmatter.mjs';
 import { listSkillsAll } from '../src/tool-db/investigate-skills.mjs';
 import { listAgentsAll } from '../src/tool-db/investigate-agents.mjs';
@@ -215,6 +215,68 @@ test('bellVisibleName: spaces and dots are normalised to underscores', () => {
 
 test('bellVisibleName: hyphens preserved', () => {
   assert.equal(bellVisibleName('x-api', 'fetch_tweet'), 'mcp__x-api__fetch_tweet');
+});
+
+// --- buildStdioSpawn: Windows .cmd shim coverage (regression for v1.2.2) ---
+//
+// Bug: until v1.2.1 the Windows branch only wrapped commands whose name literally
+// ended in `.cmd`/`.bat`. MCP servers registered with a bare name like
+// `claude-mermaid` (npm-global CLI shim) skipped the wrap, and Node's spawn could
+// not resolve PATHEXT to find `claude-mermaid.cmd` → ENOENT during investigate.
+
+test('buildStdioSpawn: POSIX always passes command through unchanged', () => {
+  if (process.platform === 'win32') return;
+  // Bare name
+  assert.deepEqual(buildStdioSpawn('node', ['x.js']), { cmd: 'node', cmdArgs: ['x.js'] });
+  // Absolute path
+  assert.deepEqual(
+    buildStdioSpawn('/usr/bin/node', ['x.js']),
+    { cmd: '/usr/bin/node', cmdArgs: ['x.js'] }
+  );
+  // Even a `.cmd` extension on POSIX stays direct (POSIX has no batch interpreter).
+  assert.deepEqual(buildStdioSpawn('foo.cmd', []), { cmd: 'foo.cmd', cmdArgs: [] });
+});
+
+test('buildStdioSpawn: Windows wraps bare command names through cmd.exe (v1.2.2 fix)', () => {
+  if (process.platform !== 'win32') return;
+  // Bare npm-global CLI name — the case that broke v1.2.1.
+  assert.deepEqual(
+    buildStdioSpawn('claude-mermaid', ['--foo']),
+    { cmd: 'cmd.exe', cmdArgs: ['/c', 'claude-mermaid', '--foo'] }
+  );
+  // Even `node` (which has a real .exe on PATH) goes through cmd.exe — extra layer
+  // but works, and avoids special-casing every known builtin.
+  assert.deepEqual(
+    buildStdioSpawn('node', ['x.js']),
+    { cmd: 'cmd.exe', cmdArgs: ['/c', 'node', 'x.js'] }
+  );
+});
+
+test('buildStdioSpawn: Windows wraps explicit .cmd / .bat extensions through cmd.exe', () => {
+  if (process.platform !== 'win32') return;
+  assert.deepEqual(
+    buildStdioSpawn('claude-mermaid.cmd', ['arg']),
+    { cmd: 'cmd.exe', cmdArgs: ['/c', 'claude-mermaid.cmd', 'arg'] }
+  );
+  assert.deepEqual(
+    buildStdioSpawn('script.BAT', []),
+    { cmd: 'cmd.exe', cmdArgs: ['/c', 'script.BAT'] }
+  );
+});
+
+test('buildStdioSpawn: Windows leaves absolute .exe paths un-wrapped (avoids cmd.exe quoting risk)', () => {
+  if (process.platform !== 'win32') return;
+  // Absolute .exe path with spaces — wrapping through cmd.exe /c here would expose
+  // us to cmd.exe's quoting rules. We have a known-good binary path; spawn it directly.
+  assert.deepEqual(
+    buildStdioSpawn('C:\\Program Files\\nodejs\\node.exe', ['server.js']),
+    { cmd: 'C:\\Program Files\\nodejs\\node.exe', cmdArgs: ['server.js'] }
+  );
+  // Case-insensitive `.exe` match.
+  assert.deepEqual(
+    buildStdioSpawn('C:\\tools\\Foo.EXE', []),
+    { cmd: 'C:\\tools\\Foo.EXE', cmdArgs: [] }
+  );
 });
 
 test('parseFrontmatter: extracts name and description', () => {

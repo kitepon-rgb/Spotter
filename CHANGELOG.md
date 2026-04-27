@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.2.2
+
+**Windows で npm-global の `.cmd` 配布 MCP サーバ (例: `claude-mermaid`) が investigate 時に ENOENT で落ちる回帰を修正**。`spotter db refresh` の MCP investigate 経路で `spawn error: spawn claude-mermaid ENOENT` が出て、当該 MCP のツールがカタログに投入されない症状。`.exe` 配布の MCP (例: `openai-image`) や `claude-mermaid.cmd` のように拡張子を明示した登録は影響を受けない、ピンポイントな bug。
+
+### 変更点
+
+- **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `buildStdioSpawn` の Windows ブランチ条件を `/\.(cmd|bat)$/i` から「絶対 `.exe` パス以外は `cmd.exe /c` で包む」に拡張。`export` を追加してユニットテスト可能に
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 4 件追加 — POSIX パススルー / Windows 裸名の wrap (`claude-mermaid` で v1.2.1 の症状を直接再現) / Windows `.cmd`・`.bat` の wrap / Windows 絶対 `.exe` パスは un-wrap (空白入りパスでの cmd.exe quoting リスク回避)
+
+### 背景
+
+#### 何が起きていたか
+
+Windows の npm global は CLI を `<name>.cmd` バッチラッパーとして配布する (npm 標準仕様)。Node.js の `child_process.spawn(name, args)` は `shell: true` 無しでは Windows `CreateProcess` をそのまま呼び、`CreateProcess` は `.exe` を直接実行するが PATHEXT で `.cmd` を解決しない。結果、`spawn('claude-mermaid', [])` は `claude-mermaid.cmd` が PATH 上にあっても ENOENT で即落ちる。これは Spotter v0.7.0 → v0.8.0 で claude CLI 起動時に踏んで自分で直した bug の再来 (own caveat: `windows-node-spawn-claude-fails-with-enoent-because-claude-is-a-cmd-wrapper`) で、修正パターン (Windows なら `cmd.exe /c <command>` で包む) は既に Spotter 内に存在していた (`execClaude` / haiku-caller の `buildSpawnArgs`)。**穴は MCP サーバ起動経路にこのパターンが横展開されていなかったこと**。
+
+#### v1.2.1 までのコード
+
+```js
+function buildStdioSpawn(command, args) {
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
+    return { cmd: 'cmd.exe', cmdArgs: ['/c', command, ...args] };
+  }
+  return { cmd: command, cmdArgs: args };
+}
+```
+
+`/\.(cmd|bat)$/i` は「コマンド名が `.cmd`/`.bat` で**終わっている**」場合のみ wrap する。ところが MCP サーバの登録名 (`claude mcp add` から `~/.claude.json` 直下 `mcpServers` に書かれる、または `.mcp.json` に書かれる) は通常**拡張子を付けない裸名** (`claude-mermaid`)。そのため Windows ブランチが発火せず、wrap 抜きで `spawn('claude-mermaid')` してENOENT。`.exe` 配布だと `CreateProcess` が直接実行できるので症状が出ない。`.cmd` を明示的に書いた登録 (`claude-mermaid.cmd`) も既存ロジックでセーフ。**裸名 + `.cmd` 実体の組合せだけが silent に脱落していた**。
+
+### 設計判断
+
+- **絶対 `.exe` パスは un-wrap のまま**: `C:\Program Files\nodejs\node.exe` のような空白入りパスを `cmd.exe /c` で包むと cmd.exe の `/c` 引数解釈ルール (最初の char が `"` のときの outer-quote strip 等) のリスクに晒される。`.exe` は `CreateProcess` が直接実行できるので包む必要がないし、包まないことで quoting リスクをゼロにできる。`.cmd` パスはどのみち cmd.exe 経由でしか走らないので包む必要があり、quoting リスクは織り込み済み (既存挙動から退化なし)
+- **`shell: true` を使わない理由**: Node 24+ で DEP0190 が出るし、引数 quoting が cmd.exe の rules に丸投げされて `&` `|` `>` 等の metacharacter 処理リスクが復活する。caveat の Resolution と既存 (`execClaude` / `buildSpawnArgs`) の選択を踏襲
+- **裸名を全部 wrap する選択 (= 「`.exe` 以外は wrap」)**: `node` のような既知の `.exe` 配布も Windows では cmd.exe 経由になるが、cmd.exe が PATHEXT で正しく解決するので動作影響なし。コードのシンプルさ (extension の case sensitivity / 配布形態の事前知識を不要にする) を優先
+- **patch bump (fix)**: API 変更なし、`buildStdioSpawn` の export 追加は純粋に additive。Windows での挙動が「ENOENT で死ぬ」→「正しく動く」方向の修正なので破壊変更なし
+
+### 自動追従の経路
+
+既に Spotter を導入済みのプロジェクトは npm global update (`npm i -g claude-spotter@1.2.2`) 後、次の Claude Code SessionStart で v1.1.0 機構の `spawnRefreshDetached` が走り、新 `buildStdioSpawn` で MCP investigate を再実行。これまで wrap 抜きで spawn して即 ENOENT だった `.cmd` 配布 MCP が live fetch に成功し、**次の次のセッション**から該当ツールがカタログに復活する (detached の仕様)。即時反映したい場合は `spotter db refresh` を手動実行 (環境によっては既にカタログに残っている古いエントリは prune される / live fetch 成功で description が上書きされる)。
+
 ## 1.2.1
 
 **Claude Code 公式の MCP scope 3 段 (User / Project / Local) に完全対応**。v1.2.0 までの `readMcpServers` は project スコープ (`<projectRoot>/.mcp.json`) と非公式の legacy `~/.claude/.mcp.json` しか読んでおらず、公式 3 スコープのうち 2 つ (User: `~/.claude.json` 直下 `mcpServers` / Local: `~/.claude.json` `projects[<root>].mcpServers`) を読み損ねていた。結果、`claude mcp add -s user -e KEY=val -- ...` で登録した MCP サーバーは `claude mcp list` で発見されるが env が拾えず、HTTP 系は 401、stdio 系は API キー無しで spawn → tools/list が空 → `resolveAll` の prune ループでカタログから削除、という silent な脱落が発生していた。
