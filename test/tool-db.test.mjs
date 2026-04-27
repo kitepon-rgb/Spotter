@@ -10,7 +10,13 @@ import { parseMcpListOutput, bellVisibleName } from '../src/tool-db/investigate-
 import { parseFrontmatter } from '../src/tool-db/frontmatter.mjs';
 import { listSkillsAll } from '../src/tool-db/investigate-skills.mjs';
 import { listAgentsAll } from '../src/tool-db/investigate-agents.mjs';
-import { describeServer, readMcpServers } from '../src/tool-db/mcp-config.mjs';
+import {
+  describeServer,
+  readMcpServers,
+  normalizeProjectPath,
+  extractUserScopeServers,
+  findLocalScopeServers,
+} from '../src/tool-db/mcp-config.mjs';
 import { filterClaudeAiBaseline } from '../src/tool-db/refresh.mjs';
 
 async function setupPaths() {
@@ -385,6 +391,310 @@ test('readMcpServers: missing project file falls back to user only', async () =>
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
   }
+});
+
+// --- Official scope coverage (User / Project / Local) ---
+//
+// These tests inject `claudeJsonPath` and `legacyUserPath` so they don't read or write
+// the real homedir. The injection keeps tests hermetic and allows asserting on full
+// merged state, not just the keys we wrote.
+
+async function setupScopeFixture() {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-scope-'));
+  return {
+    dir,
+    projectRoot: dir, // use dir itself as the project root
+    claudeJsonPath: join(dir, '.claude.json'),
+    legacyUserPath: join(dir, 'legacy-user.mcp.json'),
+  };
+}
+
+test('readMcpServers: user scope only — pulls servers from ~/.claude.json mcpServers', async () => {
+  const fx = await setupScopeFixture();
+  try {
+    await writeFile(
+      fx.claudeJsonPath,
+      JSON.stringify({
+        mcpServers: {
+          'openai-image': {
+            command: '/path/to/openai-image-mcp',
+            env: { OPENAI_API_KEY: 'sk-user-scope' },
+          },
+        },
+      }),
+      'utf8'
+    );
+    const merged = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.deepEqual(merged['openai-image'], {
+      command: '/path/to/openai-image-mcp',
+      env: { OPENAI_API_KEY: 'sk-user-scope' },
+    });
+  } finally {
+    await rm(fx.dir, { recursive: true, force: true });
+  }
+});
+
+test('readMcpServers: local scope only — projects[<root>].mcpServers picked up', async () => {
+  const fx = await setupScopeFixture();
+  try {
+    await writeFile(
+      fx.claudeJsonPath,
+      JSON.stringify({
+        projects: {
+          [fx.projectRoot]: {
+            mcpServers: {
+              'local-only': { command: 'node', args: ['x.js'], env: { LOCAL: '1' } },
+            },
+          },
+        },
+      }),
+      'utf8'
+    );
+    const merged = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.deepEqual(merged['local-only'], {
+      command: 'node',
+      args: ['x.js'],
+      env: { LOCAL: '1' },
+    });
+  } finally {
+    await rm(fx.dir, { recursive: true, force: true });
+  }
+});
+
+test('readMcpServers: precedence Local > Project > User > legacy on name collision', async () => {
+  const fx = await setupScopeFixture();
+  try {
+    // Legacy user (lowest priority).
+    await writeFile(
+      fx.legacyUserPath,
+      JSON.stringify({ mcpServers: { shared: { command: 'legacy', env: { TIER: 'legacy' } } } }),
+      'utf8'
+    );
+    // User scope + local scope, both keyed under the same projectRoot.
+    await writeFile(
+      fx.claudeJsonPath,
+      JSON.stringify({
+        mcpServers: {
+          shared: { command: 'user', env: { TIER: 'user' } },
+        },
+        projects: {
+          [fx.projectRoot]: {
+            mcpServers: {
+              shared: { command: 'local', env: { TIER: 'local' } },
+            },
+          },
+        },
+      }),
+      'utf8'
+    );
+    // Project scope.
+    await writeFile(
+      join(fx.projectRoot, '.mcp.json'),
+      JSON.stringify({ mcpServers: { shared: { command: 'project', env: { TIER: 'project' } } } }),
+      'utf8'
+    );
+
+    const merged = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.deepEqual(merged['shared'], { command: 'local', env: { TIER: 'local' } });
+
+    // Drop local — project wins.
+    await writeFile(
+      fx.claudeJsonPath,
+      JSON.stringify({
+        mcpServers: { shared: { command: 'user', env: { TIER: 'user' } } },
+      }),
+      'utf8'
+    );
+    const m2 = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.deepEqual(m2['shared'], { command: 'project', env: { TIER: 'project' } });
+
+    // Drop project — user wins over legacy.
+    await rm(join(fx.projectRoot, '.mcp.json'));
+    const m3 = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.deepEqual(m3['shared'], { command: 'user', env: { TIER: 'user' } });
+
+    // Drop user — legacy is last resort.
+    await writeFile(fx.claudeJsonPath, JSON.stringify({}), 'utf8');
+    const m4 = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.deepEqual(m4['shared'], { command: 'legacy', env: { TIER: 'legacy' } });
+  } finally {
+    await rm(fx.dir, { recursive: true, force: true });
+  }
+});
+
+test('readMcpServers: missing ~/.claude.json — no error, scopes 2 & 4 just empty', async () => {
+  const fx = await setupScopeFixture();
+  try {
+    // Don't create claudeJsonPath at all.
+    await writeFile(
+      join(fx.projectRoot, '.mcp.json'),
+      JSON.stringify({ mcpServers: { onlyproj: { command: 'p' } } }),
+      'utf8'
+    );
+    const merged = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.deepEqual(merged['onlyproj'], { command: 'p' });
+  } finally {
+    await rm(fx.dir, { recursive: true, force: true });
+  }
+});
+
+test('readMcpServers: malformed ~/.claude.json — treated as empty (no throw)', async () => {
+  const fx = await setupScopeFixture();
+  try {
+    await writeFile(fx.claudeJsonPath, '{not valid json', 'utf8');
+    await writeFile(
+      join(fx.projectRoot, '.mcp.json'),
+      JSON.stringify({ mcpServers: { onlyproj: { command: 'p' } } }),
+      'utf8'
+    );
+    const merged = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.deepEqual(merged['onlyproj'], { command: 'p' });
+  } finally {
+    await rm(fx.dir, { recursive: true, force: true });
+  }
+});
+
+test('readMcpServers: ~/.claude.json without mcpServers / projects keys — no error', async () => {
+  const fx = await setupScopeFixture();
+  try {
+    await writeFile(fx.claudeJsonPath, JSON.stringify({ unrelatedField: 'foo' }), 'utf8');
+    const merged = await readMcpServers({
+      projectRoot: fx.projectRoot,
+      claudeJsonPath: fx.claudeJsonPath,
+      legacyUserPath: fx.legacyUserPath,
+    });
+    assert.equal(typeof merged, 'object');
+    assert.deepEqual(merged, {});
+  } finally {
+    await rm(fx.dir, { recursive: true, force: true });
+  }
+});
+
+test('extractUserScopeServers: handles null / non-object inputs', () => {
+  assert.deepEqual(extractUserScopeServers(null), {});
+  assert.deepEqual(extractUserScopeServers(undefined), {});
+  assert.deepEqual(extractUserScopeServers({}), {});
+  assert.deepEqual(extractUserScopeServers({ mcpServers: null }), {});
+  assert.deepEqual(extractUserScopeServers({ mcpServers: 'string' }), {});
+  assert.deepEqual(extractUserScopeServers({ mcpServers: { a: { command: 'x' } } }), {
+    a: { command: 'x' },
+  });
+});
+
+test('normalizeProjectPath: separator / trailing slash / Windows case', () => {
+  assert.equal(normalizeProjectPath('/home/u/proj'), '/home/u/proj');
+  assert.equal(normalizeProjectPath('/home/u/proj/'), '/home/u/proj');
+  assert.equal(normalizeProjectPath('/home/u/proj//'), '/home/u/proj');
+  // Backslashes always become forward slashes.
+  assert.equal(
+    normalizeProjectPath('C:\\Users\\u\\proj'),
+    process.platform === 'win32' ? 'c:/users/u/proj' : 'C:/Users/u/proj'
+  );
+  // Mixed slashes.
+  assert.equal(
+    normalizeProjectPath('C:/Users\\u/proj/'),
+    process.platform === 'win32' ? 'c:/users/u/proj' : 'C:/Users/u/proj'
+  );
+  // Empty / non-string.
+  assert.equal(normalizeProjectPath(''), '');
+  assert.equal(normalizeProjectPath(null), '');
+  assert.equal(normalizeProjectPath(42), '');
+});
+
+test('findLocalScopeServers: exact key hit', () => {
+  const claudeJson = {
+    projects: {
+      '/home/u/proj': { mcpServers: { foo: { command: 'x' } } },
+    },
+  };
+  assert.deepEqual(findLocalScopeServers(claudeJson, '/home/u/proj'), { foo: { command: 'x' } });
+});
+
+test('findLocalScopeServers: trailing-slash variant matches', () => {
+  const claudeJson = {
+    projects: {
+      '/home/u/proj': { mcpServers: { foo: { command: 'x' } } },
+    },
+  };
+  assert.deepEqual(findLocalScopeServers(claudeJson, '/home/u/proj/'), { foo: { command: 'x' } });
+});
+
+test('findLocalScopeServers: separator variant matches on Windows only', () => {
+  const claudeJson = {
+    projects: {
+      'C:\\Users\\u\\proj': { mcpServers: { foo: { command: 'x' } } },
+    },
+  };
+  if (process.platform === 'win32') {
+    assert.deepEqual(findLocalScopeServers(claudeJson, 'C:/Users/u/proj'), {
+      foo: { command: 'x' },
+    });
+    // Drive-letter case difference also matches.
+    assert.deepEqual(findLocalScopeServers(claudeJson, 'c:\\users\\u\\proj'), {
+      foo: { command: 'x' },
+    });
+  } else {
+    // On POSIX, the literal `C:\Users\u\proj` is not the same path as
+    // `C:/Users/u/proj` (and case-sensitive). Don't match.
+    assert.deepEqual(findLocalScopeServers(claudeJson, 'C:/Users/u/proj'), {});
+  }
+});
+
+test('findLocalScopeServers: no key match returns empty (no fuzzy/prefix match)', () => {
+  const claudeJson = {
+    projects: {
+      '/home/u/some-project': { mcpServers: { foo: { command: 'x' } } },
+    },
+  };
+  // Sibling project must NOT inherit servers from another project key.
+  assert.deepEqual(findLocalScopeServers(claudeJson, '/home/u/other-project'), {});
+  // Prefix must NOT match (no parent walk-up).
+  assert.deepEqual(findLocalScopeServers(claudeJson, '/home/u'), {});
+});
+
+test('findLocalScopeServers: missing projects / non-object inputs', () => {
+  assert.deepEqual(findLocalScopeServers(null, '/x'), {});
+  assert.deepEqual(findLocalScopeServers({}, '/x'), {});
+  assert.deepEqual(findLocalScopeServers({ projects: null }, '/x'), {});
+  assert.deepEqual(findLocalScopeServers({ projects: {} }, '/x'), {});
+  assert.deepEqual(
+    findLocalScopeServers({ projects: { '/x': { mcpServers: null } } }, '/x'),
+    {}
+  );
+  assert.deepEqual(findLocalScopeServers({ projects: { '/x': null } }, '/x'), {});
+  assert.deepEqual(findLocalScopeServers({ projects: { '/x': {} } }, '/x'), {});
 });
 
 test('filterClaudeAiBaseline: all three servers present → full 25-tool baseline', () => {

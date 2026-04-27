@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点 (v1.2.0 時点, 2026-04-26) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点 (v1.2.1 時点, 2026-04-27) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -94,12 +94,6 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 ## P1 — 設計上の穴
 
-### local scope (`settings.local.json` の mcpServers) 未対応
-
-**背景**: v0.10.0 で user scope + project scope の 2 段 merge まで実装したが、`<projectRoot>/.claude/settings.local.json` の `mcpServers` フィールド (マシンローカル・git 非管理) は未読み込み。Claude Code 本体はこの層も見ている。
-
-**次アクション**: `readMcpServers` に local scope 読み込みを追加 (local > project > user の precedence)。実装自体は既存パターンの拡張なので小さい。
-
 ### `claude mcp list` text パースの脆弱性
 
 **背景**: [src/tool-db/investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) の `parseMcpListOutput` は text フォーマットに依存。Claude Code CLI がフォーマット変更したら壊れる。現時点で `--json` 出力は未提供。
@@ -172,6 +166,7 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 | 課題 | 解決版 |
 |---|---|
+| Claude Code 公式の MCP scope 3 段 (User / Project / Local) のうち User (`~/.claude.json` 直下 `mcpServers`) と Local (`~/.claude.json` `projects[<root>].mcpServers`) を読み損ねていた構造バグ。`claude mcp add -s user -e KEY=val ...` 等で登録した MCP が `claude mcp list` で発見されるが env 抜きで spawn → tools/list 空 → `resolveAll` の prune でカタログから silent に脱落していた。`readMcpServers` を 4 ソース merge (`legacy < user < project < local`) に拡張、Windows の `projects[]` キー揺れ (separator / 大小 / 末尾スラッシュ) を正規化して照合 | v1.2.1 |
 | 当該プロジェクトで使えないツールが Haiku 視野に幻として漏れる構造的バグ。`readMerged` が global DB の中身を local-wins マージで daemon の audit に流し込んでいた経路 + `resolveAll` が snapshot にもう存在しないローカルエントリを削除しなかった経路の二重バグ。daemon 入力を `readLocal` (local DB only) に切替 + `resolveAll` 末尾に prune ループ追加 (investigate 失敗時は既存値保持) | v1.2.0 |
 | Bell の isolated `CLAUDE_CONFIG_DIR` (例 bellbot) が hook → daemon → haiku の spawn 連鎖で継承され、Spotter haiku が credentials 不在の config を読みに行き auth 失敗で exit 1 → 次 turn で同じ session-id が "already in use" で stuck し user_input hook が非 0 exit 連鎖する bug。`sanitizeHaikuEnv` で haiku spawn 時のみ `CLAUDE_CONFIG_DIR` を strip + `runHaikuJudgment` で E_INTERNAL / E_HAIKU_TIMEOUT 時も session を rotate してから throw | v1.1.6 |
 | Windows で `execClaude` 経由の `cmd.exe /c claude mcp list/get` に `windowsHide: true` が付いておらず、SessionStart 毎の refresh で console window が flash + 入力フォーカスを奪う UX 回帰 | v1.1.5 |

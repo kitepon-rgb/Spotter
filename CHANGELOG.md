@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.1
+
+**Claude Code 公式の MCP scope 3 段 (User / Project / Local) に完全対応**。v1.2.0 までの `readMcpServers` は project スコープ (`<projectRoot>/.mcp.json`) と非公式の legacy `~/.claude/.mcp.json` しか読んでおらず、公式 3 スコープのうち 2 つ (User: `~/.claude.json` 直下 `mcpServers` / Local: `~/.claude.json` `projects[<root>].mcpServers`) を読み損ねていた。結果、`claude mcp add -s user -e KEY=val -- ...` で登録した MCP サーバーは `claude mcp list` で発見されるが env が拾えず、HTTP 系は 401、stdio 系は API キー無しで spawn → tools/list が空 → `resolveAll` の prune ループでカタログから削除、という silent な脱落が発生していた。
+
+### 変更点
+
+- **編集 [src/tool-db/mcp-config.mjs](src/tool-db/mcp-config.mjs)**: `readMcpServers` を 4 ソース merge に拡張 — `legacy < user < project < local` の優先順 (公式仕様 Local > Project > User と整合、legacy `~/.claude/.mcp.json` は最下位の互換扱い)。新規 export: `userClaudeJsonPath`、`legacyUserMcpConfigPath`、`normalizeProjectPath`、`extractUserScopeServers`、`findLocalScopeServers`。`readMcpServers` に `claudeJsonPath` / `legacyUserPath` の DI パラメータを追加 (テスト用、デフォルトは実 homedir)。冒頭コメントを公式仕様 ([https://code.claude.com/docs/en/mcp](https://code.claude.com/docs/en/mcp)) に揃えて書き直し、legacy ソースの位置付けを明記
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 13 件追加 — user/local 単独 / 4 段優先順位 / `~/.claude.json` 不在・malformed・キー欠損 / `extractUserScopeServers` の null 耐性 / `normalizeProjectPath` (separator・trailing slash・Windows case) / `findLocalScopeServers` (exact / 正規化マッチ / 非マッチ時の no-fuzzy / null 入力)
+
+### 設計判断
+
+- **`projects[]` キーの照合に正規化を入れた理由**: Claude Code が `~/.claude.json` に書く絶対パスの表記は環境と書き込みタイミングで揺れる (Windows ではドライブレターの大小、separator (`\` vs `/`)、末尾スラッシュ)。正確一致が外れると Local スコープが silent に脱落する = 今回直そうとしている bug の Windows 版が再発する。`normalizeProjectPath` で separator 統一 + 末尾 `/` 除去 + Windows 限定の lower-case を施し、exact 一致が無いときだけ正規化フォールバックする 2 段照合に
+- **fuzzy / prefix マッチを意図的に外した理由**: `/home/u/proj` のキーから `/home/u/other-project` の照合に `mcpServers` を引き渡すと、別プロジェクトの secrets を spotter の audit に混ぜることになる。projectRoot は識別子であって階層ではないので、normalize 後の完全一致のみ採用 (タスク指示の「投機的なファジーマッチはしない」と整合)
+- **`~/.claude.json` の malformed を throw せず空扱い**: このファイルは Claude Code 本体が管理する状態ファイルで、書き込み中に他プロセスが読みに行けば transient corruption に見える可能性がある。Spotter が落ちる方が実害が大きいので寛容に扱う (`.mcp.json` 系 = ユーザー手書きはこれまで通り throw、bug 表面化を優先)
+- **fix 扱いの patch bump**: public API (`readMcpServers` のシグネチャ) は引数が optional 追加のみで後方互換、merge 結果が「漏れてた scope を拾う」方向に増えるだけで既存挙動の縮退なし。programmatic API の破壊変更ではないので minor bump 不要
+- **legacy `~/.claude/.mcp.json` を残した理由**: 仕様外であることは認めるが、現に Spotter で投入されているサンプルや既存ユーザー環境の依存を切ると静かにツールが消える。最下位優先で残しつつ、コメントで「legacy / 公式仕様外 / 互換維持」を明記。撤去は別 PR
+
+### 自動追従の経路
+
+既に Spotter を導入済みのプロジェクトは npm の global update 後、次の Claude Code SessionStart で v1.1.0 機構の `spawnRefreshDetached` が走り、その refresh が新 `readMcpServers` で User / Local スコープの env を拾い直す。これまで env 抜きで spawn して tools/list が空だった MCP サーバーが live fetch に成功するようになり、**次の次のセッション**から該当ツールがカタログに復活する (detached の仕様)。即時反映したい場合は `spotter db refresh` を手動実行。
+
 ## 1.2.0
 
 **当該プロジェクトで使えないツールが提案される回帰を構造的に修正**。daemon が監査に使うカタログを **ローカル DB のみ** に変更し、グローバル DB は他プロジェクトでの description 再利用のためのキャッシュ層に役割を限定。同時に `resolveAll` で「現プロジェクトの discovery 結果に含まれないローカルエントリ」を prune するよう変更し、過去にインストールされていた MCP / スキル / サブエージェントが local に居座って Haiku 視野に残る経路を塞いだ。

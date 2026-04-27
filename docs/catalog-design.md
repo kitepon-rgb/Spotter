@@ -124,7 +124,7 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 
 | 対象 | 実装 | 取得元 |
 |---|---|---|
-| MCP (stdio / HTTP / SSE) | [investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) + [investigate-mcp-http.mjs](../src/tool-db/investigate-mcp-http.mjs) | `claude mcp list` + `<projectRoot>/.mcp.json` + `~/.claude/.mcp.json` merge、各サーバーに `tools/list` |
+| MCP (stdio / HTTP / SSE) | [investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) + [investigate-mcp-http.mjs](../src/tool-db/investigate-mcp-http.mjs) | `claude mcp list` (membership 権威) + 公式 3 scope の env 込み merge: User (`~/.claude.json` 直下 `mcpServers`) / Project (`<projectRoot>/.mcp.json`) / Local (`~/.claude.json` `projects[<root>].mcpServers`)、precedence は Local > Project > User、加えて legacy `~/.claude/.mcp.json` を最下位で互換保持 (v1.2.1 以降)。各サーバーに `tools/list` JSON-RPC |
 | claude.ai MCP (OAuth) | [claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) + [refresh.mjs](../src/tool-db/refresh.mjs) の `filterClaudeAiBaseline` | 手書き baseline (Gmail / Calendar / Drive の 25 件) を server 単位で保持し、`claude mcp list` に該当サーバーが実在する環境のみ注入 (v1.1.4 以降) |
 | スキル | [investigate-skills.mjs](../src/tool-db/investigate-skills.mjs) | user scope `~/.claude/skills/`、project scope `<projectRoot>/.claude/skills/`、有効化プラグインの `skills/` |
 | サブエージェント | [investigate-agents.mjs](../src/tool-db/investigate-agents.mjs) | user scope `~/.claude/agents/`、project scope `<projectRoot>/.claude/agents/`、有効化プラグインの `agents/` |
