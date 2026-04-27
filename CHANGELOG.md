@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.3
+
+**v1.2.1 で追加した `normalizeProjectPath` が Linux CI で Windows path key と POSIX path をマッチさせて test を落としていた回帰を修正**。`replace(/\\/g, '/')` をプラットフォーム条件なしで実行していたため、Linux 上で `'C:\Users\u\proj'` (Windows 表記の literal key) と `'C:/Users/u/proj'` (forward-slash 入力) が `C:/Users/u/proj` 同士に正規化されてマッチしてしまい、`findLocalScopeServers` が POSIX で意図しない命中を返していた。CI のみ赤、実運用 (Windows) は元から正しく動いていたので機能影響は無し。
+
+### 変更点
+
+- **編集 [src/tool-db/mcp-config.mjs](src/tool-db/mcp-config.mjs)**: `normalizeProjectPath` の separator 変換 + lower-case 化を `process.platform === 'win32'` ブランチに閉じ込め、POSIX では trailing slash 除去のみ。コメントを「POSIX で `\` は legal filename 文字なので separator として畳むと別パスを衝突させる」と書き直し
+
+### 背景
+
+`~/.claude.json` の `projects[]` キーには絶対パスが verbatim で書かれる。Windows なら `C:\Users\u\proj` 形式、Linux なら `/home/u/proj` 形式。Spotter の `findLocalScopeServers` は exact 一致が外れたとき正規化フォールバックで再照合する設計だが、その正規化が「全プラットフォームで `\` → `/` + 末尾 `/` 除去 + Windows でだけ lowercase」だったため、Linux で実行された場合でも Windows 表記が forward-slash 表記に化けて当たってしまう。test (`findLocalScopeServers: separator variant matches on Windows only` @ test/tool-db.test.mjs:716) は POSIX で `{}` が返ることを assert していたので、Linux CI で fail。
+
+修正は POSIX ブランチでは何もしないこと。POSIX 上に Windows path key が混入する状況自体ほぼ無いので機能影響は皆無、test 期待値との整合だけが効果。
+
+### Release backfill
+
+このリリースに合わせて、これまで tag / GitHub Release が未作成だった v1.2.1 / v1.2.2 を CHANGELOG から流用して backfill。Latest は v1.2.3。
+
 ## 1.2.2
 
 **Windows で npm-global の `.cmd` 配布 MCP サーバ (例: `claude-mermaid`) が investigate 時に ENOENT で落ちる回帰を修正**。`spotter db refresh` の MCP investigate 経路で `spawn error: spawn claude-mermaid ENOENT` が出て、当該 MCP のツールがカタログに投入されない症状。`.exe` 配布の MCP (例: `openai-image`) や `claude-mermaid.cmd` のように拡張子を明示した登録は影響を受けない、ピンポイントな bug。
