@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.4
+
+**v1.2.3 で `normalizeProjectPath` の挙動を変えた際に、対になる test の expectation 更新を漏らしたため macOS CI で fail していた hot-fix**。`normalizeProjectPath: separator / trailing slash / Windows case` ([test/tool-db.test.mjs:678](test/tool-db.test.mjs#L678)) は「backslash は常に forward slash になる」という旧仕様の expectation を残したまま v1.2.3 commit に取り込まれており、POSIX 上で `'C:\\Users\\u\\proj'` の入力に対して `'C:\\Users\\u\\proj'` (literal 保持) が返るのを `'C:/Users/u/proj'` で assert していた。Linux CI は v1.2.3 で緑化したが、v1.2.3 push 後の matrix 実行で macOS が同じ test で fail。
+
+### 変更点
+
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: `normalizeProjectPath: separator / trailing slash / Windows case` の POSIX 側 expectation を v1.2.3 で確定した「POSIX では backslash を literal に保つ」ルールに合わせ、`'C:\\Users\\u\\proj'` / `'C:/Users\\u/proj'` を変換せず返す挙動を assert。コメントで両 test (`normalizeProjectPath` 単体と `findLocalScopeServers: separator variant matches on Windows only`) の整合理由を明記
+
+ソースは v1.2.3 から無変更、test 期待値だけの追従。
+
 ## 1.2.3
 
 **v1.2.1 で追加した `normalizeProjectPath` が Linux CI で Windows path key と POSIX path をマッチさせて test を落としていた回帰を修正**。`replace(/\\/g, '/')` をプラットフォーム条件なしで実行していたため、Linux 上で `'C:\Users\u\proj'` (Windows 表記の literal key) と `'C:/Users/u/proj'` (forward-slash 入力) が `C:/Users/u/proj` 同士に正規化されてマッチしてしまい、`findLocalScopeServers` が POSIX で意図しない命中を返していた。CI のみ赤、実運用 (Windows) は元から正しく動いていたので機能影響は無し。

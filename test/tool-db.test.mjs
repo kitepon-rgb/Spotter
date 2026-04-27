@@ -679,15 +679,21 @@ test('normalizeProjectPath: separator / trailing slash / Windows case', () => {
   assert.equal(normalizeProjectPath('/home/u/proj'), '/home/u/proj');
   assert.equal(normalizeProjectPath('/home/u/proj/'), '/home/u/proj');
   assert.equal(normalizeProjectPath('/home/u/proj//'), '/home/u/proj');
-  // Backslashes always become forward slashes.
+  // Backslash handling differs by platform: Windows treats `\` as a separator and
+  // canonicalizes to `/` + lower-case; POSIX treats `\` as a literal filename
+  // character and leaves it untouched (case stays significant). This split is
+  // required so that on POSIX, a Windows-shaped key like `C:\Users\u\proj` does
+  // NOT collide with a POSIX-shaped input like `C:/Users/u/proj` — see the
+  // `findLocalScopeServers: separator variant matches on Windows only` test.
   assert.equal(
     normalizeProjectPath('C:\\Users\\u\\proj'),
-    process.platform === 'win32' ? 'c:/users/u/proj' : 'C:/Users/u/proj'
+    process.platform === 'win32' ? 'c:/users/u/proj' : 'C:\\Users\\u\\proj'
   );
-  // Mixed slashes.
+  // Mixed slashes — Windows canonicalizes everything, POSIX strips only trailing
+  // slashes.
   assert.equal(
     normalizeProjectPath('C:/Users\\u/proj/'),
-    process.platform === 'win32' ? 'c:/users/u/proj' : 'C:/Users/u/proj'
+    process.platform === 'win32' ? 'c:/users/u/proj' : 'C:/Users\\u/proj'
   );
   // Empty / non-string.
   assert.equal(normalizeProjectPath(''), '');
