@@ -154,6 +154,14 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **次アクション**: P2 (機会があれば)。対処するなら (a) file lock (`~/.spotter/runtime/tool-db.lock`) で refresh を mutex、(b) saveDb 層で既存ファイルとの merge 差分書き込み、のどちらか。現状は実害観測なしなので放置で可。
 
+### parseMcpListOutput の素朴 tokenizer がスペース入りコマンドパスで破綻 (2026-04-29 v1.2.5 review で発見)
+
+**背景**: v1.2.5 で [investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) `parseMcpListOutput` の stdio 分岐に `command` / `args` 抽出を追加した際、tokenisation を `beforeStatus.split(/\s+/)` で素朴に切る実装にした。`claude mcp list` の出力行が `caveat: C:\Program Files\nodejs\node.exe --foo /a/b/c.js mcp-server - ✓ Connected` のように **コマンドパスにスペースを含む** 場合、`command` が `C:\Program` に切れる回帰リスク。
+
+**現状の影響**: 実害は出ていない。`listMcpServers` 経路では `.mcp.json` (User / Project / Local / Legacy scope) にエントリがあれば `describeServer` で `.mcp.json` の `command` (フルパス保持) が優先採用され、CLI 由来の壊れた command は使われない。CLI 由来 command が実際に spawn に渡るのは「`.mcp.json` のどのスコープにも未登録 + stdio」= **プラグイン MCP のみ**。実測 (Web プロジェクト 2026-04-29) でプラグイン MCP 6 件はすべて `npx ...` 起動でスペース無し、現状は発火していない。
+
+**次アクション**: P2 (機会があれば)。発火条件は「プラグイン MCP が空白入りパスで `.exe` 直叩き配布される」になった時点。塞ぎ方は (a) shellquote-aware tokenizer 投入 (依存追加なし、自前で書く)、(b) `claude mcp list --json` 出力が追加されたら全面切り替え (P1 の上位課題と同じ方向性)、(c) 先頭トークンが既存ファイル (`fs.existsSync`) として存在しなければ次のスペース区切りを試行する heuristic。本質的に CLI text パースの脆弱性なので、最終解は `--json` 出力待ち。
+
 ### MCP clientInfo.version が package.json と drift (2026-04-20 監査で発見)
 
 **背景**: [src/tool-db/investigate-mcp.mjs:250](../src/tool-db/investigate-mcp.mjs#L250) と [src/tool-db/investigate-mcp-http.mjs:90](../src/tool-db/investigate-mcp-http.mjs#L90) の `clientInfo: { name: 'spotter', version: '0.10.0' }` が hardcode で v1.0.0 と drift している。動作影響なし (MCP server 側が client version を使う実装はほぼない)、cosmetic 問題。MEMORY.md の "package.json bump 時は src/version.mjs も同期" の同類。

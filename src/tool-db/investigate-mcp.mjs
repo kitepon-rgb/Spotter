@@ -132,6 +132,13 @@ export function parseMcpListOutput(text) {
       // getStdioConfig) and matches the existing constraint that command paths
       // must not contain spaces.
       const tokens = beforeStatus.split(/\s+/).filter((t) => t.length > 0);
+      // tokens.length === 0 means the CLI emitted "<name>: " followed by only
+      // status text (or nothing) — a malformed entry we cannot spawn anyway.
+      // We `continue` rather than throw so a single broken line cannot poison
+      // refresh for all the other healthy servers in the same `mcp list`. The
+      // fact that this entry was dropped is recoverable: the next refresh re-
+      // reads the CLI from scratch. This is the same "skip one server, log
+      // through listMcpToolsAll" treatment the rest of the path uses.
       if (tokens.length === 0) continue;
       out.push({ name, transport: 'stdio', command: tokens[0], args: tokens.slice(1) });
     }
