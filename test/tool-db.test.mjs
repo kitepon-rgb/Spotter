@@ -166,7 +166,11 @@ test('resolveAll: investigation failure → tool omitted from result, not writte
   await rm(dir, { recursive: true, force: true });
 });
 
-test('parseMcpListOutput: parses stdio entries', () => {
+test('parseMcpListOutput: parses stdio entries (command + args extracted from list line, v1.2.5)', () => {
+  // v1.2.5: stdio entries now carry command + args parsed directly from the
+  // `claude mcp list` line. This makes `claude mcp get` unnecessary for the
+  // catalog spawn path, which is the only way plugin-scoped servers (which
+  // `mcp get` cannot reach) become spawnable.
   const input = `Checking MCP server health...
 
 caveat: C:\\Program Files\\nodejs\\node.exe --foo /a/b/c.js mcp-server - ✓ Connected
@@ -175,6 +179,11 @@ caveat: C:\\Program Files\\nodejs\\node.exe --foo /a/b/c.js mcp-server - ✓ Con
   assert.equal(out.length, 1);
   assert.equal(out[0].name, 'caveat');
   assert.equal(out[0].transport, 'stdio');
+  assert.equal(out[0].command, 'C:\\Program');
+  // Note: 'Files\\nodejs\\node.exe' splits on the embedded space, matching the
+  // pre-existing splitArgs naïveté in getStdioConfig. Paths with spaces are a
+  // known limitation, not a regression of this change.
+  assert.deepEqual(out[0].args, ['Files\\nodejs\\node.exe', '--foo', '/a/b/c.js', 'mcp-server']);
 });
 
 test('parseMcpListOutput: parses HTTP entries', () => {
@@ -200,6 +209,43 @@ Note: workspace trust dialog skipped.
 `;
   const out = parseMcpListOutput(input);
   assert.equal(out.length, 0);
+});
+
+// Regression for v1.2.5: plugin-scoped server names contain internal colons
+// (e.g. "plugin:everything-claude-code:context7"). The previous splitter used
+// `indexOf(':')` and collapsed six distinct ECC plugin MCPs into the literal
+// "plugin", so `claude mcp get plugin` failed six times and the servers'
+// tools were silently dropped from the catalog. The fix switched to the ": "
+// (colon + space) delimiter, which the CLI uses unambiguously between name
+// and rest.
+test('parseMcpListOutput: preserves colons inside plugin-scoped names (stdio)', () => {
+  const input = 'plugin:everything-claude-code:context7: npx -y @upstash/context7-mcp@2.1.4 - ✓ Connected\n';
+  const out = parseMcpListOutput(input);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].name, 'plugin:everything-claude-code:context7');
+  assert.equal(out[0].transport, 'stdio');
+  // v1.2.5: plugin servers carry command + args from the list line because
+  // `claude mcp get plugin:...` returns "No MCP server found" — the list line
+  // is the only authoritative source.
+  assert.equal(out[0].command, 'npx');
+  assert.deepEqual(out[0].args, ['-y', '@upstash/context7-mcp@2.1.4']);
+});
+
+test('parseMcpListOutput: preserves colons inside plugin-scoped names (HTTP)', () => {
+  const input = 'plugin:everything-claude-code:exa: https://mcp.exa.ai/mcp (HTTP) - ✓ Connected\n';
+  const out = parseMcpListOutput(input);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].name, 'plugin:everything-claude-code:exa');
+  assert.equal(out[0].transport, 'http');
+  assert.equal(out[0].url, 'https://mcp.exa.ai/mcp');
+});
+
+test('parseMcpListOutput: name with spaces still parses (claude.ai baseline)', () => {
+  const input = 'claude.ai Google Drive: https://drivemcp.googleapis.com/mcp/v1 - ✓ Connected\n';
+  const out = parseMcpListOutput(input);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].name, 'claude.ai Google Drive');
+  assert.equal(out[0].transport, 'sse');
 });
 
 test('bellVisibleName: simple name', () => {

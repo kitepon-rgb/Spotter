@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.5
+
+**ECC プラグイン経由の MCP サーバー 6 件 (context7 / exa / github / memory / playwright / sequential-thinking) のツール群 (61 件) が Spotter のカタログから silent に欠落していた **二重構造バグ**を修正**。実プロジェクト (Web) で `spotter install` 実行時のログに ``mcp investigate failed for "plugin": Command failed: cmd.exe /c claude mcp get plugin`` が **6 連発** で出ていたのを契機に発見。これらのプラグイン MCP の呼び忘れを Spotter が検出できない状態だった (Web プロジェクトで rebuild すると 309 → 370 件、プラグイン由来 61 件が追加されることを確認)。
+
+### 変更点
+
+- **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)** (2 段階):
+  1. `parseMcpListOutput` の name 区切りを `indexOf(':')` (コロン単体) から `indexOf(': ')` (コロン + スペース) に変更。サーバー名側に literal `": "` (コロン + スペース) は CLI 仕様上現れない (CLI が name と rest の間に固定でこのペアを置くため) ので、空白入り名前 (`claude.ai Google Drive`) もコロン入り名前 (`plugin:everything-claude-code:context7`) も両立する
+  2. stdio エントリの `command` / `args` を CLI 出力行 (`<name>: <command> <args...> - <status>`) から直接抽出するよう変更。プラグイン MCP は `claude mcp list` には出るが `claude mcp get <name>` では `No MCP server found` で引けない仕様 (実測で確認) のため、CLI 行を唯一の権威ソースとして扱う必要がある。既存 `listMcpToolsOne` の `hasFullConfig` 分岐がそのまま生かされ、`claude mcp get` 経路を skip して直接 spawn するようになる。tokenisation は既存 `splitArgs` と同じ素朴 (whitespace 区切り、quote 非対応) を踏襲、空白入りパスの制約は変わらず
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 回帰テスト 3 件追加 + 既存 1 件の expectation 拡張 — プラグイン形式 stdio (`plugin:everything-claude-code:context7` を `npx ...` で登録、`command='npx'` / `args=['-y', '@upstash/context7-mcp@2.1.4']` を assert) / プラグイン形式 HTTP (`plugin:everything-claude-code:exa` を `(HTTP)` URL で登録) / 空白入り名前の継続パース (`claude.ai Google Drive` の sse 経路) / 既存 stdio エントリ (`caveat`) も command/args を返すことを assert
+
+### 背景
+
+`claude mcp list` の出力フォーマットは `<name>: <url-or-command> [(HTTP)] - <status>` で、name 部分には許容文字に応じてスペースもコロンも入りうる。Spotter は v0.7.0 でこの text パースを導入したが、当時のサンプル (`caveat: ...`, `x-api: ...`) には内部コロンが無かったため `indexOf(':')` で素朴に切っていた。Claude Code 側でプラグイン経由 MCP の名前が `plugin:<plugin-id>:<server>` 形式になったことで、6 サーバー全てが name=`"plugin"` に折り畳まれ、`claude mcp get plugin` が `No MCP server found` で失敗、catalog 投入をスキップする経路に流れていた。
+
+step 1 (name 区切り修正) でフルネームは取れるようになったが、Web プロジェクトでの局所実測で **`claude mcp get plugin:everything-claude-code:github` 等のフルネーム指定でも `No MCP server found with name: ...` を返す**ことが判明。プラグイン MCP は `mcp get` の対象外であり、`mcp list` 出力が唯一の権威ソース。step 2 で `parseMcpListOutput` を拡張して command/args を直接 tokenize、`hasFullConfig === true` で再 query を skip させた。
+
+`indexOf(': ')` (コロン + スペース) は CLI が固定で挿入する 2 文字ペアであり、サーバー名内部にこのペアが現れることは構造的に無いので、name 内の任意の `:` (コロン単体) と ` ` (スペース単体) を許容しつつ name と rest を一意に切れる。
+
+[docs/open-issues.md](docs/open-issues.md) P1 「`claude mcp list` text パースの脆弱性」全体は依然として残る (CLI フォーマット変更耐性は本修正でも上がらない、`--json` 出力が来たら全面切り替えしたい) が、コロン入り名前 + プラグイン MCP の具体例はこの版で塞がる。
+
 ## 1.2.4
 
 **v1.2.3 で `normalizeProjectPath` の挙動を変えた際に、対になる test の expectation 更新を漏らしたため macOS CI で fail していた hot-fix**。`normalizeProjectPath: separator / trailing slash / Windows case` ([test/tool-db.test.mjs:678](test/tool-db.test.mjs#L678)) は「backslash は常に forward slash になる」という旧仕様の expectation を残したまま v1.2.3 commit に取り込まれており、POSIX 上で `'C:\\Users\\u\\proj'` の入力に対して `'C:\\Users\\u\\proj'` (literal 保持) が返るのを `'C:/Users/u/proj'` で assert していた。Linux CI は v1.2.3 で緑化したが、v1.2.3 push 後の matrix 実行で macOS が同じ test で fail。

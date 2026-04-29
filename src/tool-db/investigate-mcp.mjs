@@ -96,17 +96,25 @@ export async function listMcpServers({ claudeBin = 'claude', projectRoot } = {})
 //   "<name>: <command> <args...> - <status>"
 // We don't need full parsing — we just need the name and to know if it's an HTTP url
 // or a stdio command. For stdio we will re-query `claude mcp get <name>` for proper args.
+//
+// Splitter: ": " (colon + SPACE), not ":" alone. Plugin-style server names contain
+// internal colons — e.g. "plugin:everything-claude-code:context7" — and a bare
+// `indexOf(':')` collapses six distinct ECC plugin MCPs into the literal string
+// "plugin", causing `claude mcp get plugin` to fail and silently dropping the
+// servers' tools from the catalog. Server names cannot contain a literal ": "
+// (colon + space) because the CLI uses that exact pair as the line delimiter, so
+// `indexOf(': ')` is safe even for names with spaces (e.g. "claude.ai Google Drive").
 export function parseMcpListOutput(text) {
   const out = [];
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     if (trimmed.startsWith('Checking') || trimmed.startsWith('Note:')) continue;
-    // Format: "<name>: <rest>"
-    const colonIdx = trimmed.indexOf(':');
-    if (colonIdx <= 0) continue;
-    const name = trimmed.slice(0, colonIdx).trim();
-    const rest = trimmed.slice(colonIdx + 1).trim();
+    // Format: "<name>: <rest>" — split on ": " (colon + space), see comment above.
+    const sepIdx = trimmed.indexOf(': ');
+    if (sepIdx <= 0) continue;
+    const name = trimmed.slice(0, sepIdx).trim();
+    const rest = trimmed.slice(sepIdx + 2).trim();
     // skip the trailing " - ✓ Connected" / " - ✗ Failed"
     const dashIdx = rest.lastIndexOf(' - ');
     const beforeStatus = dashIdx > 0 ? rest.slice(0, dashIdx).trim() : rest;
@@ -115,8 +123,17 @@ export function parseMcpListOutput(text) {
       const url = beforeStatus.replace(/\s*\(HTTP\)$/, '').trim();
       out.push({ name, transport: isHttp ? 'http' : 'sse', url });
     } else {
-      // stdio — defer to `claude mcp get` for properly-tokenized command/args.
-      out.push({ name, transport: 'stdio' });
+      // stdio — extract command + args directly from the CLI line. Plugin-scoped
+      // servers (e.g. "plugin:everything-claude-code:context7") cannot be re-
+      // queried via `claude mcp get` (CLI returns "No MCP server found with
+      // name: ..." even though `mcp list` shows them), so the list line is the
+      // only authoritative source for these. Bare-name servers also work this
+      // way: tokenisation is naive (whitespace-only, matches splitArgs in
+      // getStdioConfig) and matches the existing constraint that command paths
+      // must not contain spaces.
+      const tokens = beforeStatus.split(/\s+/).filter((t) => t.length > 0);
+      if (tokens.length === 0) continue;
+      out.push({ name, transport: 'stdio', command: tokens[0], args: tokens.slice(1) });
     }
   }
   return out;
