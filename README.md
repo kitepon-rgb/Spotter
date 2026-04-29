@@ -26,7 +26,10 @@ Examples of what Spotter catches:
 | "What's the weather today?" | Guess from training data | Missed call to `web_search` |
 | "What's in this config file?" | Describe based on the filename | Missed call to `read_file` |
 | "What time is it?" | Answer from training-time knowledge | Missed call to `current_time` |
-| Asserting a fact | Stating it without verification | Opportunity to call a verification tool |
+| Asserting a fact | State it without verification | Opportunity to call a verification tool |
+| "How does this library API work in the latest version?" | Recite from training data | Missed call to a docs-lookup MCP |
+| "Does this UI still render correctly?" | Reason from source code alone | Missed call to a browser-automation MCP |
+| "What did we decide about X earlier?" | Guess or admit forgetting | Missed call to a memory / notes MCP |
 
 Spotter audits in two stages:
 
@@ -55,23 +58,49 @@ spotter uninstall        # remove hooks from this project
 
 ## Architecture
 
-```
-User prompt
-  ↓
-UserPromptSubmit hook → Spotter does a first pass against the catalog
-  ↓
-Bell thinking (receives Spotter's recommendations as additionalContext)
-  ↓
-Bell's final answer
-  ↓
-Stop hook → Spotter re-audits the answer + tools actually used
-  ↓
-If something was missed: send-back (max 1 round, guaranteed by Claude Code's stop_hook_active)
+### Audit flow per turn
+
+```mermaid
+flowchart TD
+    U([User prompt]) --> UPH[UserPromptSubmit hook<br/>Spotter audits prompt against catalog]
+    UPH --> BT[Bell thinking<br/>receives Spotter's recommendations<br/>as additionalContext]
+    BT --> BA([Bell's first answer])
+    BA --> SH[Stop hook<br/>Spotter re-audits answer + tools used]
+    SH --> DEC{Missed<br/>tool?}
+    DEC -->|No| DONE([Done])
+    DEC -->|Yes| SB[Send-back to Bell<br/>max 1 round<br/>guarded by stop_hook_active]
+    SB --> BA2([Bell's amended answer]) --> DONE
 ```
 
-The audited tool catalog (name + description) lives in `<project>/.spotter/tool-db.json`. **Since v1.2.0 the daemon audits against the local DB only**; the global DB at `~/.spotter/tool-db.json` is a description-reuse cache shared across projects, not an audit source. Each project's local DB always matches the **current** discovery snapshot for that project (entries are pruned on refresh), so MCP servers, skills, or sub-agents installed in *other* projects can never bleed into this project's audit.
+### Catalog discovery
 
-**Since v1.1.0, `spotter install` runs the initial seed automatically, and the SessionStart hook triggers a background `spotter db refresh` on every Claude Code session start** — so you don't need to invoke catalog commands by hand. The discovery sources are: (1) **MCP servers** — enumerated from `claude mcp list` (membership) and merged with all three official Claude Code scopes for env / headers: User (`~/.claude.json` direct `mcpServers`) / Project (`<projectRoot>/.mcp.json`) / Local (`~/.claude.json` `projects[<root>].mcpServers`), with precedence Local > Project > User (v1.2.1+); a legacy `~/.claude/.mcp.json` source is also read at the lowest priority for backward compatibility. Each server's `tools/list` is fetched via JSON-RPC (HTTP/SSE transport supported); (2) **skills** — `{name, description}` extracted from SKILL.md frontmatter at user / project / plugin scope; (3) **sub-agents** — same pattern from agent `.md` frontmatter; (4) **claude.ai baseline** — Gmail / Calendar / Drive (25 entries via OAuth proxy) injected from a hand-maintained baseline only when `claude mcp list` confirms the server is present (v1.1.4+). **You never have to maintain the tool list by hand.**
+```mermaid
+flowchart LR
+    subgraph SRC[Discovery sources]
+      direction TB
+      MCP[MCP servers<br/>via claude mcp list]
+      SK[Skills<br/>SKILL.md frontmatter]
+      AG[Sub-agents<br/>agent .md frontmatter]
+      BL[claude.ai baseline<br/>Gmail / Calendar / Drive<br/>injected when present]
+    end
+    subgraph SCOPES["MCP env / headers — 4 scopes, top wins on collision"]
+      direction TB
+      L["Local — projects.&lt;root&gt;.mcpServers in ~/.claude.json"]
+      P["Project — &lt;root&gt;/.mcp.json"]
+      US["User — mcpServers in ~/.claude.json"]
+      LG["Legacy — ~/.claude/.mcp.json"]
+    end
+    SCOPES -. merged into .-> MCP
+    MCP --> DB[(Local tool-db.json<br/>name + description<br/>per project)]
+    SK --> DB
+    AG --> DB
+    BL --> DB
+    DB --> H[Haiku audit<br/>session-scoped, preamble-once]
+```
+
+The audited catalog lives in `<project>/.spotter/tool-db.json`. **The daemon audits against the local DB only**; the global DB at `~/.spotter/tool-db.json` is a description-reuse cache shared across projects, not an audit source. Each project's local DB always matches the **current** discovery snapshot for that project (stale entries are pruned on refresh), so tools installed in *other* projects can never bleed into this project's audit.
+
+**`spotter install` seeds the catalog automatically, and the SessionStart hook runs a background `spotter db refresh` on every Claude Code session start** — so you don't need to invoke catalog commands by hand. Each MCP server's `tools/list` is fetched via JSON-RPC (HTTP / SSE / stdio transports supported); skill and sub-agent metadata comes straight from frontmatter; the claude.ai baseline (25 hand-curated entries for Gmail / Calendar / Drive over OAuth proxy) is injected only when `claude mcp list` confirms the server is present. **You never have to maintain the tool list by hand.**
 
 ## Spotter and Throughline
 
@@ -112,13 +141,15 @@ spotter uninstall        # remove hooks from this project (leaves ~/.spotter int
 - **Since v0.5.0, JSON schema violations from Haiku are treated as expected-anomalies** (silent pass + session renew, logged as `role_collapse_reset`) — this is the role-collapse recovery path. **Haiku timeouts still throw**, which surfaces as `UserPromptSubmit` blocking the user's prompt from reaching Bell. Timeouts have been raised twice (30s in v0.5.0, 45s in v0.13.1); making timeouts fail-open is deferred until §0 is revisited
 
 <details>
-<summary><strong>📋 v1.2.0 release notes (2026-04-26)</strong></summary>
+<summary><strong>📋 Recent highlights</strong></summary>
 
-**Structural fix for a regression that suggested tools the current project can't actually use.** The catalog the daemon audits against is now **local-only**. The global DB has been demoted to a cross-project description-reuse cache. A prune step was added to the end of `resolveAll`: any local entry not present in the current project's discovery snapshot is removed. This closes the path through which MCP servers / skills / sub-agents discovered in other projects used to linger in this project's audit set.
+- **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Bell's audit
+- **Per-project audit isolation** — the daemon audits against the local DB only; the global DB has been demoted to a description-reuse cache. Tools discovered in *other* projects can never bleed into this project's audit set
+- **Zero-touch catalog** — `spotter install` seeds the tool DB automatically, and SessionStart triggers a background refresh. You never have to maintain the tool list by hand
+- **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Bell already uses those reliably
+- **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in CLAUDE.md](CLAUDE.md))
 
-For projects that already have Spotter installed, the next SessionStart after the npm global upgrade triggers an auto-refresh; the ghosts disappear from the session-after-next (immediate cleanup: run `spotter db refresh` by hand). The pillars introduced in v1.1.0 (auto-build of the tool DB at install, automatic drift tracking on SessionStart) are unchanged. The audit scope set in v1.0.0 (user-added MCP / skills / sub-agents) is unchanged.
-
-Full notes: [CHANGELOG](CHANGELOG.md).
+Full release history: [CHANGELOG](CHANGELOG.md).
 
 </details>
 

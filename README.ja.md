@@ -27,6 +27,9 @@ Spotter が拾うのは、たとえばこういう瞬間です。
 | 「この設定ファイルの中身は？」 | 名前から推測で説明 | `read_file` の使用機会 |
 | 「今何時？」 | 学習時点の情報で答える | `current_time` の使用機会 |
 | 事実の断定 | 裏付けなしで「〜です」 | 検証用ツールの差し込み余地 |
+| 「このライブラリの最新版の使い方は？」 | 学習データから書き起こす | docs lookup MCP の照会機会 |
+| 「この UI 今もちゃんと動く？」 | コード読みだけで結論 | ブラウザ自動化 MCP の使用機会 |
+| 「以前何を決めたっけ？」 | 推測 / 失念のまま回答 | メモリ / ノート系 MCP の照会機会 |
 
 判定軸は 2 段階:
 
@@ -55,23 +58,49 @@ spotter uninstall        # このプロジェクトの hook 登録を解除
 
 ## アーキテクチャ
 
-```
-User 発話
-  ↓
-UserPromptSubmit hook → Spotter がカタログと発話を見て一次判定
-  ↓
-Bell Thinking (Spotter の推奨を additionalContext で受け取る)
-  ↓
-Bell 最終応答
-  ↓
-Stop hook → Spotter が応答と使用済みツールを見て最終チェック
-  ↓
-見落としあれば差し戻し (max 1 回、Claude Code の stop_hook_active で自動担保)
+### 1 ターンの監査フロー
+
+```mermaid
+flowchart TD
+    U([User 発話]) --> UPH[UserPromptSubmit hook<br/>Spotter が発話とカタログから一次判定]
+    UPH --> BT[Bell Thinking<br/>Spotter の推奨を<br/>additionalContext で受信]
+    BT --> BA([Bell の最初の応答])
+    BA --> SH[Stop hook<br/>応答と使用済みツールから最終チェック]
+    SH --> DEC{見落とし<br/>あり?}
+    DEC -->|なし| DONE([完了])
+    DEC -->|あり| SB[差し戻し<br/>max 1 回<br/>stop_hook_active で自動担保]
+    SB --> BA2([Bell の補正応答]) --> DONE
 ```
 
-監査対象のツール (name + description) は `<project>/.spotter/tool-db.json` (ローカル) に格納されます。**daemon が監査に使うのはローカル DB のみ** (v1.2.0 以降) で、グローバル DB `~/.spotter/tool-db.json` は他プロジェクトでの description 再利用キャッシュとしてのみ機能します (live fetch コスト削減のため初回 refresh で参照、結果は local に write-through)。各プロジェクトの local DB は **そのプロジェクトの現時点の discovery 結果と一致** (refresh 時に prune される) ため、過去にインストールしていた MCP / スキル / サブエージェントが他プロジェクトに混入することはありません。
+### カタログの収集経路
 
-**v1.1.0 以降、`spotter install` が初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、通常の運用で手動コマンドを叩く必要はありません。収集経路は (1) MCP サーバー: `claude mcp list` で集合を確定し、env / headers は Claude Code 公式 3 スコープ — User (`~/.claude.json` 直下 `mcpServers`) / Project (`<projectRoot>/.mcp.json`) / Local (`~/.claude.json` `projects[<root>].mcpServers`) — を precedence Local > Project > User で merge して取得 (v1.2.1 以降、互換のため legacy `~/.claude/.mcp.json` も最下位で参照)、各サーバーの `tools/list` を JSON-RPC で取得、HTTP/SSE transport にも対応、(2) スキル: user/project/プラグインの SKILL.md frontmatter から `{name, description}` を抽出、(3) サブエージェント: user/project/プラグインの agent .md frontmatter から抽出、(4) claude.ai baseline: OAuth proxy 経由の Gmail/Calendar/Drive 25 件は手書き baseline で補完 (v1.1.4 以降、`claude mcp list` に該当サーバーが存在する環境でのみ注入)。**手書きでツールリストを管理する必要はありません**。
+```mermaid
+flowchart LR
+    subgraph SRC[収集ソース]
+      direction TB
+      MCP[MCP サーバー<br/>claude mcp list で列挙]
+      SK[スキル<br/>SKILL.md frontmatter]
+      AG[サブエージェント<br/>agent .md frontmatter]
+      BL[claude.ai baseline<br/>Gmail / Calendar / Drive<br/>存在時のみ注入]
+    end
+    subgraph SCOPES["MCP の env / headers — 4 スコープ、上位が衝突に勝つ"]
+      direction TB
+      L["Local — projects.&lt;root&gt;.mcpServers in ~/.claude.json"]
+      P["Project — &lt;root&gt;/.mcp.json"]
+      US["User — mcpServers in ~/.claude.json"]
+      LG["Legacy — ~/.claude/.mcp.json"]
+    end
+    SCOPES -. merge .-> MCP
+    MCP --> DB[(ローカル tool-db.json<br/>name + description<br/>プロジェクト単位)]
+    SK --> DB
+    AG --> DB
+    BL --> DB
+    DB --> H[Haiku 監査<br/>session-scoped, preamble-once]
+```
+
+監査対象のツール (name + description) は `<project>/.spotter/tool-db.json` (ローカル) に格納されます。**daemon が監査に使うのはローカル DB のみ**で、グローバル DB `~/.spotter/tool-db.json` は他プロジェクトでの description 再利用キャッシュとしてのみ機能します (live fetch コスト削減のため初回 refresh で参照、結果は local に write-through)。各プロジェクトの local DB は **そのプロジェクトの現時点の discovery 結果と一致** (refresh 時に prune される) ため、過去にインストールしていた MCP / スキル / サブエージェントが他プロジェクトに混入することはありません。
+
+**`spotter install` が初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、通常の運用で手動コマンドを叩く必要はありません。各 MCP サーバーの `tools/list` は JSON-RPC で取得 (HTTP / SSE / stdio transport 対応)、スキルとサブエージェントは frontmatter から直接抽出、claude.ai baseline (OAuth proxy 経由の Gmail / Calendar / Drive 25 件) は `claude mcp list` に該当サーバーが存在する環境でのみ注入されます。**手書きでツールリストを管理する必要はありません**。
 
 ## Throughline との関係
 
@@ -110,11 +139,15 @@ spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 - **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Bell に届かない症状として顕在化します (timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
 
 <details>
-<summary><strong>📋 v1.2.0 リリースノート (2026-04-26)</strong></summary>
+<summary><strong>📋 最近のハイライト</strong></summary>
 
-**当該プロジェクトで使えないツールが提案される回帰を構造的に修正**。daemon が監査に使うカタログを**ローカル DB のみ**に変更し、グローバル DB は他プロジェクトでの description 再利用キャッシュに役割を限定。`resolveAll` 末尾に prune ループ追加で、現プロジェクトの discovery 結果に含まれない既存ローカルエントリを削除 (= 過去の別プロジェクトで discover された MCP / スキル / サブエージェントが居座る経路を遮断)。既 install プロジェクトは npm global update 後、次の SessionStart で自動 refresh が走り、次の次のセッションから幽霊が消える (即時反映は `spotter db refresh` 手動)。v1.1.0 からの柱 (install 時 tool-db 自動構築 + SessionStart での drift 自動追従) は継続。監査対象は v1.0.0 でユーザー追加分 (MCP / スキル / サブエージェント) に絞り込み済み。
+- **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Bell の監査から silent に脱落させていた)
+- **プロジェクト単位の監査隔離** — daemon が監査に使うのはローカル DB のみ。グローバル DB は description 再利用キャッシュに役割限定。**他プロジェクト**でインストールしたツールが現プロジェクトの監査に混入することはない
+- **手放しでカタログ維持** — `spotter install` が tool-db を自動 seed、SessionStart で bg refresh が走る。手書き管理は一切不要
+- **監査対象** — ユーザー追加分 (MCP / スキル / サブエージェント) のみ。Claude Code 本体側のツールは意図的に対象外 (Bell は元から自発率が高いため)
+- **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([CLAUDE.md §0](CLAUDE.md))
 
-詳細は [CHANGELOG](CHANGELOG.md) を参照。
+リリース履歴の全文は [CHANGELOG](CHANGELOG.md) を参照。
 
 </details>
 
