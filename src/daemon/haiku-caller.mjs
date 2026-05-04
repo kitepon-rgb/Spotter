@@ -14,13 +14,20 @@
 // puts the catalog only in the first turn's user message; the session retains it for free.
 
 import { spawn } from 'node:child_process';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile, unlink, open } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const WORKDIR = join(homedir(), '.spotter', 'workdir');
+// v1.3.0: Haiku spawn 時に user/project MCP 設定を一切 load させないための空 config。
+// claude CLI の `--strict-mcp-config --mcp-config <path>` に渡せば、`~/.claude.json`
+// (User scope) も `<projectRoot>/.mcp.json` (Project scope) も無視される。Haiku は
+// `{name, description}` カタログ監査しかしないので MCP server は不要 → 起動コスト 0、
+// CPU 飽和 + 孤児 npm exec プロセス累積を根本断ち。
+const EMPTY_MCP_CONFIG_PATH = join(WORKDIR, 'empty-mcp.json');
+const EMPTY_MCP_CONFIG_BODY = '{"mcpServers":{}}';
 
 export class HaikuError extends Error {
   constructor(code, message) {
@@ -33,7 +40,15 @@ export class HaikuError extends Error {
 export async function ensureWorkdir() {
   // §5.2: the workdir is isolated. No CLAUDE.md here.
   await mkdir(WORKDIR, { recursive: true });
+  // v1.3.0: 空 MCP config を idempotent に置く。Haiku spawn 時に `--strict-mcp-config
+  // --mcp-config <path>` で参照させて user/project の MCP server load を完全 disable。
+  // 既存ファイルが内容一致なら write skip でディスク I/O ゼロ。
+  await writeFile(EMPTY_MCP_CONFIG_PATH, EMPTY_MCP_CONFIG_BODY, { encoding: 'utf8' });
   return WORKDIR;
+}
+
+export function emptyMcpConfigPath() {
+  return EMPTY_MCP_CONFIG_PATH;
 }
 
 // Shared header covers BOTH stages — the preamble documents stage=user_input and
@@ -231,13 +246,52 @@ export function sanitizeHaikuEnv(baseEnv) {
   return rest;
 }
 
+// v1.3.0: write the wire prompt to a tempfile and return its read-only fd.
+//
+// claude CLI 2.1.x abandons stdin after roughly 3 seconds with no read activity, printing
+// "Warning: no stdin data received in 3s, proceeding without it." and then "Input must be
+// provided either through stdin or as a prompt argument when using --print" before exit
+// 1. With Spotter's full preamble (~93 KB on a project with ~360 catalog entries) the
+// kernel pipe buffer (Linux default 64 KB) fills up; the rest waits for the CLI to drain
+// it. If the CLI's startup (auth + config + plugin discovery) takes longer than 3 s
+// before its first read syscall, it has already given up — even though the parent (Node)
+// is correctly buffering the rest of the prompt.
+//
+// A real file as stdin is always immediately readable to EOF on every platform, sidesteps
+// the pipe-buffer/drain interaction entirely, and removes the timing dependency on CLI
+// startup latency. The tempfile lives in os.tmpdir(); cleanup is best-effort (the OS
+// reclaims it on reboot regardless).
+export async function preparePromptFile(wirePrompt) {
+  if (typeof wirePrompt !== 'string') {
+    throw new TypeError('preparePromptFile: wirePrompt must be a string');
+  }
+  const tmpPath = join(tmpdir(), `spotter-prompt-${process.pid}-${randomUUID()}.txt`);
+  await writeFile(tmpPath, wirePrompt, { encoding: 'utf8' });
+  const handle = await open(tmpPath, 'r');
+  return {
+    tmpPath,
+    fd: handle.fd,
+    close: async () => {
+      try { await handle.close(); } catch (_e) { /* best-effort: child may have closed it */ }
+      try { await unlink(tmpPath); } catch (_e) { /* tmpdir is OS-cleaned; leak is acceptable */ }
+    },
+  };
+}
+
 // On Windows, the `claude` entry is typically a .cmd shim which Node's spawn cannot locate
 // without going through the shell. We use cmd.exe /c explicitly rather than spawn({ shell:
 // true }) because the latter triggers DEP0190 on Node 24+.
-export function buildSpawnArgs({ claudeBin, model, sessionId, resume }) {
-  const args = resume
+//
+// v1.3.0: `--strict-mcp-config --mcp-config <empty>` を必ず付けて MCP load を無効化する。
+// `mcpConfigPath` は呼び出し側 (createHaikuCaller) が必ず渡す前提。テストで shape を pin。
+export function buildSpawnArgs({ claudeBin, model, sessionId, resume, mcpConfigPath }) {
+  if (typeof mcpConfigPath !== 'string' || mcpConfigPath.length === 0) {
+    throw new TypeError('buildSpawnArgs: mcpConfigPath must be a non-empty string');
+  }
+  const baseArgs = resume
     ? ['-p', '--resume', sessionId, '--model', model]
     : ['-p', '--session-id', sessionId, '--model', model];
+  const args = [...baseArgs, '--strict-mcp-config', '--mcp-config', mcpConfigPath];
   if (process.platform === 'win32') {
     return { cmd: 'cmd.exe', cmdArgs: ['/c', claudeBin, ...args] };
   }
@@ -267,38 +321,42 @@ export function createHaikuCaller({ preamble, timeoutMs, claudeBin = 'claude', m
   const callHaiku = async function (prompt) {
     await ensureWorkdir();
     const wirePrompt = (isFirstCall && preamble) ? `${preamble}\n\n${prompt}` : prompt;
+    // v1.3.0: stdin is a tempfile fd, not a pipe. See preparePromptFile for the why.
+    const promptFile = await preparePromptFile(wirePrompt);
     return new Promise((resolve, reject) => {
       const { cmd, cmdArgs } = buildSpawnArgs({
         claudeBin,
         model,
         sessionId: currentSessionId,
         resume: !isFirstCall,
+        mcpConfigPath: EMPTY_MCP_CONFIG_PATH,
       });
       const child = spawn(cmd, cmdArgs, {
         cwd: WORKDIR,
         env: { ...sanitizeHaikuEnv(env), SPOTTER_PARENT_PID: String(process.pid) },
-        stdio: ['pipe', 'pipe', 'pipe'],
+        stdio: [promptFile.fd, 'pipe', 'pipe'],
         windowsHide: true,
       });
       let stdout = '';
       let stderr = '';
       let settled = false;
 
-      // v0.13.2: absorb EPIPE/ECONNRESET on stdio streams. We end(prompt) and
-      // then kill() on timeout — if the write hadn't drained yet, the unflushed
-      // stream can emit 'error' after kill. Today's Node doesn't crash on
-      // unhandled stdin errors, but the docs don't guarantee that, and this
-      // listener removes a potential silent-death path.
+      // child.stdin is null when stdio[0] is a raw fd; only stdout/stderr remain to guard.
       const noop = () => {};
-      child.stdin.on('error', noop);
       child.stdout.on('error', noop);
       child.stderr.on('error', noop);
+
+      const settleAfterCleanup = (fn) => {
+        promptFile.close().finally(fn);
+      };
 
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
         child.kill();
-        reject(new HaikuError('E_HAIKU_TIMEOUT', `haiku did not respond within ${timeoutMs}ms`));
+        settleAfterCleanup(() => reject(
+          new HaikuError('E_HAIKU_TIMEOUT', `haiku did not respond within ${timeoutMs}ms`)
+        ));
       }, timeoutMs);
 
       child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
@@ -308,25 +366,27 @@ export function createHaikuCaller({ preamble, timeoutMs, claudeBin = 'claude', m
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        reject(new HaikuError('E_INTERNAL', `failed to spawn ${claudeBin}: ${err.message}`));
+        settleAfterCleanup(() => reject(
+          new HaikuError('E_INTERNAL', `failed to spawn ${claudeBin}: ${err.message}`)
+        ));
       });
 
       child.on('close', (code) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        if (code !== 0) {
-          reject(new HaikuError('E_INTERNAL', `haiku exited with code ${code}: ${truncate(stderr)}`));
-          return;
-        }
-        // Flip isFirstCall only after a successful spawn — a failed first call should
-        // still be treated as "preamble not yet delivered" so the next attempt re-sends
-        // the full prelude against a fresh --session-id (not --resume a non-existent one).
-        isFirstCall = false;
-        resolve(stdout);
+        settleAfterCleanup(() => {
+          if (code !== 0) {
+            reject(new HaikuError('E_INTERNAL', `haiku exited with code ${code}: ${truncate(stderr)}`));
+            return;
+          }
+          // Flip isFirstCall only after a successful spawn — a failed first call should
+          // still be treated as "preamble not yet delivered" so the next attempt re-sends
+          // the full prelude against a fresh --session-id (not --resume a non-existent one).
+          isFirstCall = false;
+          resolve(stdout);
+        });
       });
-
-      child.stdin.end(wirePrompt, 'utf8');
     });
   };
 

@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点 (v1.2.1 時点, 2026-04-27) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点 (v1.3.0 時点, 2026-05-04) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -31,23 +31,19 @@ Spotter で現時点 (v1.2.1 時点, 2026-04-27) に **塞がっていない穴*
 
 **次アクション**: v0.13.1 リリース後の daemon ログで `E_HAIKU_TIMEOUT` が 45s でも発生するか集計。発生率が下がらなければ (b) retry or (c) 動的延長を検討。発生率がゼロに近ければこの項目は closable。
 
-### install.mjs の hook timeout が v0.13.1 の緩和を反映していない (2026-04-20 監査で発見)
-
-**背景**: [src/cli/install.mjs:28-34](../src/cli/install.mjs#L28-L34) の `HOOK_EVENTS` が settings.json に書く timeout は **Stop=15s / UserPromptSubmit=30s** のまま。一方 hook 側 IPC は 50s ([src/hooks/stop.mjs:18](../src/hooks/stop.mjs#L18), [src/hooks/user-prompt.mjs:24](../src/hooks/user-prompt.mjs#L24))、Haiku は 45s ([src/daemon/daemon.mjs:53](../src/daemon/daemon.mjs#L53))。Claude Code 本体は settings.json 値で hook プロセスを kill するため、**実効 timeout は install.mjs の 15s/30s で頭打ち** = v0.13.1 の 45s 緩和は既存 install ユーザー環境に届いていない。上記 E_HAIKU_TIMEOUT 再発率観測が「45s でも発生するか」を前提にしているが、install 側が 15s/30s で刈っている限りこの観測自体が成立しない。
-
-**次アクション**: 次回 bump で install.mjs の Stop/UserPromptSubmit timeout を 60s (Haiku 45s + IPC 往復 + 余裕) に引き上げ、既存ユーザーに再 install を促す。CHANGELOG で v0.13.1 の hotfix として明記。
-
-### daemon プロセスが shutdown ログなしに死ぬ (v0.13.2 で診断 handler 投入済み、真因特定は再現待ち)
+### daemon プロセスが shutdown ログなしに死ぬ (v1.3.0 で根因が大半解消した可能性、再観測中)
 
 **背景**: [daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15 (E_HAIKU_TIMEOUT) の 53 秒後、同じ `session_id` で **shutdown ログなしに daemon が再起動** している (line 16-19 の `tool-db loaded` → `daemon listening` → `heartbeat armed` → `started`)。SessionEnd も heartbeat expire も走っていない。
 
 v0.12.0 の UserPromptSubmit auto-resurrect が次のユーザー入力で `E_UNREACHABLE` を拾って spawn し直したと推定されるが、**auto-resurrect で救われている分、sudden death 自体は観測されないまま積もる**。その間の turn_end / PreToolUse が届かない = 見えない欠落ターン。
 
-**v0.13.2 で投入済み**:
-- [src/cli/daemon-cmd.mjs](../src/cli/daemon-cmd.mjs) に `process.on('uncaughtException')` / `'unhandledRejection')` handler を登録、**同期 `writeFileSync` で log に書いてから exit**。次回死亡時は stack trace + 種別が必ず残る
-- [src/daemon/haiku-caller.mjs](../src/daemon/haiku-caller.mjs) の `child.stdin/stdout/stderr` に防御的 error listener 追加。実証では Node v24 + Windows でこのパスは現状落ちないと確認済み (= 80b5c0af の死因はこれではない可能性高) だが defensive coding として残置
+**v1.3.0 で根因の大半が解消した可能性 (2026-05-04 観測)**: WSL2 で CPU 100% 飽和 + チャット入力無反応の症状調査で、Spotter daemon 3 並走 × 各 Haiku 呼出が `--strict-mcp-config` なしに spawn されて user/project の MCP server 60+ 個を毎回 spawn → 終了 → 再 spawn のサイクルで OS リソースを食いつぶしていた。同期間の `daemon-702a677d-...log` で同 sessionId に `tool-db loaded` が 15 分間に 8 回記録 = sudden death + auto-resurrect が高頻度発生。WSL2 cgroup OOM kill が daemon 自体を巻き込んでいた可能性が高い。v1.3.0 の `--strict-mcp-config --mcp-config <empty>` 強制で Haiku spawn が MCP server を 1 つも load しなくなり、CPU 食いつぶしが構造的に消えた。これにより daemon sudden death の主因が消えたはず。
 
-**残: 真因特定は再現待ち**。次に同セッション内で daemon が死亡したら fatal log を見て対処する。auto-resurrect が頻発する場合は「前プロセス死亡時刻 + 現セッションでの gap」を可視化する仕組みも検討。
+**v0.13.2 で投入済みの診断 handler は引き続き残置**:
+- [src/cli/daemon-cmd.mjs](../src/cli/daemon-cmd.mjs) に `process.on('uncaughtException')` / `'unhandledRejection')` handler を登録、**同期 `writeFileSync` で log に書いてから exit**。残った sudden death は stack trace + 種別が必ず残る
+- [src/daemon/haiku-caller.mjs](../src/daemon/haiku-caller.mjs) の `child.stdin/stdout/stderr` に防御的 error listener 追加
+
+**残: v1.3.0 後の再観測**。実運用で daemon 突然死頻度が下がるかを daemon ログで集計。`tool-db loaded` 行を sessionId 別に grep して 1 セッションあたり何回再起動が起きるかを観測する。下がっていなければ別の真因 (Node 内部例外 / WSL 仮想化レイヤ等) を疑う。
 
 ---
 
@@ -174,6 +170,8 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 | 課題 | 解決版 |
 |---|---|
+| Haiku spawn 時に user/project の MCP server 60+ 個を毎回 load して CPU 100% 飽和 + 孤児 `npm exec` プロセス累積。WSL2 で daemon 3 並走 × 各 Haiku 呼出 = `npm exec @modelcontextprotocol/...` 等の MCP server を秒単位で spawn → 終了 → 再 spawn のサイクル → CPU/メモリ圧 → daemon 自体が cgroup OOM で死亡 → auto-resurrect ループ → 「Chime のチャット入力が無反応」体感症状。`buildSpawnArgs` に `--strict-mcp-config --mcp-config <empty>` 強制 + `ensureWorkdir` で `~/.spotter/workdir/empty-mcp.json` (`{"mcpServers":{}}`) を idempotent 生成。Haiku は `{name, description}` カタログ監査しか必要としないので副作用ゼロ | v1.3.0 |
+| `install.mjs` の `HOOK_EVENTS` が settings.json に書く Stop/UserPromptSubmit timeout が 15s/30s のままで、v0.13.1 の Haiku timeout 緩和 (30→45s) が既存 install ユーザーに届かず Chime 等の重い環境で hook kill による「チャット入力無反応」を誘発していた問題。`HOOK_EVENTS` の該当 timeout を 60s に統一 (Haiku 45s + IPC 往復 + 余裕) | v1.3.0 |
 | Claude Code 公式の MCP scope 3 段 (User / Project / Local) のうち User (`~/.claude.json` 直下 `mcpServers`) と Local (`~/.claude.json` `projects[<root>].mcpServers`) を読み損ねていた構造バグ。`claude mcp add -s user -e KEY=val ...` 等で登録した MCP が `claude mcp list` で発見されるが env 抜きで spawn → tools/list 空 → `resolveAll` の prune でカタログから silent に脱落していた。`readMcpServers` を 4 ソース merge (`legacy < user < project < local`) に拡張、Windows の `projects[]` キー揺れ (separator / 大小 / 末尾スラッシュ) を正規化して照合 | v1.2.1 |
 | 当該プロジェクトで使えないツールが Haiku 視野に幻として漏れる構造的バグ。`readMerged` が global DB の中身を local-wins マージで daemon の audit に流し込んでいた経路 + `resolveAll` が snapshot にもう存在しないローカルエントリを削除しなかった経路の二重バグ。daemon 入力を `readLocal` (local DB only) に切替 + `resolveAll` 末尾に prune ループ追加 (investigate 失敗時は既存値保持) | v1.2.0 |
 | Bell の isolated `CLAUDE_CONFIG_DIR` (例 bellbot) が hook → daemon → haiku の spawn 連鎖で継承され、Spotter haiku が credentials 不在の config を読みに行き auth 失敗で exit 1 → 次 turn で同じ session-id が "already in use" で stuck し user_input hook が非 0 exit 連鎖する bug。`sanitizeHaikuEnv` で haiku spawn 時のみ `CLAUDE_CONFIG_DIR` を strip + `runHaikuJudgment` で E_INTERNAL / E_HAIKU_TIMEOUT 時も session を rotate してから throw | v1.1.6 |

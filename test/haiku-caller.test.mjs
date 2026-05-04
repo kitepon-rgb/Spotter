@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile, stat } from 'node:fs/promises';
 import {
   buildPreamble,
   buildFirstStagePrompt,
@@ -9,6 +10,9 @@ import {
   createHaikuCaller,
   buildSpawnArgs,
   sanitizeHaikuEnv,
+  preparePromptFile,
+  ensureWorkdir,
+  emptyMcpConfigPath,
   HaikuError,
 } from '../src/daemon/haiku-caller.mjs';
 
@@ -143,6 +147,7 @@ test('buildSpawnArgs: first call uses --session-id without --resume', () => {
     model: 'haiku',
     sessionId: 'abc-123',
     resume: false,
+    mcpConfigPath: '/tmp/empty-mcp.json',
   });
   assert.ok(cmdArgs.includes('--session-id'));
   const idIdx = cmdArgs.indexOf('--session-id');
@@ -156,11 +161,69 @@ test('buildSpawnArgs: subsequent call uses --resume alone (no --session-id)', ()
     model: 'haiku',
     sessionId: 'abc-123',
     resume: true,
+    mcpConfigPath: '/tmp/empty-mcp.json',
   });
   assert.ok(!cmdArgs.includes('--session-id'));
   const resumeIdx = cmdArgs.indexOf('--resume');
   assert.ok(resumeIdx > -1);
   assert.equal(cmdArgs[resumeIdx + 1], 'abc-123');
+});
+
+// v1.3.0: Haiku spawn 時に user/project MCP 設定を絶対 load させない (CPU 飽和の根因)。
+// 2026-05-04 Spotter リポジトリで実害観測 — daemon 3 並走 × 各 Haiku 呼出が
+// `npm exec @modelcontextprotocol/...` を数十個 spawn していた。修正は spawn 引数で
+// `--strict-mcp-config --mcp-config <empty>` を必ず付ける + workdir に空 config 配置。
+test('buildSpawnArgs: always emits --strict-mcp-config and --mcp-config <path> (first call)', () => {
+  const { cmdArgs } = buildSpawnArgs({
+    claudeBin: 'claude',
+    model: 'haiku',
+    sessionId: 'abc-123',
+    resume: false,
+    mcpConfigPath: '/some/empty.json',
+  });
+  assert.ok(cmdArgs.includes('--strict-mcp-config'));
+  const cfgIdx = cmdArgs.indexOf('--mcp-config');
+  assert.ok(cfgIdx > -1, '--mcp-config must be present');
+  assert.equal(cmdArgs[cfgIdx + 1], '/some/empty.json');
+});
+
+test('buildSpawnArgs: always emits --strict-mcp-config and --mcp-config <path> (resumed call)', () => {
+  const { cmdArgs } = buildSpawnArgs({
+    claudeBin: 'claude',
+    model: 'haiku',
+    sessionId: 'abc-123',
+    resume: true,
+    mcpConfigPath: '/some/empty.json',
+  });
+  assert.ok(cmdArgs.includes('--strict-mcp-config'));
+  const cfgIdx = cmdArgs.indexOf('--mcp-config');
+  assert.ok(cfgIdx > -1);
+  assert.equal(cmdArgs[cfgIdx + 1], '/some/empty.json');
+});
+
+test('buildSpawnArgs: rejects missing or empty mcpConfigPath', () => {
+  const base = { claudeBin: 'claude', model: 'haiku', sessionId: 'x', resume: false };
+  assert.throws(() => buildSpawnArgs({ ...base }), TypeError);
+  assert.throws(() => buildSpawnArgs({ ...base, mcpConfigPath: '' }), TypeError);
+  assert.throws(() => buildSpawnArgs({ ...base, mcpConfigPath: null }), TypeError);
+});
+
+test('ensureWorkdir: writes the empty-mcp.json with strict-empty mcpServers', async () => {
+  // Haiku spawn で `--strict-mcp-config --mcp-config <empty>` に渡す前提のファイル。
+  // 内容が `{"mcpServers":{}}` でない壊れ方をすると claude CLI が parse error で落ちる。
+  await ensureWorkdir();
+  const cfgPath = emptyMcpConfigPath();
+  const body = await readFile(cfgPath, 'utf8');
+  const parsed = JSON.parse(body);
+  assert.deepEqual(parsed, { mcpServers: {} });
+});
+
+test('ensureWorkdir: idempotent — safe to call repeatedly', async () => {
+  await ensureWorkdir();
+  await ensureWorkdir();
+  await ensureWorkdir();
+  const body = await readFile(emptyMcpConfigPath(), 'utf8');
+  assert.equal(JSON.parse(body).mcpServers && typeof JSON.parse(body).mcpServers, 'object');
 });
 
 test('parseHaikuResponse: accepts valid pass=true', () => {
@@ -301,4 +364,82 @@ test('sanitizeHaikuEnv: no-op when CLAUDE_CONFIG_DIR is absent', () => {
   const input = { PATH: '/usr/bin' };
   const out = sanitizeHaikuEnv(input);
   assert.deepEqual(out, { PATH: '/usr/bin' });
+});
+
+// v1.3.0: preparePromptFile — root fix for the "stdin abandoned after 3s" bug.
+//
+// Reproduction baseline (2026-05-04, claude CLI 2.1.126, Spotter v1.2.5):
+// - Pipe stdin + 93 KB preamble → claude exits 1 with
+//     "Warning: no stdin data received in 3s, proceeding without it."
+//     "Error: Input must be provided either through stdin or as a prompt argument when using --print"
+// - File-fd stdin + same 93 KB → exit 0, normal JSON response.
+// The contract these tests pin: a real file fd is delivered, contains the full prompt
+// (including > pipe-buffer payloads), and the close() handle reclaims both fd and file.
+
+test('preparePromptFile: writes the full prompt to a tempfile and returns a readable fd', async () => {
+  const payload = 'hello\n世界';
+  const file = await preparePromptFile(payload);
+  try {
+    assert.equal(typeof file.tmpPath, 'string');
+    assert.ok(file.tmpPath.includes('spotter-prompt-'));
+    assert.equal(typeof file.fd, 'number');
+    const onDisk = await readFile(file.tmpPath, 'utf8');
+    assert.equal(onDisk, payload);
+  } finally {
+    await file.close();
+  }
+});
+
+test('preparePromptFile: handles payloads larger than the kernel pipe buffer (regression vs v1.2.5)', async () => {
+  // 100 KB > Linux pipe buffer (64 KB). The pipe-stdin path drops this; the fd path
+  // must deliver every byte. We assert size + boundary content (head/tail/middle) so a
+  // truncation regression cannot hide.
+  const big = 'A'.repeat(100 * 1024);
+  const file = await preparePromptFile(big);
+  try {
+    const st = await stat(file.tmpPath);
+    assert.equal(st.size, 100 * 1024);
+    const onDisk = await readFile(file.tmpPath, 'utf8');
+    assert.equal(onDisk.length, big.length);
+    assert.equal(onDisk[0], 'A');
+    assert.equal(onDisk[onDisk.length - 1], 'A');
+  } finally {
+    await file.close();
+  }
+});
+
+test('preparePromptFile: close() removes the tempfile', async () => {
+  const file = await preparePromptFile('x');
+  await file.close();
+  await assert.rejects(stat(file.tmpPath), (err) => err.code === 'ENOENT');
+});
+
+test('preparePromptFile: close() is idempotent (best-effort cleanup)', async () => {
+  // The daemon's settle path may race timeout-vs-close; close() must not throw on the
+  // second call even though the fd or file are already gone.
+  const file = await preparePromptFile('x');
+  await file.close();
+  await file.close(); // must not throw
+});
+
+test('preparePromptFile: rejects non-string input', async () => {
+  await assert.rejects(preparePromptFile(null), TypeError);
+  await assert.rejects(preparePromptFile(undefined), TypeError);
+  await assert.rejects(preparePromptFile(123), TypeError);
+});
+
+test('preparePromptFile: parallel calls produce distinct tempfiles', async () => {
+  // Multiple concurrent Spotter sessions (or a single session with overlapping retries)
+  // must not collide on tmpPath. randomUUID guarantees this; the test pins it.
+  const files = await Promise.all([
+    preparePromptFile('a'),
+    preparePromptFile('b'),
+    preparePromptFile('c'),
+  ]);
+  try {
+    const paths = new Set(files.map((f) => f.tmpPath));
+    assert.equal(paths.size, 3);
+  } finally {
+    await Promise.all(files.map((f) => f.close()));
+  }
 });

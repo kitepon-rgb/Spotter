@@ -1,5 +1,95 @@
 # Changelog
 
+## 1.3.0
+
+**Haiku spawn 時に user/project の MCP server を一切 load しないよう強制 — WSL2 で観測された CPU 100% 飽和 + 孤児 `npm exec` プロセス累積 + チャット入力無反応 の根本原因を断った minor bump**。修正は `claude -p` 起動引数に `--strict-mcp-config --mcp-config <empty>` を必ず付けるだけの最小実装、副作用なし。
+
+### 観測した症状 (2026-05-04 WSL2 実環境)
+
+WSL2 の CPU 使用率が 100% に張り付き、何かがプロセスを「無限増殖」させている — というユーザー報告から調査開始。`ps -eo pid,ppid,pcpu,etime,cmd --sort=-pcpu` の上位に **etime 3〜10 秒の `npm exec @modelcontextprotocol/server-*` / `@playwright/mcp` / `@upstash/context7-mcp` / `homework-mcp` / `caveat mcp` / `mcp-server-github` / `mcp-server-memory` 等が大量並走** し、親 PID は `claude -p --resume <uuid> --model claude-haiku-4-5-20251001` (= Spotter daemon の Haiku caller)。Spotter daemon が 3 並走、各々の Haiku 起動ごとに 60+ 個の MCP server を spawn → 終了 → 再 spawn のサイクルで CPU を食いつぶしていた。隣接プロジェクト ([Chime](file:///home/kite/projects/Chime)) で「VSCode 拡張のチャット入力が無反応」体感症状の真因も同根 (WSL2 全体の CPU 飽和で拡張側の入力処理がドロップ)。
+
+### 真因
+
+`sanitizeHaikuEnv` (v1.1.6) は `CLAUDE_CONFIG_DIR` を strip して Haiku をデフォルト `~/.claude/` で起動するが、**デフォルト config dir には User scope MCP (`~/.claude.json` 直下 `mcpServers`) と plugin MCP がフルで登録されている**。claude CLI 2.1.x は `--print` モード起動時に config dir 内の全 MCP server を eager に spawn するため、Haiku 1 回呼出ごとに数十個の `npm exec` 子プロセスが立つ。Haiku は `{name, description}` カタログ監査しかしない (= MCP server は不要) のに、起動コストとして user/project の MCP がフル load されていた構造的欠陥。
+
+加えて `daemon-702a677d-...log` で同 sessionId の `tool-db loaded` が 15 分間に 8 回記録 = sudden death + auto-resurrect が高頻度発生していた。WSL2 cgroup OOM kill が daemon プロセスごと巻き込んでいた可能性が高く、[docs/open-issues.md](docs/open-issues.md) P0 「daemon プロセスが shutdown ログなしに死ぬ」 (v0.13.2 から残置) の主因もこれと推定。
+
+### 変更点
+
+- **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**:
+  - 定数 `EMPTY_MCP_CONFIG_PATH = ~/.spotter/workdir/empty-mcp.json` と `EMPTY_MCP_CONFIG_BODY = '{"mcpServers":{}}'` を追加
+  - `ensureWorkdir` を拡張し、空 MCP config ファイルを idempotent に書き出す
+  - 新 named export `emptyMcpConfigPath()` (テストから参照)
+  - `buildSpawnArgs({ ...args, mcpConfigPath })` のシグネチャを拡張、`mcpConfigPath` を必須化 (TypeError on missing/empty)、出力に `--strict-mcp-config --mcp-config <path>` を必ず含める。Windows `cmd.exe /c` 経路でも同様に
+  - `createHaikuCaller` 内 `spawn` 直前で `mcpConfigPath: EMPTY_MCP_CONFIG_PATH` を渡す
+- **編集 [test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: 回帰ガード 5 件追加 + 既存 `buildSpawnArgs` 2 件を新シグネチャに追従
+  - 新規: first call と resumed call の両方で `--strict-mcp-config` と `--mcp-config <path>` を含む
+  - 新規: `mcpConfigPath` 欠落 / 空文字 / null で TypeError
+  - 新規: `ensureWorkdir` で `empty-mcp.json` が `{"mcpServers":{}}` で書かれる
+  - 新規: `ensureWorkdir` の idempotent 性 (3 連呼出で破綻しない)
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**: `HOOK_EVENTS` の Stop/UserPromptSubmit timeout を 15s/30s から **60s に統一**。v0.13.1 で daemon 側 Haiku timeout を 30s→45s に緩和したのに settings.json に書く Claude Code 本体側の hook timeout が旧値のままで、Chime 等の preamble が大きい (93 KB / 357 件) 環境で daemon が 24-32s かけて正常応答を返している最中に Claude Code 側 hook が timeout kill されて「チャット入力無反応」を誘発していた既存バグの hot-fix。`docs/open-issues.md` の P0「install.mjs の hook timeout が v0.13.1 緩和を反映していない」項目を closing
+- **package.json**: `1.2.6` → `1.3.0` (公開 API シグネチャ変更 = `buildSpawnArgs` の新引数を伴うため minor bump)
+- **編集 [docs/open-issues.md](docs/open-issues.md)**: 解決済みリストに 2 件追加、P0「daemon が shutdown ログなしに死ぬ」節に v1.3.0 で根因が大半解消した可能性を追記
+
+### なぜ `--strict-mcp-config --mcp-config <empty>` が正解か
+
+- **Anthropic auth は影響なし** — credentials は `~/.claude/.credentials.json` 等から従来どおり読まれる (`--bare` を使うと keychain skip で OAuth が壊れるが、`--strict-mcp-config` は MCP config を制限するだけで auth とは独立)
+- **副作用ゼロ** — Haiku は `{name, description}` カタログ監査しか必要としない、MCP server を呼ばない。Spotter のカタログ収集 (`investigate-mcp.mjs`) は別経路 (`claude mcp list` + `.mcp.json` 直読み) で行うので Haiku 側に MCP は要らない
+- **クロスプラットフォーム** — `--strict-mcp-config --mcp-config <path>` は Linux/macOS/Windows 全てで動作、`--mcp-config` は v0.x 時代から claude CLI に存在
+- **既存の v1.1.6 `sanitizeHaikuEnv` と直交** — Bell の isolated `CLAUDE_CONFIG_DIR` 継承防止 (auth 失敗回避) は引き続き必要、本修正は MCP load 防止という別軸で重ねがけ
+
+### Chime / Spotter ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.3.0` で global update
+2. 既 install プロジェクトでは hook 設定 (`spotter.mjs` のパス固定) は変わらないので **再 install 不要**、次の SessionStart から自動的に新コードが効く
+3. 既存の孤児 daemon があれば `kill <pid>` + `rm ~/.spotter/runtime/session-*.pid` で掃除 (今後は v1.3.0 の MCP-disable で sudden death 自体が大幅減少見込み)
+
+## 1.2.6
+
+**チャット入力が無視される実害バグの根治**。実プロジェクト ([Chime](file:///home/kite/projects/Chime)) のセッションで Spotter daemon が UserPromptSubmit / Stop hook を Haiku 呼び出しで何度も `E_INTERNAL: haiku exited with code 1` させ、Claude Code 側 hook timeout (30s) に貼り付いて入力が応答しない状態が頻発していた。原因は Haiku を起動する `claude -p` への stdin 引き渡し方式と、claude CLI 2.1.x の stdin 取扱いの仕様の組合せで、推測ではなく実プロジェクト同条件 (`tools=357 件 / preamble=93 KB`) の最小再現で確定した。
+
+### 観測された stderr
+
+```
+Warning: no stdin data received in 3s, proceeding without it.
+  If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.
+Error: Input must be provided either through stdin or as a prompt argument when using --print
+```
+
+### 真因 (推測ではなく実測で確定)
+
+claude CLI 2.1.126 は `--print` モードで stdin の最初の read attempt が **約 3 秒** 以内に readable にならないと「stdin 無し」と判定して引数モードに切替えようとし、prompt が無いので exit 1 する。一方 Spotter は v0.7.0 の tool-db 化で preamble (role + schema + few-shot + 全カタログの JSON) を初回 1 回送信しているが、Chime のように `MCP × スキル × サブエージェント = 357 件` ある環境では preamble が **93 KB** 程度に達する。Linux の kernel pipe buffer (デフォルト 64 KB) を超えるため、Node 側 `child.stdin.end(buf)` の write が drain 待ちになり、claude CLI が起動 (auth + config + plugin 探索) を 3 秒以内に終えて最初の read syscall を発行しないと「3 秒間 no stdin data」と CLI 側で判定 → stdin 放棄 → exit 1。CLI は "Warning" を出して続行するふりをするが、実際は `--print` 引数も無いので "Input must be provided" で死ぬ。
+
+実測 (2026-05-04, /home/kite/projects/Chime での Spotter セッション + WORKDIR 隔離環境):
+
+| stdin 経路 | duration | exit code | stderr |
+|---|---|---|---|
+| `child.stdin.end(prompt)` (pipe) | 17 秒 | 1 | "no stdin data received in 3s" + "Input must be provided" |
+| **tempfile fd を `stdio[0]` に渡す (本修正)** | **24-32 秒** | **0** | (空) — 正常 JSON 応答 |
+
+このバグの可視結果は、daemon log の以下メッセージが繰り返し出る現象として観測されていた:
+- `user_input: haiku invocation failed (E_INTERNAL), rotating session before rethrow: haiku exited with code 1: Warning: no stdin data received in 3s ...`
+- 当該 turn は session を rotate して `mode=first` の cold-start に逆戻り (preamble 再送 → ますます重い) → 30s hook timeout に貼り付き → ユーザー視点で「チャット入力が無視される」
+
+### 変更点
+
+- **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: 新規 `preparePromptFile(wirePrompt)` を named export として追加。`os.tmpdir()` 配下にユニーク tempfile (`spotter-prompt-<pid>-<uuid>.txt`) を作って prompt を書き込み、read-only fd と `close()` ハンドラ (fd close + unlink、両方 best-effort) を返す。`createHaikuCaller` 内 `callHaiku` の `spawn` を `stdio: ['pipe', 'pipe', 'pipe']` + `child.stdin.end(prompt)` から `stdio: [promptFile.fd, 'pipe', 'pipe']` に切替え (child.stdin が null になるので関連 noop listener も削除)。close / error / timeout の各 settle 経路で `promptFile.close()` を呼んでから resolve/reject する `settleAfterCleanup` ヘルパで cleanup を一元化、tempfile leak を防止
+- **編集 [test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: 回帰ガード 6 件追加 — (1) tempfile が書かれて読める (2) 100 KB (= pipe buffer 超え) でも全 byte 届く (3) `close()` で unlink される (4) `close()` 二重呼び出し可 (timeout-vs-close race の安全性) (5) 非 string 入力で `TypeError` (6) 並列呼び出しで tmpPath が衝突しない (UUID 保証)
+- **package.json**: `1.2.5` → `1.2.6`
+
+### なぜ tempfile fd 方式が正解か
+
+- **file は kernel が即時 readable と判定** — pipe と違い「writer 側の進捗」を待たないので、CLI 起動が遅くても 3 秒タイマーに引っかからない
+- **pipe buffer の制約から完全に独立** — 64 KB / 1 MB / 10 MB どんな payload でも file 経由なら一発で届く
+- **クロスプラットフォーム** — Windows でも `os.tmpdir()` は機能、`stdio[0]` への numeric fd 受け渡しも Node が抽象化済み
+- **CLI 引数モード (`-p "<prompt>"`) と違い ARG_MAX に縛られない** — Windows の CommandLineW 32K 制限を回避
+
+### Chime で「無反応」が消えるまでに必要な手順 (ユーザー側)
+
+1. `npm install -g claude-spotter@1.2.6` で global update
+2. Chime 側の既 install プロジェクトでは hook 設定 (`~/.claude.json` の per-project hooks) は変わらない (`spotter.mjs` のパスは固定) ので **再 install 不要**、次の SessionStart から自動的に新コードが効く
+3. 既存の孤児 daemon があれば `rm ~/.spotter/runtime/session-*.pid` で掃除 (生存 daemon 0 件確認後のみ)
+
 ## 1.2.5
 
 **ECC プラグイン経由の MCP サーバー 6 件 (context7 / exa / github / memory / playwright / sequential-thinking) のツール群 (61 件) が Spotter のカタログから silent に欠落していた **二重構造バグ**を修正**。実プロジェクト (Web) で `spotter install` 実行時のログに ``mcp investigate failed for "plugin": Command failed: cmd.exe /c claude mcp get plugin`` が **6 連発** で出ていたのを契機に発見。これらのプラグイン MCP の呼び忘れを Spotter が検出できない状態だった (Web プロジェクトで rebuild すると 309 → 370 件、プラグイン由来 61 件が追加されることを確認)。

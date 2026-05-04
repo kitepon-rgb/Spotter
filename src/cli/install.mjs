@@ -28,11 +28,20 @@ const SPOTTER_HOME = join(homedir(), '.spotter');
 
 const MARKER_VERSION = '1';
 
+// v1.2.6: UserPromptSubmit / Stop を 60s に統一。理由:
+// - daemon 側 Haiku timeout は 45s (DEFAULT_HAIKU_TIMEOUT_MS @ daemon.mjs)
+// - hook → daemon IPC 往復・JSON parse・log fsync を加味すると ~50s が上限
+// - Claude Code 本体は settings.json の timeout で hook を kill するので、ここが最も狭い
+// 旧値 (UserPromptSubmit=30 / Stop=15) は v0.13.1 の Haiku timeout 緩和 (30→45s) を
+// 反映しておらず、Chime 等の preamble が大きい (93 KB / 357 件) 環境で daemon が
+// 24-32s かけて正常応答を返している最中に Claude Code 側で hook が timeout で
+// 切られ、ユーザー視点の「チャット入力無反応」を誘発していた。docs/open-issues.md
+// の「install.mjs の hook timeout が v0.13.1 緩和を反映していない」項目を閉じる。
 const HOOK_EVENTS = [
   { event: 'SessionStart', sub: 'session-start', timeout: 5 },
-  { event: 'UserPromptSubmit', sub: 'user-prompt', timeout: 30 },
+  { event: 'UserPromptSubmit', sub: 'user-prompt', timeout: 60 },
   { event: 'PreToolUse', sub: 'pre-tool-use', timeout: 2 },
-  { event: 'Stop', sub: 'stop', timeout: 15 },
+  { event: 'Stop', sub: 'stop', timeout: 60 },
   { event: 'SessionEnd', sub: 'session-end', timeout: 3 },
 ];
 
