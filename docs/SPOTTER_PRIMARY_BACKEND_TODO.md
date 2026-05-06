@@ -41,7 +41,8 @@ second-pass workflow であり、primary backend 置換ではない。
   second-pass 用に足した経路であり、primary auditor としてはまだ使っていない。
 - ローカル Codex CLI は `codex-cli 0.128.0-alpha.1`。
 - `codex exec` には `--json`, `--output-schema <FILE>`, `--ephemeral`,
-  `--ignore-user-config`, `--ignore-rules`, `--sandbox read-only`, `--cd <DIR>` がある。
+  `--output-last-message <FILE>`, `--ignore-user-config`, `--ignore-rules`,
+  `--sandbox read-only`, `--cd <DIR>` がある。
   したがって、Codex CLI は primary auditor backend 候補として検証できる。
 
 ## Opinion
@@ -71,6 +72,18 @@ Spotter を適用し、Codex CLI backend を前提に小さい判定・cache・a
 `codex-cli 0.128.0-alpha.1` なので、CLI option と JSONL event shape は drift し得る。
 `--output-schema` があるのは強いが、Spotter 側では parser / diagnostics を
 version-aware にし、unknown event shape を hidden fallback しない。
+`--output-last-message <FILE>` も使えるため、primary auditor では final JSON の正本を
+last-message file に寄せ、JSONL は duration / event diagnostics の補助として扱う方が実装しやすい。
+
+2026-05-06 の smoke では、`codex exec --json --output-schema --output-last-message --ephemeral
+--ignore-user-config --ignore-rules --sandbox read-only --cd <repo>` が schema-valid
+`{"pass":true,"missing_tools":[]}` を last-message file に書くことを確認した。一方で、
+stdin が pipe と見なされると `Reading additional input from stdin...` が出るため、backend spawn は
+stdin を明示的に `ignore` する必要がある。また `--ignore-user-config` 指定時でも plugin / skill
+manifest warning と analytics 403 が stderr に出たので、stderr は失敗判定の正本にせず、bounded
+diagnostics として扱う。
+config / auth 隔離を検討する場合も、`CODEX_HOME` を安易に差し替えると認証情報まで見えなくなる
+可能性があるため、auth path を明示確認したうえで別 spike にする。
 
 ### 2. Codex-on-Codex の再帰
 
@@ -132,36 +145,112 @@ Gate:
 
 - [ ] `src/core/auditor-backend.mjs` を追加し、backend-neutral interface を定義する。
   入力は `stage`, `catalog`, `userInput`, `usedTools`, `finalResponse`, `meta`。
-  出力は `SpotterJudgment`。
+  出力は `SpotterJudgment`。ただし Haiku は preamble-once / session reset を持つ stateful backend
+  なので、単純な stateless function にはしない。
+- [ ] backend interface は `createAuditorBackend({backend, catalog, projectRoot, env, logger})`
+  のような factory にし、戻り値は `judge(input)`, `reset()`, `dispose?()`, `name` を持つ。
+  Haiku は factory 時に `buildPreamble({tools:catalog})` と `createHaikuCaller` を初期化する。
+- [ ] `catalog` は daemon startup 時点の project-local `readLocal` 結果を正本にし、
+  per-turn で再読込しない。これは現行 preamble-once behavior と一致させるため。
+- [ ] auditor response parser を backend-neutral にする。
+  現行 `parseHaikuResponse` の JSON schema check は `parseAuditorResponse` /
+  `validateAuditorResponse` として切り出し、Codex CLI backend でも同じ schema check を使う。
+  既存 export 名は compatibility wrapper として残してよい。
+- [ ] catalog-external filtering は parser から独立した backend-neutral post-parse step として残す。
+  現行 `filterCatalogMisses(parsed, catalogNames)` の pass-flip semantics と observability を維持し、
+  Haiku adapter / Codex CLI adapter の両方から同じ関数を通す。
+- [ ] prompt / catalog formatting の共有境界を決める。
+  `SpotterJudgment` schema、catalog `{name,description}` の列挙、stage 入力タグは共有してよいが、
+  Haiku の preamble-once prompt を Codex CLI にそのまま流用しない。Codex CLI 用には
+  stateless / small prompt を別 builder にし、snapshot で固定する。
 - [ ] 現行 Haiku 呼び出しを `haiku` backend adapter として包む。
+  `E_HAIKU_SCHEMA` の role-collapse recovery、`E_HAIKU_TIMEOUT` / `E_INTERNAL` の throw 前 reset、
+  catalog-external filtering、duration meta を既存挙動と同じにする。
+- [ ] `AuditorBackendError` の structured error shape を定義する。
+  最低限 `code`, `backend`, `stage`, `message`, `diagnostics?`, `cause?` を持たせ、
+  hook / daemon transport へ投影するときに hidden fallback や silent pass に潰さない。
 - [ ] daemon は backend adapter 経由で判定し、既存 Haiku behavior は完全一致させる。
+  ただし short prompt skip、`turn_end` の `no_user_input` pass、`PreToolUse` の記録専用処理は
+  backend の外側に残し、現行 hook latency と挙動を変えない。
+- [ ] host detection は `codex-sidecar-policy.mjs` から独立した neutral module に移すか、
+  primary backend 側から sidecar policy を import しない wrapper を用意する。
+  `detectHostAgent` は sidecar 固有 policy ではなく auditor backend selection の基礎情報として扱う。
 - [ ] backend selection は pure function にする。
+  入力は `hostAgent`, `env`, `projectConfig?`, `stage`、出力は
+  `{backend, mode, compatibility, reason}`。ここでは spawn / diagnostics を実行しない。
 - [ ] `SPOTTER_AUDITOR_BACKEND` で明示 override できるようにする。
+  値は `haiku`, `codex-cli`, `codex-sidecar`, `auto` に限定し、未知値は structured error。
+  ただし `codex-sidecar` primary auditor adapter は Phase 4 の auditor workflow が存在するまで
+  `E_BACKEND_NOT_IMPLEMENTED` として扱い、Haiku へ hidden fallback しない。
+- [ ] `auto` は policy / host default へ委譲するだけの値とし、backend availability check や
+  fallback 実行はしない。`hostAgent=unknown|automation` で明示 backend が無い場合は
+  `E_BACKEND_HOST_UNKNOWN` を返す。
+- [ ] `SPOTTER_AUDITOR_BACKEND_POLICY` は rollout preset (`current`, `next`) として扱い、
+  `SPOTTER_AUDITOR_BACKEND` の明示 override と混同しない。優先順位を
+  explicit backend > policy preset > host default として test で固定する。
+- [ ] Phase 1 時点の preset は `current=現行 Haiku behavior`、
+  `next=Codex host だけ codex-cli opt-in / Claude host は現行 Haiku` として固定する。
+  Claude host の `next` を Codex 系 backend に切り替えるのは Phase 5 以降に限定する。
+- [ ] daemon log には Phase 1 から `backend=<name>` を出す。
+  既存 diagnostics parser の backend 集計拡張は Phase 6 でよいが、Phase 2-4 の実測に使う
+  raw signal は最初に入れる。
+- [ ] unit test は少なくとも backend selector、unknown env の structured error、
+  Haiku adapter compatibility、parser / catalog filtering の分離を固定する。
 
 Gate:
 
 - [ ] 既存 `npm test` が通る。
 - [ ] Claude hook 実セッション smoke が現行と同じ挙動。
 - [ ] Haiku backend adapter は既存 prompt snapshot と response schema を変えない。
+- [ ] `createHaikuCaller` の preamble-once / reset semantics が adapter 経由でも維持される。
+- [ ] Codex CLI 用 prompt builder を追加しても、Haiku prompt snapshot は変わらない。
+- [ ] primary backend module が `codex-sidecar-policy.mjs` に直接依存しない。
 
 ### Phase 2. Codex CLI Backend Spike
 
 - [ ] `codex exec --output-schema` 用の JSON schema を追加する。
   schema は現行 Haiku response と同じ `{pass, missing_tools:[{name,reason}]}` をまず要求する。
-- [ ] `codex exec --json --output-schema <schema> --ephemeral --sandbox read-only --cd <project>`
+- [ ] Codex CLI backend は schema-valid final JSON を backend-neutral parser に通してから
+  `SpotterJudgment` に変換する。Haiku と Codex で missing tool filtering / anomaly shape を分岐させない。
+- [ ] `codex exec --json --output-schema <schema> --output-last-message <tmpfile> --ephemeral --sandbox read-only --cd <project>`
   の最小 smoke を作る。
-- [ ] Codex CLI stdout JSONL parser を実装する。final response 以外の event shape に依存しすぎない。
+- [ ] Codex CLI final response は `--output-last-message` の JSON を正本として読む。
+  stdout JSONL parser は diagnostics / timing / raw transcript 保存の補助にし、final response 取得を
+  event shape に依存させすぎない。
 - [ ] invalid JSON / schema mismatch / non-zero exit / timeout を structured error にする。
+- [ ] Codex CLI spawn は stdin を明示的に `ignore` する。hook stdin や daemon stdin を継承すると
+  Codex CLI が追加 prompt として読む可能性がある。
+- [ ] Codex CLI stderr は bounded diagnostics として capture する。
+  analytics 403 HTML や plugin / skill manifest warning が出ても、それだけでは backend failure にしない。
+  ただし non-zero exit / schema invalid / no final JSON は structured error にする。
+- [ ] `--ignore-user-config` / `--ignore-rules` でも plugin / skill manifest scan が完全には止まらない
+  可能性を前提に、cold latency と stderr volume を測る。必要なら `CODEX_HOME` / feature disable /
+  minimal profile の選択肢を別 spike に切る。ただし `CODEX_HOME` 変更は auth 断絶を起こし得るので、
+  認証済みの最小 profile を作れることを確認してから採用する。
+- [ ] last-message file / schema file / raw JSONL capture の temp path と cleanup policy を決める。
+  timeout / abort 時も tempfile を漏らさず、diagnostics に必要な場合だけ approved log dir へ保存する。
+- [ ] timeout は process close だけで判定しない。もし last-message file に schema-valid final JSON が
+  書かれているなら、その時点で success として扱えるかを検証する。これは `claude -p` の
+  `type:result` 後も process が残る既知罠と同型の timeout 誤判定を避けるため。
 - [ ] Codex CLI spawn env に recursion marker を入れる:
   `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND=codex-cli`, `SPOTTER_CHILD_BACKEND=codex-cli`。
+- [ ] 将来の Codex plugin / wrapper 側も `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` を見て
+  再入しない gate を持つ。Claude hook の `SPOTTER_PARENT_PID` だけに依存しない。
 - [ ] Codex CLI backend が Spotter hooks / daemon を増殖させないことを unit / smoke で確認する。
+- [ ] Codex CLI spawn option の unit test で `stdio[0] === 'ignore'`、read-only sandbox、
+  recursion marker env、tempfile cleanup、stderr cap を固定する。
 - [ ] Haiku backend と Codex CLI backend の latency / process count / output validity を同じ fixture で比較する。
 
 Gate:
 
 - [ ] `codex exec` が stable schema output を返す。
+- [ ] `--output-last-message` と `--output-schema` の組み合わせで final JSON を安定取得できる。
+- [ ] Codex CLI が stdin を読まず、stderr noise を bounded diagnostics に閉じ込められる。
 - [ ] `codex exec` が Haiku より十分に遅い場合、Codex host primary 採用を再検討する。
 - [ ] Codex CLI unavailable は Codex host で structured error。Haiku fallback しない。
+- [ ] `SPOTTER_AUDITOR_BACKEND=codex-sidecar` は Phase 4 の auditor workflow 実装前なら
+  `E_BACKEND_NOT_IMPLEMENTED` を返す。`codex-sidecar` second-pass workflow の存在をもって
+  primary auditor 実装済みとは判定しない。
 
 ### Phase 3. Codex Native UX Tuning
 
@@ -172,6 +261,13 @@ Gate:
   plugin, MCP, wrapper, app-server, exec-server のどれで Spotter を呼ぶか。
 - [ ] Codex 用の input contract を定義する。
   Claude hook JSON をそのまま要求しない。Codex 側で自然に渡せる形にする。
+- [ ] Codex 側 event source が未確定でも実装を進められるように、明示 CLI の
+  `spotter auditor judge --stage user_input|turn_end --input FILE --host-agent codex --backend codex-cli`
+  相当の smoke entrypoint を先に用意するか判断する。追加する場合は user-facing command にする前に
+  internal / experimental と明記する。
+- [ ] Codex event source が未確定の間は、この smoke entrypoint だけで
+  「Codex native integration 完了」とは呼ばない。Phase 3 gate の実セッション smoke は、
+  実際の Codex 側入口から Spotter が呼ばれたことを条件にする。
 - [ ] Codex host では primary backend default を Codex CLI にする。
 - [ ] Codex host では `codex-sidecar` を primary backend default にしない。
 - [ ] Codex host で Codex CLI unavailable のとき、明示 error を返す。
@@ -190,6 +286,10 @@ Gate:
 
 ### Phase 4. Backend Matrix Evaluation
 
+- [ ] `codex-sidecar` を primary auditor 候補として測る場合は、matrix 測定の前に
+  `codex-sidecar` 側の auditor preset / workflow を追加または利用可能にする。
+  既存 risk / review ではなく、`user_input` / `turn_end` 判定専用 workflow が必要。
+- [ ] `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義する。
 - [ ] 4 象限を同じ fixture で測る:
   `Claude + Codex CLI`, `Claude + codex-sidecar`,
   `Codex + Codex CLI`, `Codex + codex-sidecar`。
@@ -211,11 +311,8 @@ Gate:
 - [ ] Phase 4 で選んだ Claude host 向け backend policy を Claude hook に移植する。
   初期候補は `codex-sidecar` だが、`Claude + Codex CLI` が primary auditor として優位なら
   `codex-cli` を default にする。
-- [ ] Phase 4 で `codex-sidecar` を Claude primary 候補に残す場合は、
-  `codex-sidecar` primary auditor workflow を追加する。
-  既存 risk / review ではなく、`user_input` / `turn_end` 判定専用 workflow が必要。
-- [ ] Phase 4 で `codex-sidecar` を Claude primary 候補に残す場合は、
-  `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義する。
+- [ ] Phase 4 で `codex-sidecar` を Claude primary default に選んだ場合は、
+  Phase 4 で追加した auditor workflow / diagnostics preset を Claude hook policy から使う。
 - [ ] 選択 backend unavailable の場合に Haiku compatibility mode へ入るかどうかを
   Phase 4 の結果に基づいて policy 固定する。
   hidden fallback は不可。互換 mode を許す場合も daemon log と diagnostics に明示する。
@@ -236,7 +333,8 @@ Gate:
 
 - [ ] `spotter diagnostics logs` に backend 別集計を追加する:
   `haiku`, `codex-cli`, `codex-sidecar`, `compatibility_haiku`。
-- [ ] daemon log に backend, mode, duration, timeout, availability state を出す。
+- [ ] Phase 1 の `backend=<name>` log を前提に、daemon log / diagnostics parser を拡張し、
+  mode, duration, timeout, availability state を backend 別に集計できるようにする。
 - [ ] `spotter doctor` に Codex CLI / codex-sidecar backend readiness を追加する。
 - [ ] README / README.ja に backend policy を短く追記する。
 - [ ] `docs/open-issues.md` の Haiku レイテンシ観測を backend 比較観測へ更新する。
@@ -295,6 +393,17 @@ Gate:
 - `open-issues.md` の `Read` 過検出記述を、現行カタログ対象外の hallucination として整理済み。
 - README / README.ja / CLAUDE.md の Claude Max 要件は、現行 Claude-backed auditor path の要件として
   scope を明記済み。
+- 実装可能性監査で、`parseHaikuResponse` と `filterCatalogMisses` の実コード上の責務分離に合わせ、
+  parser / post-parse filtering の切り出し単位を修正済み。
+- 実装可能性監査で、primary backend 側が `codex-sidecar-policy.mjs` に直接依存しないよう、
+  host detection の neutral module 化を Phase 1 に追加済み。
+- `codex exec --output-schema --output-last-message` smoke で last-message file の schema-valid JSON を確認し、
+  stdin ignore、stderr bounded diagnostics、`CODEX_HOME` auth 隔離リスクを Phase 2 に追加済み。
+- `codex-sidecar` primary auditor adapter は Phase 4 の auditor workflow 実装前なら
+  `E_BACKEND_NOT_IMPLEMENTED` とし、second-pass workflow の存在と混同しない方針に固定済み。
+- `SPOTTER_AUDITOR_BACKEND=auto` と `SPOTTER_AUDITOR_BACKEND_POLICY=current|next` の初期挙動を
+  testable な selector contract として固定済み。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
-作業項目であり、試験予定として残してよい。
+作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に
+blocking finding はない。
