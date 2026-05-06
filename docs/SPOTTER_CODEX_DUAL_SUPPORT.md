@@ -2,6 +2,10 @@
 
 この文書は Spotter repository に貼り付けるための実装ブリーフです。目的は、Spotter を Claude Code と Codex の両方から安全に使える形へ育てることです。
 
+この文書の範囲は、Claude-first を維持したまま Codex adapter / sidecar workflow を追加することです。
+`UserPromptSubmit` / `Stop` の primary auditor backend を host agent ごとに切り替える次段階の計画は
+[`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) を参照してください。
+
 ## 目標
 
 Spotter は agent-neutral な detection / reporting infrastructure になるべきです。

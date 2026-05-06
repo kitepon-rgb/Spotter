@@ -12,6 +12,8 @@ commands, hooks, error handling, and release workflow.
    `docs/SPOTTER_CODEX_DUAL_SUPPORT.md`.
 4. For the executable dual-support TODO and phase gates, read
    `docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`.
+5. For primary auditor backend migration work, read
+   `docs/SPOTTER_PRIMARY_BACKEND_TODO.md`.
 
 If this file conflicts with `CLAUDE.md`, follow `CLAUDE.md` and update this file
 only as a pointer or clarification.
