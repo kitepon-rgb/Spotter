@@ -1,0 +1,20 @@
+{
+  "findings": [
+    {
+      "id": "smoke-caveat-search",
+      "stage": "user_input",
+      "toolName": "mcp__caveat__caveat_search",
+      "reason": "The prompt asks for known external-spec traps, so Caveat search should run before ad hoc debugging.",
+      "category": "tool_miss",
+      "severity": "medium",
+      "confidence": "high",
+      "source": "spotter-smoke",
+      "references": [
+        {
+          "path": "docs/SPOTTER_PRIMARY_BACKEND_TODO.md",
+          "label": "primary backend migration plan"
+        }
+      ]
+    }
+  ]
+}

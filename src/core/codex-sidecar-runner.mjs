@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import {
+  buildCodexSidecarCommand,
   buildDiagnosticsCommand,
   buildSidecarSpawnOptions,
   classifySidecarAvailability,
@@ -249,7 +250,7 @@ export async function readFindingsJson(path) {
 }
 
 async function runDiagnostics({ projectRoot, preset, execFileFn, spawnOptions }) {
-  const [cmd, ...args] = buildDiagnosticsCommand({ projectRoot, preset });
+  const [cmd, ...args] = buildDiagnosticsCommand({ projectRoot, preset, env: spawnOptions.env });
   const result = await runJsonCommand({
     cmd,
     args,
@@ -299,13 +300,15 @@ async function invokeReadOnlyWorkflow({
     }
     args.push(buildWorkflowPrompt(workflow, contextBlocks));
 
+    const command = buildCodexSidecarCommand({ args, env: spawnOptions.env });
     const result = await runJsonCommand({
-      cmd: 'codex-sidecar',
-      args,
+      cmd: command.cmd,
+      args: command.args,
       execFileFn,
       spawnOptions,
       allowFailure: true,
     });
+    const commandMeta = ['codex-sidecar', ...argsForMeta(args, contextPath)];
     if (result.ok && result.value?.status !== 'failed' && result.value?.status !== 'refused') {
       return createSidecarResultRecord({
         workflow,
@@ -315,7 +318,7 @@ async function invokeReadOnlyWorkflow({
         meta: {
           ...meta,
           sidecarWorkflow: workflowSpec.sidecarWorkflow,
-          sidecarCommand: ['codex-sidecar', ...argsForMeta(args, contextPath)],
+          sidecarCommand: commandMeta,
         },
       });
     }
@@ -330,7 +333,7 @@ async function invokeReadOnlyWorkflow({
       meta: {
         ...meta,
         sidecarWorkflow: workflowSpec.sidecarWorkflow,
-        sidecarCommand: ['codex-sidecar', ...argsForMeta(args, contextPath)],
+        sidecarCommand: commandMeta,
       },
     });
   } finally {
@@ -379,9 +382,10 @@ async function invokeWorkWorkflow({
     if (cleanup === 'remove') args.push('--remove-worktree');
     args.push(buildWorkPrompt({ instruction, allowedPaths, cleanup, contextBlocks }));
 
+    const command = buildCodexSidecarCommand({ args, env: spawnOptions.env });
     const result = await runJsonCommand({
-      cmd: 'codex-sidecar',
-      args,
+      cmd: command.cmd,
+      args: command.args,
       execFileFn,
       spawnOptions,
       allowFailure: true,
@@ -509,6 +513,7 @@ function buildWorkflowPrompt(workflow, contextBlocks) {
   return [
     'Analyze the Spotter findings in the provided context blocks.',
     'Focus on daemon proliferation, recursive hook execution, latency, compatibility, and false-positive risks.',
+    riskSchemaHint(),
     ...common,
   ].join(' ');
 }
@@ -520,7 +525,16 @@ function buildWorkPrompt({ instruction, allowedPaths, cleanup, contextBlocks }) 
     `Approved write scope: ${allowedPaths.join(', ')}.`,
     `Cleanup policy requested by Spotter: ${cleanup}.`,
     `Finding context blocks: ${contextBlocks.length}.`,
+    riskSchemaHint(),
     'Return structured JSON with changedFiles, tests or verification, diagnostics, and residual risks.',
+  ].join(' ');
+}
+
+function riskSchemaHint() {
+  return [
+    'When returning risks, each risk must use affectedFiles as Array<{path:string,line?:number,label?:string}> objects,',
+    'confidence as {level:"high"|"medium"|"low"|"unknown",rationale?:string},',
+    'and basis as "observed", "inferred", or "hypothetical".',
   ].join(' ');
 }
 

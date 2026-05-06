@@ -61,7 +61,11 @@ export async function runDoctor() {
   try {
     const diagnostics = await codexHookDiagnostics();
     const hooksOk = diagnostics.availability === 'available';
-    mark(hooksOk, `codex hooks: ${diagnostics.availability}`, `feature=${diagnostics.codexHooksFeature}, user_prompt=${diagnostics.installedHooks.userPromptSubmit}, stop=${diagnostics.installedHooks.stop}`);
+    mark(
+      hooksOk,
+      `codex hooks: ${diagnostics.availability}`,
+      `feature=${diagnostics.codexHooksFeature}, session_start=${diagnostics.installedHooks.sessionStart}, user_prompt=${diagnostics.installedHooks.userPromptSubmit}, stop=${diagnostics.installedHooks.stop}`
+    );
     if (!hooksOk) warnings += 1;
   } catch (err) {
     mark(false, 'codex hooks diagnostics', err.message);

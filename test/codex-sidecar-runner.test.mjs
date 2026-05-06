@@ -76,6 +76,39 @@ test('runCodexRiskCheck: invokes codex-sidecar risk-check with context-file and 
   }
 });
 
+test('runCodexRiskCheck: prompt includes exact risk schema hints', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-codex-risk-schema-hint-'));
+  try {
+    const record = await runCodexRiskCheck({
+      projectRoot: project,
+      hostAgent: 'claude',
+      findings: [finding],
+      dryRun: true,
+      save: false,
+      execFileFn: async (_cmd, args) => {
+        if (args[0] === 'diagnostics') {
+          return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
+        }
+        const prompt = args.at(-1);
+        assert.match(prompt, /affectedFiles as Array<\{path:string,line\?:number,label\?:string\}>/);
+        assert.match(prompt, /confidence as \{level:"high"\|"medium"\|"low"\|"unknown"/);
+        assert.match(prompt, /basis as "observed", "inferred", or "hypothetical"/);
+        return {
+          stdout: JSON.stringify({
+            status: 'dry-run',
+            workflow: 'risk-check',
+            normalizedRequest: { workflow: 'risk-check' },
+          }),
+          stderr: '',
+        };
+      },
+    });
+    assert.equal(record.status, 'success');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test('runCodexRiskCheck: unavailable sidecar returns explicit skipped record, not hidden fallback', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-codex-risk-unavailable-'));
   try {
@@ -121,6 +154,38 @@ test('runCodexRiskCheck: Codex host still invokes sidecar when explicit structur
 
     assert.equal(riskCalls, 1);
     assert.equal(record.status, 'success');
+    assert.equal(record.meta.decision.reason, 'codex_host_with_explicit_boundary');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexRiskCheck: local built sidecar CLI path is used for diagnostics and invocation', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-codex-risk-local-cli-'));
+  const localCli = '/repo/codex-sidecar/packages/cli/dist/index.js';
+  try {
+    const seen = [];
+    const record = await runCodexRiskCheck({
+      projectRoot: project,
+      hostAgent: 'codex',
+      findings: [finding],
+      save: false,
+      env: { PATH: '/bin', SPOTTER_CODEX_SIDECAR_CLI_PATH: localCli },
+      execFileFn: async (cmd, args) => {
+        seen.push({ cmd, args });
+        assert.equal(cmd, process.execPath);
+        assert.equal(args[0], localCli);
+        if (args[1] === 'diagnostics') {
+          return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
+        }
+        assert.equal(args[1], 'risk-check');
+        return { stdout: JSON.stringify({ status: 'ok', workflow: 'risk-check', summary: 'ok' }), stderr: '' };
+      },
+    });
+
+    assert.equal(seen.length, 2);
+    assert.equal(record.status, 'success');
+    assert.equal(record.meta.sidecarCommand[0], 'codex-sidecar');
     assert.equal(record.meta.decision.reason, 'codex_host_with_explicit_boundary');
   } finally {
     await rm(project, { recursive: true, force: true });

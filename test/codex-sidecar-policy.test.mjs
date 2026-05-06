@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  buildCodexSidecarCommand,
   buildDiagnosticsCommand,
   buildSidecarSpawnOptions,
   classifySidecarAvailability,
@@ -32,6 +33,43 @@ test('buildDiagnosticsCommand: codex-sidecar diagnostics is the availability com
     '/repo',
     '--preset',
     'review',
+    '--json',
+  ]);
+});
+
+test('buildCodexSidecarCommand: supports local built CLI path and custom binary', () => {
+  assert.deepEqual(buildCodexSidecarCommand({
+    args: ['diagnostics', '--json'],
+    env: { SPOTTER_CODEX_SIDECAR_CLI_PATH: '/repo/packages/cli/dist/index.js' },
+  }), {
+    cmd: process.execPath,
+    args: ['/repo/packages/cli/dist/index.js', 'diagnostics', '--json'],
+    displayCommand: ['codex-sidecar', 'diagnostics', '--json'],
+  });
+
+  assert.deepEqual(buildCodexSidecarCommand({
+    args: ['diagnostics', '--json'],
+    env: { SPOTTER_CODEX_SIDECAR_BIN: '/usr/local/bin/codex-sidecar-next' },
+  }), {
+    cmd: '/usr/local/bin/codex-sidecar-next',
+    args: ['diagnostics', '--json'],
+    displayCommand: ['/usr/local/bin/codex-sidecar-next', 'diagnostics', '--json'],
+  });
+});
+
+test('buildDiagnosticsCommand: uses local built CLI path when requested', () => {
+  assert.deepEqual(buildDiagnosticsCommand({
+    projectRoot: '/repo',
+    preset: 'auditor',
+    env: { SPOTTER_CODEX_SIDECAR_CLI_PATH: '/repo/packages/cli/dist/index.js' },
+  }), [
+    process.execPath,
+    '/repo/packages/cli/dist/index.js',
+    'diagnostics',
+    '--project',
+    '/repo',
+    '--preset',
+    'auditor',
     '--json',
   ]);
 });

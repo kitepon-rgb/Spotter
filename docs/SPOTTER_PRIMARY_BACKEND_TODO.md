@@ -377,7 +377,17 @@ Gate:
   Codex CLI backend は Spotter が直接 spawn した auditor child process を
   `processCount=1`, `processCountMethod="direct_child_spawn"` として diagnostics に出す。
   descendant process tree は現時点では測らない。
-- [ ] second-pass / work では durable result / worktree / diagnostics / review quality を測る。
+- [x] second-pass / work では durable result / worktree / diagnostics / review quality を測る。
+  2026-05-06 Codex host smoke: `SPOTTER_CODEX_SIDECAR_CLI_PATH` で local built
+  `codex-sidecar` を明示し、`spotter codex risk-check --host-agent codex` が
+  `.spotter/sidecar-results/*-codex-risk-check.json` に durable result を保存することを確認。
+  初回は `risk-check` schema の `affectedFiles` / `confidence` / `basis` 指示が弱く
+  `PROTOCOL_ERROR` になったため、Spotter 側 workflow prompt に exact risk schema hint を追加。
+  再実行では `status=success`、7 件の structured `risks`、`rawEventLogRef`、
+  `sourceBoundaries` を得た。`spotter codex work --dry-run --approve-work
+  --allowed-path scratch-sidecar-smoke/ --remove-worktree --host-agent codex` も
+  `status=success` となり、`availability.state=work-capable`、scoped config、
+  approval context、durable `*-codex-work.json` を確認した。
 - [x] `codex-sidecar` primary auditor workflow が追加された後、同じ matrix fixture で
   4 row すべてを実測し、`codex-sidecar` row が error でないことを確認した。
   2026-05-06 smoke: `claude.codex-cli=10041ms`, `claude.codex-sidecar=12863ms`,
@@ -385,15 +395,22 @@ Gate:
   `mcp__caveat__caveat_search` を検出し、schema success / processCount=1。
 - [ ] Claude host の primary default を `codex-sidecar` にするか `codex-cli` にするかは、
   この matrix evaluation で決める。
-- [ ] Codex host の primary default は Codex CLI 優先。ただし sidecar の方が
+- [x] Codex host の primary default は Codex CLI 優先。ただし sidecar の方が
   measurable に優れるケースがあれば用途限定で残す。
+  Codex host primary auditor は既に `codex-cli` default。Phase 4 matrix では
+  `codex.codex-cli=10383ms`、`codex.codex-sidecar=13983ms` で Codex CLI が latency 優位。
+  sidecar は primary default ではなく、explicit second-pass / durable result / worktree 境界が
+  必要な workflow に残す。
 
 Gate:
 
 - [x] `codex-sidecar` の存在意義を primary auditor 以外の workflow boundary として説明できる。
   primary auditor は Codex CLI が latency 優位に見える一方、`codex-sidecar` は durable result /
   worktree / diagnostics / MCP tool boundary を持つ second-pass / work の基盤であり、
-  primary auditor では backend 整合性と cross-host 比較の選択肢として残す。
+  primary auditor では backend 整合性と cross-host 比較の選択肢として残す。global
+  `codex-sidecar` が auditor workflow 未対応でも、local built CLI を
+  `SPOTTER_CODEX_SIDECAR_CLI_PATH` で明示すれば primary auditor / second-pass / work の
+  diagnostics と実行が同じ経路を使う。
 - [ ] Claude host に移植する backend policy が、Codex native 実測に基づいている。
 
 ### Phase 5. Claude Host Port
@@ -562,6 +579,13 @@ Gate:
   `codex-sidecar auditor --project <repo> --preset auditor --json --context-file <temp>` を呼ぶ。
   global install が古い可能性がある間は、local built CLI を
   `SPOTTER_CODEX_SIDECAR_CLI_PATH` で指定して smoke する。
+- second-pass / work runner も primary auditor backend と同じ
+  `SPOTTER_CODEX_SIDECAR_CLI_PATH` / `SPOTTER_CODEX_SIDECAR_BIN` を見るようにした。
+  これにより global `codex-sidecar` が古い環境でも、明示 local built CLI で
+  diagnostics と実 workflow invocation が同じ sidecar binary を使う。`risk-check` 実 smoke では
+  初回に schema error を観測し、Spotter 側 prompt に exact risk schema hint を追加後、
+  structured risks 付き durable result が成功。`work --dry-run` では scoped config /
+  approval context / work-capable diagnostics が成功した。
 - Codex native を先に詰める方針に合わせ、Phase 6 diagnostics を前倒しした。
   `spotter diagnostics logs --json` は top-level `backends` と stage-level
   `stages.*.backends` を出し、backend 別の count / pass=false / missing / duration を比較できる。

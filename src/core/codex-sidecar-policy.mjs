@@ -44,14 +44,38 @@ export function workCapabilitySmokeFromDiagnostics(diagnostics) {
 
 export { detectHostAgent };
 
-export function buildDiagnosticsCommand({ projectRoot, preset = 'review' }) {
+export function buildCodexSidecarCommand({ args, env = process.env } = {}) {
+  if (!Array.isArray(args) || args.some((arg) => typeof arg !== 'string' || arg.length === 0)) {
+    throw new TypeError('buildCodexSidecarCommand: args must be non-empty strings');
+  }
+  const cliPath = env?.SPOTTER_CODEX_SIDECAR_CLI_PATH;
+  if (typeof cliPath === 'string' && cliPath.length > 0) {
+    return {
+      cmd: process.execPath,
+      args: [cliPath, ...args],
+      displayCommand: ['codex-sidecar', ...args],
+    };
+  }
+  const bin = env?.SPOTTER_CODEX_SIDECAR_BIN || 'codex-sidecar';
+  return {
+    cmd: bin,
+    args,
+    displayCommand: [bin, ...args],
+  };
+}
+
+export function buildDiagnosticsCommand({ projectRoot, preset = 'review', env = process.env }) {
   if (typeof projectRoot !== 'string' || projectRoot.length === 0) {
     throw new TypeError('buildDiagnosticsCommand: projectRoot must be a non-empty string');
   }
   if (typeof preset !== 'string' || preset.length === 0) {
     throw new TypeError('buildDiagnosticsCommand: preset must be a non-empty string');
   }
-  return ['codex-sidecar', 'diagnostics', '--project', projectRoot, '--preset', preset, '--json'];
+  const command = buildCodexSidecarCommand({
+    env,
+    args: ['diagnostics', '--project', projectRoot, '--preset', preset, '--json'],
+  });
+  return [command.cmd, ...command.args];
 }
 
 export function classifySidecarAvailability({
