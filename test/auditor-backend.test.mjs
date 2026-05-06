@@ -97,11 +97,9 @@ test('selectAuditorBackend: auto on unknown host requires explicit backend', () 
   );
 });
 
-test('createAuditorBackend: sidecar primary auditor is explicit not-implemented before Phase 4', () => {
-  assert.throws(
-    () => createAuditorBackend({ backend: 'codex-sidecar', catalog }),
-    (err) => err instanceof AuditorBackendError && err.code === 'E_BACKEND_NOT_IMPLEMENTED'
-  );
+test('createAuditorBackend: codex-sidecar returns the sidecar auditor backend', () => {
+  const backend = createAuditorBackend({ backend: 'codex-sidecar', catalog, projectRoot: '/repo' });
+  assert.equal(backend.name, 'codex-sidecar');
 });
 
 test('createHaikuAuditorBackend: adapter returns SpotterJudgment and preserves preamble-once caller state', async () => {

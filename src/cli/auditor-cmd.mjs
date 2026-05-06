@@ -200,7 +200,7 @@ function summarizeMatrix(matrix) {
 
 function recursionSafetyFor(backend) {
   if (backend === 'codex-cli') return 'spotter_parent_pid_backend_env';
-  if (backend === 'codex-sidecar') return 'not_measured_until_primary_auditor_exists';
+  if (backend === 'codex-sidecar') return 'spotter_parent_pid_sidecar_env';
   return 'unknown';
 }
 
@@ -244,7 +244,9 @@ function compactDiagnostics(diagnostics) {
   if (!out || typeof out !== 'object' || Array.isArray(out)) return out;
   for (const stream of ['stdout', 'stderr']) {
     if (typeof out[stream] === 'string') {
-      out[`${stream}Bytes`] = Buffer.byteLength(out[stream], 'utf8');
+      if (typeof out[`${stream}Bytes`] !== 'number') {
+        out[`${stream}Bytes`] = Buffer.byteLength(out[stream], 'utf8');
+      }
       delete out[stream];
     }
   }

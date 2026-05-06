@@ -35,6 +35,11 @@ presets:
     workflow: risk-check
     readonly: true
     prompt: "Analyze Spotter findings or changes for daemon proliferation, recursive hook execution, latency, and compatibility risks."
+  auditor:
+    workflow: auditor
+    readonly: true
+    model_reasoning_effort: low
+    prompt: "Return a primary Spotter tool-use auditor judgment with pass and missingTools. Use exact tool names from the provided catalog only."
   explore:
     workflow: explore
     readonly: true

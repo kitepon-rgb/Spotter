@@ -31,6 +31,11 @@ export {
   createCodexCliAuditorBackend,
 } from './core/codex-cli-backend.mjs';
 export {
+  buildCodexSidecarAuditorCommand,
+  buildCodexSidecarAuditorPrompt,
+  createCodexSidecarAuditorBackend,
+} from './core/codex-sidecar-auditor-backend.mjs';
+export {
   codexLastAssistantMessage,
   codexToolInputText,
   readCodexUsedTools,

@@ -94,14 +94,6 @@ test('runAuditorMatrixCommand: evaluates the four host/backend rows with one fix
           assert.equal(env.CODEX_SESSION_ID, 'spotter-matrix');
         }
         rows.push(`${hostAgent}.${backend}`);
-        if (backend === 'codex-sidecar') {
-          const err = new Error('codex-sidecar primary auditor backend is not implemented yet');
-          err.name = 'AuditorBackendError';
-          err.code = 'E_BACKEND_NOT_IMPLEMENTED';
-          err.backend = backend;
-          err.diagnostics = { hostAgent };
-          throw err;
-        }
         return {
           name: backend,
           judge: async (input) => ({
@@ -134,9 +126,9 @@ test('runAuditorMatrixCommand: evaluates the four host/backend rows with one fix
     ]);
     assert.equal(parsed.fixture.stage, 'user_input');
     assert.equal(parsed.summary.total, 4);
-    assert.equal(parsed.summary.success, 2);
-    assert.equal(parsed.summary.error, 2);
-    assert.equal(parsed.summary.sidecarPrimaryAuditorImplemented, false);
+    assert.equal(parsed.summary.success, 4);
+    assert.equal(parsed.summary.error, 0);
+    assert.equal(parsed.summary.sidecarPrimaryAuditorImplemented, true);
     assert.deepEqual(parsed.matrix.map((row) => row.id), [
       'claude.codex-cli',
       'claude.codex-sidecar',
@@ -149,9 +141,8 @@ test('runAuditorMatrixCommand: evaluates the four host/backend rows with one fix
     assert.equal(parsed.matrix[0].meta.diagnostics.stderr, undefined);
     assert.equal(parsed.matrix[0].meta.diagnostics.stdoutBytes, 10);
     assert.equal(parsed.matrix[0].meta.diagnostics.stderrBytes, 10);
-    assert.equal(parsed.matrix[1].status, 'error');
-    assert.equal(parsed.matrix[1].error.code, 'E_BACKEND_NOT_IMPLEMENTED');
-    assert.equal(parsed.matrix[1].error.diagnostics.hostAgent, 'claude');
+    assert.equal(parsed.matrix[1].status, 'success');
+    assert.equal(parsed.matrix[1].meta.backend, 'codex-sidecar');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

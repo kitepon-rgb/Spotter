@@ -11,6 +11,7 @@ import { filterCatalogMisses } from './auditor-response.mjs';
 import { AuditorBackendError } from './auditor-error.mjs';
 import { detectHostAgent } from './host-agent.mjs';
 import { createCodexCliAuditorBackend } from './codex-cli-backend.mjs';
+import { createCodexSidecarAuditorBackend } from './codex-sidecar-auditor-backend.mjs';
 
 export { AuditorBackendError } from './auditor-error.mjs';
 export {
@@ -40,9 +41,11 @@ export function createAuditorBackend({
     return createHaikuAuditorBackend({ catalog, logger, haikuCaller, timeoutMs });
   }
   if (selected.backend === 'codex-sidecar') {
-    throw new AuditorBackendError('E_BACKEND_NOT_IMPLEMENTED', 'codex-sidecar primary auditor backend is not implemented yet', {
-      backend: 'codex-sidecar',
-      diagnostics: { reason: selected.reason },
+    return createCodexSidecarAuditorBackend({
+      catalog,
+      projectRoot,
+      env,
+      timeoutMs,
     });
   }
   if (selected.backend === 'codex-cli') {

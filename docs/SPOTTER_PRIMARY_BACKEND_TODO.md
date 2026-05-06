@@ -24,7 +24,7 @@ daemon proliferation safety を壊さない。
 | Host | Primary auditor backend | Compatibility / fallback |
 |---|---|---|
 | Codex | Codex CLI (`codex exec`) | なし。失敗は structured error |
-| Claude | `codex-sidecar` を第一候補。ただし `Claude + Codex CLI` も評価対象 | 明示 compatibility mode の場合だけ現行 Claude Haiku |
+| Claude | Codex CLI を有力候補。ただし `Claude + codex-sidecar` も整合性候補として評価継続 | 明示 compatibility mode の場合だけ現行 Claude Haiku |
 | Unknown / automation | 明示設定がある場合のみ | 明示設定なしなら structured error |
 
 ここでいう backend は、`UserPromptSubmit` / `Stop` 相当の主判定
@@ -37,8 +37,10 @@ second-pass workflow であり、primary backend 置換ではない。
 - 現行 Spotter の主判定は Claude Haiku。
 - Spotter は既に `SpotterJudgment` / `SpotterFinding` を持つので、backend 差し替えの
   contract surface は作れている。
-- `codex-sidecar` は structured result / worktree / sidecar config を扱えるが、Claude host の
-  second-pass 用に足した経路であり、primary auditor としてはまだ使っていない。
+- `codex-sidecar` は structured result / worktree / sidecar config を扱える。これまでは
+  Claude host の second-pass 用経路だったが、`codex-sidecar` 側 commit
+  `457a7e3 Add auditor sidecar workflow` と Spotter 側 adapter により、
+  primary auditor としても `codex-sidecar auditor --preset auditor` を呼べる。
 - ローカル Codex CLI は `codex-cli 0.128.0-alpha.1`。
 - `codex exec` には `--json`, `--output-schema <FILE>`, `--ephemeral`,
   `--output-last-message <FILE>`, `--ignore-user-config`, `--ignore-rules`,
@@ -50,19 +52,24 @@ second-pass workflow であり、primary backend 置換ではない。
 - `spotter auditor matrix --stage user_input|turn_end --input FILE` は、同じ fixture で
   `Claude + Codex CLI`, `Claude + codex-sidecar`, `Codex + Codex CLI`,
   `Codex + codex-sidecar` の primary auditor row を比較するための internal / experimental entrypoint
-  として追加済み。`codex-sidecar` primary auditor は未実装なので、現時点では
-  `E_BACKEND_NOT_IMPLEMENTED` row として測定不能を明示する。matrix 出力は比較用なので、
-  backend stdout / stderr は raw text ではなく byte count に圧縮する。row 実行時は
-  host marker env (`CLAUDE_CODE` / `CODEX_SANDBOX`) を row ごとに明示する。
+  として追加済み。matrix 出力は比較用なので、backend stdout / stderr は raw text ではなく
+  byte count に圧縮する。row 実行時は host marker env (`CLAUDE_CODE` / `CODEX_SANDBOX`) を
+  row ごとに明示する。
+- 2026-05-06 の最新 matrix smoke では 4 row すべて success。`GeForce 5000` fixture に対し
+  すべて `mcp__caveat__caveat_search` を検出した。duration は
+  `claude.codex-cli=10041ms`, `claude.codex-sidecar=12863ms`,
+  `codex.codex-cli=10383ms`, `codex.codex-sidecar=13983ms`。
+  この fixture では Codex CLI の方が primary auditor latency は良い。
 
 ## Opinion
 
-「Codex host のときは codex-sidecar より Codex CLI が効率的」という仮説は筋が良い。
+「primary auditor では codex-sidecar より Codex CLI が効率的」という仮説は筋が良い。
 理由は、同じ Codex 系モデルを使うなら sidecar の app-server / config shaping /
 result wrapping を挟まず、`codex exec --output-schema` で直接 JSON 判定を取れる可能性が
 あるため。
 
-ただし、これはまだ実測前の仮説。採用条件は以下を満たすこと。
+2026-05-06 の 4 象限 smoke ではこの仮説に沿う結果になった。ただし Claude host の default は
+Claude hook の体感遅延と compatibility 方針まで含めて Phase 5 で固定する。採用条件は以下を満たすこと。
 
 - `codex exec --output-schema` が Spotter の小さい JSON 判定を安定して返す。
 - `codex exec --ephemeral --sandbox read-only` で session / worktree / MCP 副作用を持たない。
@@ -196,8 +203,11 @@ Gate:
   `{backend, mode, compatibility, reason}`。ここでは spawn / diagnostics を実行しない。
 - [x] `SPOTTER_AUDITOR_BACKEND` で明示 override できるようにする。
   値は `haiku`, `codex-cli`, `codex-sidecar`, `auto` に限定し、未知値は structured error。
-  ただし `codex-sidecar` primary auditor adapter は Phase 4 の auditor workflow が存在するまで
-  `E_BACKEND_NOT_IMPLEMENTED` として扱い、Haiku へ hidden fallback しない。
+  `codex-sidecar` primary auditor adapter は auditor workflow / preset がある sidecar を呼ぶ。
+  古い sidecar や preset 不在は sidecar の structured error として表面化し、Haiku へ hidden fallback
+  しない。local sidecar smoke では、global install 更新前でも
+  `SPOTTER_CODEX_SIDECAR_CLI_PATH=/home/kite/projects/codex-sidecar/packages/cli/dist/index.js`
+  で実測できる。
 - [x] `auto` は policy / host default へ委譲するだけの値とし、backend availability check や
   fallback 実行はしない。`hostAgent=unknown|automation` で明示 backend が無い場合は
   `E_BACKEND_HOST_UNKNOWN` を返す。
@@ -264,9 +274,10 @@ Gate:
 - [x] Codex CLI backend が hook / daemon stdin を継承せず、stderr noise を bounded diagnostics に閉じ込められる。
 - [ ] `codex exec` が Haiku より十分に遅い場合、Codex host primary 採用を再検討する。
 - [x] Codex CLI unavailable は Codex host で structured error。Haiku fallback しない。
-- [x] `SPOTTER_AUDITOR_BACKEND=codex-sidecar` は Phase 4 の auditor workflow 実装前なら
-  `E_BACKEND_NOT_IMPLEMENTED` を返す。`codex-sidecar` second-pass workflow の存在をもって
-  primary auditor 実装済みとは判定しない。
+- [x] `SPOTTER_AUDITOR_BACKEND=codex-sidecar` は auditor workflow / preset がある
+  `codex-sidecar` を primary auditor として呼ぶ。古い sidecar や preset 不在は hidden fallback
+  せず structured error として扱う。`codex-sidecar` second-pass workflow の存在だけでは
+  primary auditor 実装済みと判定しない。
 
 ### Phase 3. Codex Native UX Tuning
 
@@ -329,21 +340,25 @@ Gate:
 
 ### Phase 4. Backend Matrix Evaluation
 
-- [ ] `codex-sidecar` を primary auditor 候補として測る場合は、matrix 測定の前に
-  `codex-sidecar` 側の auditor preset / workflow を追加または利用可能にする。
-  既存 risk / review ではなく、`user_input` / `turn_end` 判定専用 workflow が必要。
-  2026-05-06 時点の local `codex-sidecar-core` の `WORKFLOWS` は
-  `review`, `explore`, `work`, `opinion`, `risk-check` のみ。`auditor` workflow は無い。
-  `risk-check` / `review` preset を primary auditor として流用すると、primary auditor と
-  second-pass の境界が崩れるため禁止。
-- [ ] `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義する。
-  現状の `codex-sidecar diagnostics --project <repo> --preset auditor --json` は
-  `PRESET_NOT_FOUND: preset "auditor" does not exist`。この error が出る間は
-  matrix の `codex-sidecar` row は `E_BACKEND_NOT_IMPLEMENTED` のままにする。
+- [x] `codex-sidecar` を primary auditor 候補として測るため、matrix 測定の前に
+  `codex-sidecar` 側へ auditor preset / workflow を追加した。
+  `codex-sidecar` commit `457a7e3 Add auditor sidecar workflow` で `auditor` workflow と
+  `codex_auditor` MCP tool が追加済み。Spotter 側 `.codex-sidecar.yml` にも
+  `presets.auditor.workflow=auditor` を追加した。既存 `risk-check` / `review` preset は
+  primary auditor として流用しない。
+- [x] `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義した。
+  global install が古い可能性がある間は、smoke では
+  `SPOTTER_CODEX_SIDECAR_CLI_PATH=/home/kite/projects/codex-sidecar/packages/cli/dist/index.js`
+  を使い、local built CLI で `status=ok`, `normalizedRequest.workflow=auditor`,
+  `modelReasoningEffort=low` を確認する。古い sidecar / preset 不在は hidden fallback せず、
+  row-level structured error として残す。
+  Spotter 側 adapter は catalog 入りの大きい auditor request を CLI 引数にせず、
+  temp JSON を `--context-file` で渡す。これは Windows の command-line length 制限を避けるため。
 - [x] 4 象限を同じ fixture で評価する harness を追加する:
   `spotter auditor matrix --stage user_input|turn_end --input FILE [--project DIR]`。
   row は `Claude + Codex CLI`, `Claude + codex-sidecar`, `Codex + Codex CLI`,
-  `Codex + codex-sidecar`。backend が未実装なら hidden fallback せず row-level error として残す。
+  `Codex + codex-sidecar`。backend availability / schema / exit error は hidden fallback せず
+  row-level error として残す。
   row 実行時は host marker env (`CLAUDE_CODE` / `CODEX_SANDBOX`) を row ごとに明示し、
   現在の親プロセス環境に引きずられて host 判定が混ざらないようにする。
 - [x] primary auditor と second-pass / work の評価を分ける。
@@ -355,8 +370,11 @@ Gate:
   `processCount=1`, `processCountMethod="direct_child_spawn"` として diagnostics に出す。
   descendant process tree は現時点では測らない。
 - [ ] second-pass / work では durable result / worktree / diagnostics / review quality を測る。
-- [ ] `codex-sidecar` primary auditor workflow が追加された後、同じ matrix fixture で
-  4 row すべてを実測し、`codex-sidecar` row が error でないことを確認する。
+- [x] `codex-sidecar` primary auditor workflow が追加された後、同じ matrix fixture で
+  4 row すべてを実測し、`codex-sidecar` row が error でないことを確認した。
+  2026-05-06 smoke: `claude.codex-cli=10041ms`, `claude.codex-sidecar=12863ms`,
+  `codex.codex-cli=10383ms`, `codex.codex-sidecar=13983ms`。全 row が
+  `mcp__caveat__caveat_search` を検出し、schema success / processCount=1。
 - [ ] Claude host の primary default を `codex-sidecar` にするか `codex-cli` にするかは、
   この matrix evaluation で決める。
 - [ ] Codex host の primary default は Codex CLI 優先。ただし sidecar の方が
@@ -365,9 +383,9 @@ Gate:
 Gate:
 
 - [x] `codex-sidecar` の存在意義を primary auditor 以外の workflow boundary として説明できる。
-  現時点の `codex-sidecar` は primary auditor ではなく、durable result / worktree / review quality を
-  伴う second-pass / work boundary。primary auditor で比較するには auditor 専用 workflow を
-  追加してから測る。
+  primary auditor は Codex CLI が latency 優位に見える一方、`codex-sidecar` は durable result /
+  worktree / diagnostics / MCP tool boundary を持つ second-pass / work の基盤であり、
+  primary auditor では backend 整合性と cross-host 比較の選択肢として残す。
 - [ ] Claude host に移植する backend policy が、Codex native 実測に基づいている。
 
 ### Phase 5. Claude Host Port
@@ -440,9 +458,9 @@ Gate:
 - `codex exec --output-schema` の final response 取り出しは、version drift にどこまで耐えるか。
 - `codex exec --ephemeral` が本当に session file / project state を汚さないか。
 - Claude host で選択 backend が hook timeout 内に安定して収まるか。
-- `codex-sidecar` 側に auditor 専用 preset / workflow を追加する必要があるか。
-  2026-05-06 の local sidecar 調査では、既存 workflow に `auditor` は無かった。
-  したがって必要。`risk-check` / `review` の流用は primary / second-pass 境界を壊すので不可。
+- global install 済み `codex-sidecar` が auditor workflow 追加済み commit に追従していない環境で、
+  Spotter 側がどの診断メッセージを出すべきか。現時点の smoke は local built CLI を
+  `SPOTTER_CODEX_SIDECAR_CLI_PATH` で指定して実施している。
 
 ## Audit Snapshot
 
@@ -469,8 +487,9 @@ Gate:
   host detection の neutral module 化を Phase 1 に追加済み。
 - `codex exec --output-schema --output-last-message` smoke で last-message file の schema-valid JSON を確認し、
   stdin ignore、stderr bounded diagnostics、`CODEX_HOME` auth 隔離リスクを Phase 2 に追加済み。
-- `codex-sidecar` primary auditor adapter は Phase 4 の auditor workflow 実装前なら
-  `E_BACKEND_NOT_IMPLEMENTED` とし、second-pass workflow の存在と混同しない方針に固定済み。
+- `codex-sidecar` primary auditor adapter は auditor workflow / preset がある sidecar を呼び、
+  古い sidecar や preset 不在は structured error として表面化する。second-pass workflow の存在だけで
+  primary auditor 実装済みとは判定しない方針に固定済み。
 - `SPOTTER_AUDITOR_BACKEND=auto` と `SPOTTER_AUDITOR_BACKEND_POLICY=current|next` の初期挙動を
   testable な selector contract として固定済み。
 - Phase 1 実装で `src/core/auditor-backend.mjs`, `src/core/auditor-response.mjs`,
@@ -520,20 +539,21 @@ Gate:
   を追加した。同じ fixture から 4 row (`claude.codex-cli`, `claude.codex-sidecar`,
   `codex.codex-cli`, `codex.codex-sidecar`) を評価し、success / error、latency、
   schema success、direct child process count、recursion safety label を JSON で出す。
-  比較表として読めるよう、Codex CLI の raw stdout / stderr は matrix output では byte count に
+  比較表として読めるよう、backend の raw stdout / stderr は matrix output では byte count に
   圧縮する。row 実行時は host marker env を row ごとに明示する。
-  2026-05-06 の実 matrix smoke では、`GeForce 5000` fixture に対して
-  `claude.codex-cli durationMs=9984`, `codex.codex-cli durationMs=7698` で
-  `mcp__caveat__caveat_search` を検出し、両 row とも schema success / exit code 0 /
-  `processCount=1`。
-  `claude.codex-sidecar` / `codex.codex-sidecar` は `E_BACKEND_NOT_IMPLEMENTED`。
-  `codex-sidecar` primary auditor はまだ `E_BACKEND_NOT_IMPLEMENTED` row になるため、
-  sidecar row の実測は auditor workflow / diagnostics preset 追加後に行う。
-- local `codex-sidecar` 調査では、`codex-sidecar --help` は未対応で `Unknown option: --help`、
-  `codex-sidecar diagnostics --project /home/kite/projects/Spotter --preset auditor --json` は
-  `PRESET_NOT_FOUND: preset "auditor" does not exist`。installed core の `WORKFLOWS` は
-  `review/explore/work/opinion/risk-check` のみ。primary auditor 用に既存 workflow を流用せず、
-  upstream / sidecar 側に auditor workflow を追加してから adapter を実装する。
+  2026-05-06 の最新 matrix smoke では、`GeForce 5000` fixture に対して 4 row すべてが
+  success。`claude.codex-cli durationMs=10041`, `claude.codex-sidecar durationMs=12863`,
+  `codex.codex-cli durationMs=10383`, `codex.codex-sidecar durationMs=13983`。
+  すべて `mcp__caveat__caveat_search` を検出し、schema success / exit code 0 /
+  `processCount=1`。recursion safety は Codex CLI が `spotter_parent_pid_backend_env`、
+  sidecar が `spotter_parent_pid_sidecar_env`。
+- `codex-sidecar` commit `457a7e3 Add auditor sidecar workflow` により、sidecar 側は
+  `auditor` workflow / `codex_auditor` MCP tool / `pass` / `missingTools` structured output を
+  持つ。Spotter 側は `.codex-sidecar.yml` の `auditor` preset と
+  `src/core/codex-sidecar-auditor-backend.mjs` で
+  `codex-sidecar auditor --project <repo> --preset auditor --json --context-file <temp>` を呼ぶ。
+  global install が古い可能性がある間は、local built CLI を
+  `SPOTTER_CODEX_SIDECAR_CLI_PATH` で指定して smoke する。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に
