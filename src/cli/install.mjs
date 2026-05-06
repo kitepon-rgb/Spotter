@@ -1,4 +1,5 @@
-// `spotter install` — create ~/.spotter/, register hooks in .claude/settings.json.
+// `spotter install` — create ~/.spotter/, register Claude hooks, and register
+// Codex native hooks when the Codex CLI is available.
 //
 // Per plan §15.4, this shows a diff and asks for confirmation before touching settings.json.
 //
@@ -12,6 +13,7 @@
 // has no projectRoot so DB seeding is skipped there).
 
 import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +21,7 @@ import { createInterface } from 'node:readline/promises';
 import { version as SPOTTER_VERSION } from '../version.mjs';
 import { refresh } from '../tool-db/refresh.mjs';
 import { localDbPath, globalDbPath } from '../tool-db/loader.mjs';
+import { installCodexHooks } from './codex-hook-cmd.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
@@ -45,7 +48,16 @@ const HOOK_EVENTS = [
   { event: 'SessionEnd', sub: 'session-end', timeout: 3 },
 ];
 
-export async function runInstall({ target = 'project', autoYes = false, cwd = process.cwd(), skipRefresh = false, refreshFn = refresh } = {}) {
+export async function runInstall({
+  target = 'project',
+  autoYes = false,
+  cwd = process.cwd(),
+  skipRefresh = false,
+  skipCodexHooks = skipRefresh,
+  refreshFn = refresh,
+  codexCliPresentFn = isCodexCliPresent,
+  installCodexHooksFn = installCodexHooks,
+} = {}) {
   const settingsPath = target === 'user'
     ? join(homedir(), '.claude', 'settings.json')
     : join(cwd, '.claude', 'settings.json');
@@ -108,6 +120,16 @@ export async function runInstall({ target = 'project', autoYes = false, cwd = pr
     console.log(`wrote ${settingsPath}`);
   }
 
+  if (target === 'project' && !skipCodexHooks) {
+    if (codexCliPresentFn()) {
+      const result = await installCodexHooksFn();
+      console.log('  Codex hooks registered');
+      console.log(`  Codex hooks: ${result.hooksPath}`);
+    } else {
+      console.log('  Codex CLI not found — Codex hooks not registered');
+    }
+  }
+
   // Seed the tool-db so the first session has something to audit against.
   // Runs regardless of whether settings.json changed — re-running `spotter install`
   // on an already-installed project is the canonical way to refresh tool-db drift
@@ -134,6 +156,7 @@ export async function runInstall({ target = 'project', autoYes = false, cwd = pr
 
   console.log('\nnext steps:');
   console.log('  reload Claude Code (or open a new session) to activate Spotter');
+  console.log('  open a new Codex session to activate Codex hooks when Codex CLI is installed');
 }
 
 async function exists(path) {
@@ -143,6 +166,16 @@ async function exists(path) {
   } catch {
     return false;
   }
+}
+
+function isCodexCliPresent() {
+  const result = spawnSync('codex', ['--version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 5_000,
+    windowsHide: true,
+  });
+  return result.status === 0;
 }
 
 async function loadSettings(path) {

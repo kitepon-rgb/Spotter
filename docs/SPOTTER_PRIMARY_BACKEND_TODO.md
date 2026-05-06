@@ -15,12 +15,12 @@ daemon proliferation safety を壊さない。
 
 この文書は、完了済みの `codex_risk_check` / `codex_review` / `codex_work` を
 `UserPromptSubmit` / `Stop` の主判定 backend と混同しないために作成した次段階計画です。
-v1.4.0 で Codex host 側の primary auditor migration は npm 配布まで完了済みです。
+v1.4.1 で Codex host 側の primary auditor migration は npm 配布まで完了済みです。
 残作業は主に Claude host へ Codex 系 backend を移植するかどうかの実測判断と rollout 観測です。
 
 ## Goal
 
-Codex host の default は v1.4.0 で Codex CLI に固定した。
+Codex host の default は v1.4.1 で Codex CLI に固定した。
 Claude host の最終 default は Claude rate limit 解除後の実測で決める。
 
 | Host | Primary auditor backend | Compatibility / fallback |
@@ -473,7 +473,8 @@ Gate:
 
 - [x] 初期 rollout は opt-in にする。
   Claude daemon の default policy は `current=haiku` のまま維持し、Codex native 側も
-  `spotter codex-hook install` で明示導入された環境だけで動く。backend override は
+  `spotter install` で明示導入された project marker と、Codex CLI presence 時に自動登録される
+  Codex hooks のある環境だけで動く。backend override は
   `SPOTTER_AUDITOR_BACKEND=codex-cli|codex-sidecar|haiku`、
   policy preset は `SPOTTER_AUDITOR_BACKEND_POLICY=next` で明示できる。
 - [x] Codex host smoke を行う。

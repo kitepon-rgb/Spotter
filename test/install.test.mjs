@@ -134,12 +134,37 @@ test('install: re-run seeds tool-db even when hooks are unchanged (v1.1.1 regres
       callCount++;
       return new Map();
     };
-    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh });
-    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh, skipCodexHooks: true });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh, skipCodexHooks: true });
     // Both calls must invoke refresh. The 2nd is the direct regression test for
     // the early-return that v1.1.1 removed — before that fix, the 2nd call
     // short-circuited at "hooks already registered" and never touched refresh.
     assert.equal(callCount, 2, 'refresh should run on both fresh and re-install');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install: registers Codex hooks when Codex CLI is present', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-codex-hooks-'));
+  const calls = [];
+  try {
+    await runInstall({
+      target: 'project',
+      autoYes: true,
+      cwd: dir,
+      skipRefresh: true,
+      skipCodexHooks: false,
+      codexCliPresentFn: () => true,
+      installCodexHooksFn: async () => {
+        calls.push('install');
+        return {
+          hooksPath: '/home/test/.codex/hooks.json',
+          hooks: { sessionStart: 'installed', userPromptSubmit: 'installed', stop: 'installed' },
+        };
+      },
+    });
+    assert.deepEqual(calls, ['install']);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -158,7 +183,7 @@ test('install: refresh failure surfaces recovery hint on stderr', async () => {
       throw new Error('simulated MCP enumeration failure');
     };
     await assert.rejects(
-      runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: failingRefresh }),
+      runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: failingRefresh, skipCodexHooks: true }),
       /simulated MCP/
     );
     const stderrText = captured.join('');

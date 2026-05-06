@@ -1,6 +1,6 @@
 {
   "name": "claude-spotter",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Audit agent running alongside Claude Code that catches missed tool calls — 気づく役と実行する役の分離",
   "type": "module",
   "bin": {
@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kitepon-rgb/Spotter.git"
+    "url": "git+https://github.com/kitepon-rgb/Spotter.git"
   },
   "bugs": {
     "url": "https://github.com/kitepon-rgb/Spotter/issues"

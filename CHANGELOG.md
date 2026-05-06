@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.1
+
+**Codex native hooks の有効化手順を `spotter install` に集約する patch release**。v1.4.0 は npm publish まで成功したが、Codex hooks を使うには `spotter codex-hook install` が別手順として残っていた。完成条件を「global npm install 後、各プロジェクトで `spotter install` する以外の手作業を不要にする」と再定義し、Codex CLI がある環境では `spotter install` が Codex hooks も idempotent に登録するようにした。
+
+### 変更点
+
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**: project install 時に Codex CLI (`codex --version`) を検出し、存在する場合は `installCodexHooks()` を呼んで `~/.codex/hooks.json` と `[features].codex_hooks = true` を更新する。Codex CLI が無い環境では明示メッセージを出して Codex hooks 登録だけを行わない
+- **編集 [test/install.test.mjs](test/install.test.mjs)**: `spotter install` が Codex CLI presence 時に Codex hooks を登録する回帰テストを追加。既存 refresh 系テストは実ユーザー `~/.codex` を触らないよう DI で固定
+- **編集 README / README.ja / postinstall / CLAUDE.md / open issues**: インストール手順を `npm install -g claude-spotter` → 各プロジェクトで `spotter install` に集約。`spotter codex-hook install` は修復 / 明示登録用 command として残す
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.1` で global update
+2. 各プロジェクトで `spotter install` を実行する。Claude hooks、`.spotter/marker.json`、Claude catalog seed が設定され、Codex CLI がある環境では Codex native hooks も登録される
+
 ## 1.4.0
 
 **Codex native hooks を npm 配布可能な完成状態へ昇格する minor bump**。`npm install -g claude-spotter@1.4.0` で `spotter` CLI を global install し、各プロジェクトでは `spotter install`、Codex を使う場合は追加で `spotter codex-hook install` を実行するだけで動く状態にした。手書き tool list や install 時の Codex seed は不要で、Codex 側 catalog は SessionStart hook が自動更新する。

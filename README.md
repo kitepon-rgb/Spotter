@@ -41,12 +41,10 @@ Spotter audits in two stages:
 npm install -g claude-spotter
 cd your-project
 spotter install
-# Optional, for Codex native hooks:
-spotter codex-hook install
 ```
 
 Since `v0.3.0`, Spotter requires **explicit per-project install** (the earlier `postinstall` auto-registration was the leading cause of orphan daemons). `spotter install` writes hooks into the project's `.claude/settings.json`; the audit is then active only in Claude Code sessions for that project.
-Codex support is enabled separately by `spotter codex-hook install`, which writes user-level Codex hooks; project activation still depends on the same per-project `.spotter/marker.json` created by `spotter install`.
+When the Codex CLI is available, the same `spotter install` also registers user-level Codex native hooks. Project activation still depends on the same per-project `.spotter/marker.json`, so unrelated Codex sessions do not trigger Spotter.
 
 After upgrading Spotter, re-run `spotter install` in each installed project when release notes mention hook setting changes. The global package update changes the code path, but existing `.claude/settings.json` timeout values are not rewritten automatically.
 
@@ -105,7 +103,7 @@ flowchart LR
 
 The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`, while Codex uses `<project>/.spotter/tool-db.codex.json`. **The daemon audits against the Claude local DB only**, and Codex native hooks read the Codex local DB. The global DB at `~/.spotter/tool-db.json` is a description-reuse cache shared across projects, not an audit source. Each host-local DB matches that host's **current** discovery snapshot for the project (stale entries are pruned on refresh), so tools from another project or another host cannot overwrite this session's audit catalog.
 
-**`spotter install` seeds the Claude catalog automatically, and the SessionStart hook runs a background `spotter db refresh` on every Claude Code session start** — so you don't need to invoke Claude catalog commands by hand. Codex native hooks do the same for Codex: `spotter codex-hook install` registers a Codex `SessionStart` hook that starts `spotter db refresh --host-agent codex` in the background, updating `.spotter/tool-db.codex.json` without touching the Claude catalog. Claude discovery reads `claude mcp list` plus Claude skills / sub-agents; Codex discovery reads `codex mcp list/get` plus Codex skills. Each MCP server's `tools/list` is fetched via JSON-RPC (HTTP / SSE / stdio transports supported); skill and sub-agent metadata comes straight from frontmatter; the claude.ai baseline (25 hand-curated entries for Gmail / Calendar / Drive over OAuth proxy) is injected only for Claude when `claude mcp list` confirms the server is present. **You never have to maintain the tool list by hand.**
+**`spotter install` seeds the Claude catalog automatically, and the SessionStart hook runs a background `spotter db refresh` on every Claude Code session start** — so you don't need to invoke Claude catalog commands by hand. When Codex CLI is available, the same `spotter install` registers Codex native hooks; their `SessionStart` hook starts `spotter db refresh --host-agent codex` in the background, updating `.spotter/tool-db.codex.json` without touching the Claude catalog. Claude discovery reads `claude mcp list` plus Claude skills / sub-agents; Codex discovery reads `codex mcp list/get` plus Codex skills. Each MCP server's `tools/list` is fetched via JSON-RPC (HTTP / SSE / stdio transports supported); skill and sub-agent metadata comes straight from frontmatter; the claude.ai baseline (25 hand-curated entries for Gmail / Calendar / Drive over OAuth proxy) is injected only for Claude when `claude mcp list` confirms the server is present. **You never have to maintain the tool list by hand.**
 
 ## Spotter and Throughline
 
@@ -143,7 +141,7 @@ spotter codex work --findings findings.json --instruction "Update docs" --approv
   --allowed-path docs/ --preserve-worktree
                          # run approved codex-sidecar work in an isolated worktree
 spotter codex-hook install
-                         # register Codex native SessionStart / UserPromptSubmit / Stop hooks
+                         # repair / explicitly register Codex native hooks (normally handled by spotter install)
 spotter codex-hook diagnostics
                          # check Codex hooks feature and Spotter hook entries
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)

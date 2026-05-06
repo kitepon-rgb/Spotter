@@ -41,12 +41,10 @@ Spotter が拾うのは、たとえばこういう瞬間です。
 npm install -g claude-spotter
 cd your-project
 spotter install
-# 任意: Codex native hooks を使う場合
-spotter codex-hook install
 ```
 
 `v0.3.0` 以降は**プロジェクト単位の明示的 install** を採用しています (v0.2 までの `postinstall` 自動登録はデーモン増殖の主因だったため撤回)。各プロジェクトの `.claude/settings.json` に hook を登録し、そのプロジェクトでの Claude Code セッションのみで有効になります。
-Codex 対応は `spotter codex-hook install` で別途有効化します。Codex hook は user-level に登録されますが、実際に動くプロジェクトは `spotter install` が作る `.spotter/marker.json` で制限されます。
+Codex CLI が使える環境では、同じ `spotter install` が user-level の Codex native hooks も登録します。実際に動くプロジェクトは `spotter install` が作る `.spotter/marker.json` で制限されるため、無関係な Codex セッションでは Spotter は起動しません。
 
 Spotter を upgrade した後、release note で hook 設定変更が案内されている場合は、各 install 済みプロジェクトで `spotter install` を再実行してください。global package update でコード経路は変わりますが、既存 `.claude/settings.json` の timeout 値は自動では書き換わりません。
 
@@ -105,7 +103,7 @@ flowchart LR
 
 監査対象のツール (name + description) は host-local に分離されます。Claude は `<project>/.spotter/tool-db.json`、Codex は `<project>/.spotter/tool-db.codex.json` を使います。**daemon が監査に使うのは Claude local DB のみ**で、Codex native hooks は Codex local DB を読みます。グローバル DB `~/.spotter/tool-db.json` は他プロジェクトでの description 再利用キャッシュとしてのみ機能し、監査入力には混ぜません。各 host-local DB は **その host の現時点の discovery 結果と一致** (refresh 時に prune される) するため、別プロジェクトや別 host のツールリストで上書きされることはありません。
 
-**`spotter install` が Claude catalog の初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、Claude 通常運用で手動コマンドを叩く必要はありません。Codex native hooks も同じ考え方で、`spotter codex-hook install` が Codex `SessionStart` hook を登録し、Codex セッション開始時に `spotter db refresh --host-agent codex` を bg 起動して `.spotter/tool-db.codex.json` を更新します。Claude catalog には書き込みません。Claude discovery は `claude mcp list` と Claude skills / sub-agents、Codex discovery は `codex mcp list/get` と Codex skills を読むため、両 host の利用可能ツール差分を別 DB として保持できます。各 MCP サーバーの `tools/list` は JSON-RPC で取得 (HTTP / SSE / stdio transport 対応)、スキルとサブエージェントは frontmatter から直接抽出、claude.ai baseline (OAuth proxy 経由の Gmail / Calendar / Drive 25 件) は Claude 側でのみ `claude mcp list` に該当サーバーが存在する環境で注入されます。**手書きでツールリストを管理する必要はありません**。
+**`spotter install` が Claude catalog の初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、Claude 通常運用で手動コマンドを叩く必要はありません。Codex CLI が使える環境では、同じ `spotter install` が Codex native hooks も登録します。Codex `SessionStart` hook は `spotter db refresh --host-agent codex` を bg 起動して `.spotter/tool-db.codex.json` を更新します。Claude catalog には書き込みません。Claude discovery は `claude mcp list` と Claude skills / sub-agents、Codex discovery は `codex mcp list/get` と Codex skills を読むため、両 host の利用可能ツール差分を別 DB として保持できます。各 MCP サーバーの `tools/list` は JSON-RPC で取得 (HTTP / SSE / stdio transport 対応)、スキルとサブエージェントは frontmatter から直接抽出、claude.ai baseline (OAuth proxy 経由の Gmail / Calendar / Drive 25 件) は Claude 側でのみ `claude mcp list` に該当サーバーが存在する環境で注入されます。**手書きでツールリストを管理する必要はありません**。
 
 ## Throughline との関係
 
@@ -142,7 +140,7 @@ spotter codex work --findings findings.json --instruction "docs 更新" --approv
   --allowed-path docs/ --preserve-worktree
                          # 承認済み codex-sidecar work を isolated worktree で実行
 spotter codex-hook install
-                         # Codex native SessionStart / UserPromptSubmit / Stop hook を登録
+                         # Codex native hooks の修復 / 明示登録 (通常は spotter install が実行)
 spotter codex-hook diagnostics
                          # Codex hooks feature と Spotter hook 登録を診断
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
