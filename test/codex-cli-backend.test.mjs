@@ -50,8 +50,22 @@ test('buildCodexExecArgs: pins schema, last-message, read-only sandbox, and prom
     'read-only',
     '--cd',
     '/repo',
+    '-c',
+    'model_reasoning_effort="low"',
     'judge',
   ]);
+});
+
+test('buildCodexExecArgs: accepts explicit auditor model and reasoning effort overrides', () => {
+  const args = buildCodexExecArgs({
+    schemaPath: '/tmp/schema.json',
+    lastMessagePath: '/tmp/last.json',
+    projectRoot: '/repo',
+    prompt: 'judge',
+    model: 'gpt-5.4-mini',
+    reasoningEffort: 'medium',
+  });
+  assert.deepEqual(args.slice(-5), ['--model', 'gpt-5.4-mini', '-c', 'model_reasoning_effort="medium"', 'judge']);
 });
 
 test('buildCodexCliSpawnOptions: ignores stdin and marks Codex children for recursion gates', () => {
@@ -97,13 +111,16 @@ test('createCodexCliAuditorBackend: reads last-message JSON, filters catalog mis
   const backend = createCodexCliAuditorBackend({
     catalog,
     projectRoot: '/repo',
-    env: { PATH: '/bin' },
+    env: { PATH: '/bin', SPOTTER_CODEX_CLI_MODEL: 'gpt-5.4-mini', SPOTTER_CODEX_CLI_REASONING_EFFORT: 'medium' },
     spawnFn,
   });
   const judgment = await backend.judge({ stage: 'user_input', userInput: '罠を確認して' });
   assert.equal(captured.cmd, 'codex');
   assert.equal(captured.opts.stdio[0], 'ignore');
   assert.equal(captured.opts.env.SPOTTER_CHILD_BACKEND, 'codex-cli');
+  assert.ok(captured.args.includes('--model'));
+  assert.ok(captured.args.includes('gpt-5.4-mini'));
+  assert.ok(captured.args.includes('model_reasoning_effort="medium"'));
   const schemaPath = captured.args[captured.args.indexOf('--output-schema') + 1];
   const tempDir = dirname(schemaPath);
   await assert.rejects(access(tempDir));

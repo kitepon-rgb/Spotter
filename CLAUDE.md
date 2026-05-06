@@ -146,7 +146,11 @@ spotter hook <event>              # 内部用 (Claude Code hook から呼ばれ�
 `UserPromptSubmit` / `Stop` の primary auditor backend 置換ではない。primary backend migration は
 [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) を参照する。
 `spotter codex-hook *` は Codex native hooks 用の experimental adapter であり、Codex host の
-primary auditor backend は既定で Codex CLI (`codex exec`) を使う。
+primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査専用の子 Codex は
+`model_reasoning_effort="low"`、hook auditor timeout 20s を既定にし、短い Codex `Stop`
+応答は重複監査せず skip する。`SPOTTER_CODEX_CLI_MODEL` /
+`SPOTTER_CODEX_CLI_REASONING_EFFORT` / `SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS` /
+`SPOTTER_CODEX_STOP_SHORT_FINAL_MAX_CHARS` で実測用に上書き可能。
 
 テストランナーは Node 組み込み (`node --test`)。現行 CI は `.github/workflows/ci.yml` で Node 22.5 / 22.x の Linux / Windows / macOS matrix を `node --test` で走らせる。
 

@@ -7,6 +7,7 @@ import { AuditorBackendError } from './auditor-error.mjs';
 import { filterCatalogMisses, parseAuditorResponse } from './auditor-response.mjs';
 
 const DEFAULT_CODEX_CLI_TIMEOUT_MS = 45_000;
+const DEFAULT_CODEX_CLI_REASONING_EFFORT = 'low';
 const STDERR_LIMIT = 32 * 1024;
 const STDOUT_LIMIT = 64 * 1024;
 
@@ -71,6 +72,8 @@ export function createCodexCliAuditorBackend({
           env,
           spawnFn,
           timeoutMs,
+          model: env?.SPOTTER_CODEX_CLI_MODEL,
+          reasoningEffort: env?.SPOTTER_CODEX_CLI_REASONING_EFFORT || DEFAULT_CODEX_CLI_REASONING_EFFORT,
         });
         let rawFinal;
         try {
@@ -142,13 +145,13 @@ export function buildCodexCliAuditorPrompt({ catalog, input }) {
   return lines.join('\n');
 }
 
-export function buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, prompt }) {
+export function buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, prompt, model = '', reasoningEffort = DEFAULT_CODEX_CLI_REASONING_EFFORT }) {
   for (const [name, value] of Object.entries({ schemaPath, lastMessagePath, projectRoot, prompt })) {
     if (typeof value !== 'string' || value.length === 0) {
       throw new TypeError(`buildCodexExecArgs: ${name} must be a non-empty string`);
     }
   }
-  return [
+  const args = [
     'exec',
     '--json',
     '--output-schema',
@@ -162,8 +165,15 @@ export function buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, p
     'read-only',
     '--cd',
     projectRoot,
-    prompt,
   ];
+  if (typeof model === 'string' && model.length > 0) {
+    args.push('--model', model);
+  }
+  if (typeof reasoningEffort === 'string' && reasoningEffort.length > 0) {
+    args.push('-c', `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
+  }
+  args.push(prompt);
+  return args;
 }
 
 export function buildCodexCliSpawnOptions({ projectRoot, env = process.env } = {}) {
@@ -192,8 +202,10 @@ async function runCodexExec({
   env,
   spawnFn,
   timeoutMs,
+  model,
+  reasoningEffort,
 }) {
-  const args = buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, prompt });
+  const args = buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, prompt, model, reasoningEffort });
   const options = buildCodexCliSpawnOptions({ projectRoot, env });
   const startedAt = Date.now();
   let child;

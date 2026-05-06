@@ -59,7 +59,9 @@ and `Stop`, keeps `.spotter/marker.json` project gating, exits early when `SPOTT
 is set, and selects Codex CLI as the default primary auditor backend. Codex `Stop` does not
 block the just-finished answer. It queues Spotter context under `.spotter/codex-pending/` and
 surfaces it on the next same-session `UserPromptSubmit`; backend errors are also written to
-stderr so one-shot `codex exec` runs do not hide the failure.
+stderr so one-shot `codex exec` runs do not hide the failure. Codex hook auditor calls use
+`model_reasoning_effort="low"` and a 20s timeout by default. Short `Stop` final responses with
+no used tools are skipped to avoid duplicate post-answer latency.
 
 - `SessionStart`
   - returns without spawning when `SPOTTER_PARENT_PID` is set.

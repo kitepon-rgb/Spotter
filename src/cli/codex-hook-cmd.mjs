@@ -22,7 +22,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
 const SPOTTER_BIN = join(PACKAGE_ROOT, 'bin', 'spotter.mjs');
 const CODEX_HOOK_TIMEOUT_SEC = 60;
+const DEFAULT_CODEX_HOOK_AUDITOR_TIMEOUT_MS = 20_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
+const DEFAULT_CODEX_STOP_SHORT_FINAL_MAX_CHARS = 120;
 const CODEX_PENDING_DIR = 'codex-pending';
 
 const CODEX_HOOK_USAGE = `spotter codex-hook — experimental Codex native hook adapter
@@ -121,6 +123,7 @@ export async function runCodexStopHook({
   const transcriptPath = requireString(input, 'transcript_path');
   const finalResponse = codexLastAssistantMessage(input) ?? '(no final response available)';
   const usedTools = await readCodexUsedToolsFn(transcriptPath);
+  if (shouldSkipShortCodexStop({ finalResponse, usedTools, env: process.env })) return;
   const catalog = await readLocalFn({ projectRoot });
   const backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
   let judgment;
@@ -260,7 +263,25 @@ function createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBack
     projectRoot,
     hostAgent: 'codex',
     env: process.env,
+    timeoutMs: codexHookAuditorTimeoutMs(process.env),
   });
+}
+
+function codexHookAuditorTimeoutMs(env) {
+  const raw = env?.SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS;
+  if (raw === undefined || raw === '') return DEFAULT_CODEX_HOOK_AUDITOR_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CODEX_HOOK_AUDITOR_TIMEOUT_MS;
+}
+
+function shouldSkipShortCodexStop({ finalResponse, usedTools, env }) {
+  if (Array.isArray(usedTools) && usedTools.length > 0) return false;
+  const raw = env?.SPOTTER_CODEX_STOP_SHORT_FINAL_MAX_CHARS;
+  const max = raw === undefined || raw === ''
+    ? DEFAULT_CODEX_STOP_SHORT_FINAL_MAX_CHARS
+    : Number(raw);
+  if (!Number.isFinite(max) || max <= 0) return false;
+  return [...String(finalResponse).trim()].length <= max;
 }
 
 function writeCodexUserPromptContexts({ contexts, writeOutput }) {

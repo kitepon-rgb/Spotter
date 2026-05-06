@@ -289,11 +289,20 @@ Gate:
 - [x] Codex host では `codex-sidecar` を primary backend default にしない。
 - [x] Codex host で Codex CLI unavailable のとき、明示 error を返す。
   Codex hook adapter は Haiku に落とさず、Codex CLI backend の structured error を表面化する。
-- [ ] Codex native 環境で latency tuning を行う:
-  short prompt skip、catalog compression、backend warm path、per-stage timeout、
-  cache / memoization、async advisory 化できる箇所を実測する。
-- [ ] Codex native で `UserPromptSubmit` 相当の体感遅延を記録する。
-- [ ] Codex native での改善策を「Claude に移植可能」「Codex 固有」に分類する。
+- [x] Codex native 環境で latency tuning を行う:
+  初期 tuning として、子 Codex auditor を `model_reasoning_effort="low"` に固定し、
+  hook auditor timeout を 20s に短縮し、短い `Stop` final response + usedTools 0 件は
+  重複監査せず skip する。catalog compression、backend warm path、cache / memoization は
+  Phase 4 matrix 後の追加候補として残す。
+- [x] Codex native で `UserPromptSubmit` 相当の体感遅延を記録する。
+  2026-05-06 direct hook smoke:
+  short prompt skip `elapsed=0.09s`、通常 `UserPromptSubmit` auditor `elapsed=7.42s`。
+  short `Stop` skip は `elapsed=0.08s`。親 `codex exec` 全体は Web Search まで含め
+  `elapsed=41.05s` だったため、Spotter hook latency とは分けて扱う。
+- [x] Codex native での改善策を「Claude に移植可能」「Codex 固有」に分類する。
+  Claude に移植可能: short final `Stop` skip、per-stage timeout、pending queue 型の
+  post-answer context surface。Codex 固有: `codex exec -c model_reasoning_effort="low"`、
+  Codex `Stop` の block 回避、`SPOTTER_CODEX_CLI_MODEL` など Codex CLI child knobs。
 
 Gate:
 
@@ -307,7 +316,9 @@ Gate:
 - [x] Codex host で Spotter が使えない場合、silent pass ではなく明示 error になる。
   Codex usage limit は `E_CODEX_CLI_EXIT` と backend stdout/stderr diagnostics として
   `additionalContext` / Stop stderr + pending に出る。Haiku fallback は使わない。
-- [ ] Codex native で latency の改善・悪化を数値で説明できる。
+- [x] Codex native で latency の改善・悪化を数値で説明できる。
+  UserPromptSubmit hook は 7.42s、short Stop は 0.08s。親 Codex の tool / Web Search を
+  含む total turn は 41.05s で、Spotter hook と親 agent work を分けて評価する。
 
 ### Phase 4. Backend Matrix Evaluation
 
@@ -469,6 +480,12 @@ Gate:
   `SPOTTER_PENDING_SMOKE_20260506` を入れた実 smoke では、次 `UserPromptSubmit` で
   model が `SPOTTER_PENDING_VISIBLE` と応答した。same-session pending context は
   model-visible と確認済み。smoke 用 pending file は削除済み。
+- Phase 3 latency tuning で、Codex CLI auditor args に `-c model_reasoning_effort="low"` を
+  追加し、`SPOTTER_CODEX_CLI_MODEL` / `SPOTTER_CODEX_CLI_REASONING_EFFORT` で上書き可能にした。
+  Codex hook adapter は auditor timeout 20s を既定にし、
+  `SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS` で上書き可能。短い `Stop` final response かつ
+  used tools 0 件は backend を呼ばず skip する。`SPOTTER_CODEX_STOP_SHORT_FINAL_MAX_CHARS`
+  で閾値変更または 0 以下による無効化が可能。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に

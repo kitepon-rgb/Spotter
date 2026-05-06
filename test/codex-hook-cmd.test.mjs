@@ -167,6 +167,45 @@ test('runCodexUserPromptSubmitHook: backend error is surfaced as Codex context, 
   }
 });
 
+test('runCodexUserPromptSubmitHook: Codex hook auditor timeout defaults short and accepts env override', async () => {
+  const project = await makeProject();
+  const old = process.env.SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS;
+  const seen = [];
+  try {
+    delete process.env.SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS;
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        prompt: 'GeForce 5000 番台について既知の罠を調べて',
+      }),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+      createAuditorBackendFn: ({ timeoutMs }) => {
+        seen.push(timeoutMs);
+        return { judge: async () => ({ pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } }) };
+      },
+    });
+
+    process.env.SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS = '1234';
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        prompt: 'GeForce 5000 番台について既知の罠を調べて',
+      }),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+      createAuditorBackendFn: ({ timeoutMs }) => {
+        seen.push(timeoutMs);
+        return { judge: async () => ({ pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } }) };
+      },
+    });
+
+    assert.deepEqual(seen, [20_000, 1234]);
+  } finally {
+    if (old === undefined) delete process.env.SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS;
+    else process.env.SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS = old;
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test('runCodexUserPromptSubmitHook: exits outside installed Spotter project', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-codex-hook-outside-'));
   const out = [];
@@ -191,6 +230,7 @@ test('runCodexStopHook: queues turn_end miss for next UserPromptSubmit context',
   const project = await makeProject();
   const stopOut = [];
   const userOut = [];
+  const longFinalResponse = 'GPU について断定しました。'.repeat(20);
   try {
     await runCodexStopHook({
       readInput: async () => ({
@@ -198,7 +238,7 @@ test('runCodexStopHook: queues turn_end miss for next UserPromptSubmit context',
         hook_event_name: 'Stop',
         session_id: 'sess-spotter-stop',
         transcript_path: '/tmp/transcript.jsonl',
-        last_assistant_message: 'GPU について断定しました',
+        last_assistant_message: longFinalResponse,
       }),
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
       readCodexUsedToolsFn: async (transcriptPath) => {
@@ -213,7 +253,7 @@ test('runCodexStopHook: queues turn_end miss for next UserPromptSubmit context',
             pass: false,
             findings: [{
               toolName: 'mcp__caveat__caveat_search',
-              reason: `${input.stage}:${input.finalResponse}:${input.usedTools.length}`,
+              reason: `${input.stage}:${input.finalResponse.length}:${input.usedTools.length}`,
             }],
             anomalies: [],
             meta: { backend: 'codex-cli' },
@@ -252,13 +292,14 @@ test('runCodexStopHook: backend error is queued for next UserPromptSubmit contex
   const stopOut = [];
   const stopErr = [];
   const userOut = [];
+  const longFinalResponse = 'GPU について断定しました。'.repeat(20);
   try {
     await runCodexStopHook({
       readInput: async () => ({
         cwd: project,
         session_id: 'sess-spotter-stop-error',
         transcript_path: '/tmp/transcript.jsonl',
-        last_assistant_message: 'GPU について断定しました',
+        last_assistant_message: longFinalResponse,
       }),
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
       readCodexUsedToolsFn: async () => [],
@@ -292,6 +333,33 @@ test('runCodexStopHook: backend error is queued for next UserPromptSubmit contex
     const parsed = JSON.parse(userOut.join(''));
     assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_TIMEOUT/);
     assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: skips short final responses with no used tools', async () => {
+  const project = await makeProject();
+  const out = [];
+  try {
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-spotter-short-stop',
+        transcript_path: '/tmp/transcript.jsonl',
+        last_assistant_message: '短い回答です。',
+      }),
+      readCodexUsedToolsFn: async () => [],
+      readLocalFn: async () => {
+        throw new Error('short final response should not load catalog');
+      },
+      createAuditorBackendFn: () => {
+        throw new Error('short final response should not invoke backend');
+      },
+      writeOutput: (text) => out.push(text),
+    });
+
+    assert.deepEqual(out, []);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
