@@ -50,6 +50,8 @@ test('buildCodexExecArgs: pins schema, last-message, read-only sandbox, and prom
     'read-only',
     '--cd',
     '/repo',
+    '--model',
+    'gpt-5.4-mini',
     '-c',
     'model_reasoning_effort="low"',
     'judge',
@@ -66,6 +68,17 @@ test('buildCodexExecArgs: accepts explicit auditor model and reasoning effort ov
     reasoningEffort: 'medium',
   });
   assert.deepEqual(args.slice(-5), ['--model', 'gpt-5.4-mini', '-c', 'model_reasoning_effort="medium"', 'judge']);
+});
+
+test('buildCodexExecArgs: can omit auditor model only when explicitly disabled', () => {
+  const args = buildCodexExecArgs({
+    schemaPath: '/tmp/schema.json',
+    lastMessagePath: '/tmp/last.json',
+    projectRoot: '/repo',
+    prompt: 'judge',
+    model: '',
+  });
+  assert.ok(!args.includes('--model'));
 });
 
 test('buildCodexCliSpawnOptions: ignores stdin and marks Codex children for recursion gates', () => {

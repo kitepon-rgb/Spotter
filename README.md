@@ -165,6 +165,10 @@ Primary auditor backend policy: Claude hooks keep the current Haiku-compatible p
 default. Codex native hooks use Codex CLI by default and do not fall back to Haiku;
 their SessionStart hook refreshes `.spotter/tool-db.codex.json` in the background
 without touching the Claude DB.
+Codex CLI auditor child processes explicitly use `gpt-5.4-mini` with
+`model_reasoning_effort="low"` by default so hook checks stay cheap and fast;
+`SPOTTER_CODEX_CLI_MODEL` and `SPOTTER_CODEX_CLI_REASONING_EFFORT` can override
+those values for smoke tests or controlled experiments.
 `SPOTTER_AUDITOR_BACKEND=codex-sidecar` is available for explicit sidecar auditor smoke.
 
 ## Design docs

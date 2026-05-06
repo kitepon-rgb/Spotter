@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+**Codex CLI auditor の default model を明示固定**。Spotter の hook 判定は高頻度・低遅延・低コストの
+構造化 JSON 監査であり、Codex CLI の暗黙 default model に依存すると、`--ignore-user-config` 環境で
+実際に呼ぶ model が不透明になるため修正。
+
+### 変更点
+
+- **編集 [src/core/codex-cli-backend.mjs](src/core/codex-cli-backend.mjs)**:
+  `SPOTTER_CODEX_CLI_MODEL` 未設定時も `--model gpt-5.4-mini` を渡すようにした。
+  `SPOTTER_CODEX_CLI_REASONING_EFFORT` 未設定時の `model_reasoning_effort="low"` は維持。
+- **編集 [test/codex-cli-backend.test.mjs](test/codex-cli-backend.test.mjs)**:
+  default args が `gpt-5.4-mini` を含むことと、明示的に `model: ""` を渡した場合だけ
+  `--model` を省略できることを固定。
+- **編集 README / README.ja / CLAUDE.md / docs**: Codex CLI auditor child の既定を
+  `gpt-5.4-mini` + `model_reasoning_effort="low"` と明記。
+
 ## 1.4.3
 
 **README の Codex refresh 手順表現を v1.4.2 の実装と一致させる docs patch release**。v1.4.2 で Codex hooks 登録は `spotter install` に集約済みだが、README / README.ja の common commands コメントに `codex-hook install` 後という古い表現が残っていたため修正。

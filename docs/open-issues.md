@@ -86,6 +86,11 @@ Codex native に Spotter を適用して先に最適化し、実測できた改�
 `stages.*.backends`) を持つようになった。Haiku first/resumed だけでなく、Codex CLI /
 codex-sidecar primary auditor の duration / pass=false / missing 件数を同じ summary で比較できる。
 
+**2026-05-06 更新**: Codex CLI auditor child は、Codex CLI の暗黙 default model に依存せず、
+`gpt-5.4-mini` + `model_reasoning_effort="low"` を明示指定する方針にした。Spotter の hook 判定は
+高頻度・低遅延・低コストの構造化 JSON 監査なので、frontier model を暗黙に使うより
+mini model を固定し、必要な smoke / 実験だけ `SPOTTER_CODEX_CLI_MODEL` で上書きする。
+
 **2026-05-06 v1.4.3 Codex native hook 実機 smoke**: Spotter repo の新 Codex thread で
 `spotter --version` が `spotter 1.4.3`、`spotter codex-hook diagnostics --project
 /home/kite/projects/Spotter` が `availability=available` / `codexHooksFeature=enabled` /

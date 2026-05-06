@@ -75,7 +75,7 @@ answer becomes `Stop Blocked` / exit code 1 rather than a clean continuation, so
 Codex adapter follows the pending-queue pattern until Codex exposes a non-blocking
 Stop continuation / additional-context surface. Backend errors are also written to
 stderr so one-shot `codex exec` runs do not hide the failure. Codex hook auditor calls use
-`model_reasoning_effort="low"` and a 20s timeout by default. Short `Stop` final responses with
+`--model gpt-5.4-mini`, `model_reasoning_effort="low"`, and a 20s timeout by default. Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
 
 - Claude `SessionStart`

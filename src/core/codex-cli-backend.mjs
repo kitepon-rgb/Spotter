@@ -7,6 +7,7 @@ import { AuditorBackendError } from './auditor-error.mjs';
 import { filterCatalogMisses, parseAuditorResponse } from './auditor-response.mjs';
 
 const DEFAULT_CODEX_CLI_TIMEOUT_MS = 45_000;
+const DEFAULT_CODEX_CLI_MODEL = 'gpt-5.4-mini';
 const DEFAULT_CODEX_CLI_REASONING_EFFORT = 'low';
 const STDERR_LIMIT = 32 * 1024;
 const STDOUT_LIMIT = 64 * 1024;
@@ -73,7 +74,7 @@ export function createCodexCliAuditorBackend({
           env,
           spawnFn,
           timeoutMs,
-          model: env?.SPOTTER_CODEX_CLI_MODEL,
+          model: env?.SPOTTER_CODEX_CLI_MODEL || DEFAULT_CODEX_CLI_MODEL,
           reasoningEffort: env?.SPOTTER_CODEX_CLI_REASONING_EFFORT || DEFAULT_CODEX_CLI_REASONING_EFFORT,
         });
         let rawFinal;
@@ -146,7 +147,7 @@ export function buildCodexCliAuditorPrompt({ catalog, input }) {
   return lines.join('\n');
 }
 
-export function buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, prompt, model = '', reasoningEffort = DEFAULT_CODEX_CLI_REASONING_EFFORT }) {
+export function buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, prompt, model = DEFAULT_CODEX_CLI_MODEL, reasoningEffort = DEFAULT_CODEX_CLI_REASONING_EFFORT }) {
   for (const [name, value] of Object.entries({ schemaPath, lastMessagePath, projectRoot, prompt })) {
     if (typeof value !== 'string' || value.length === 0) {
       throw new TypeError(`buildCodexExecArgs: ${name} must be a non-empty string`);

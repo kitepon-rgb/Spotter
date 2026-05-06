@@ -163,6 +163,9 @@ SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root 
 Primary auditor backend policy: Claude hooks は現行の Haiku compatibility path を既定のまま維持します。
 Codex native hooks は Codex CLI を既定 backend とし、Haiku へ fallback しません。
 Codex 側の SessionStart hook は `.spotter/tool-db.codex.json` を bg refresh し、Claude DB には触れません。
+Codex CLI auditor の子プロセスは、hook 判定を安く速く保つため既定で `gpt-5.4-mini` と
+`model_reasoning_effort="low"` を明示指定します。実測や制御された実験では
+`SPOTTER_CODEX_CLI_MODEL` / `SPOTTER_CODEX_CLI_REASONING_EFFORT` で上書きできます。
 明示 smoke には `SPOTTER_AUDITOR_BACKEND=codex-sidecar` も使えます。
 
 ## 設計ドキュメント
