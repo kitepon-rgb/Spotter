@@ -41,9 +41,12 @@ Spotter が拾うのは、たとえばこういう瞬間です。
 npm install -g claude-spotter
 cd your-project
 spotter install
+# 任意: Codex native hooks を使う場合
+spotter codex-hook install
 ```
 
 `v0.3.0` 以降は**プロジェクト単位の明示的 install** を採用しています (v0.2 までの `postinstall` 自動登録はデーモン増殖の主因だったため撤回)。各プロジェクトの `.claude/settings.json` に hook を登録し、そのプロジェクトでの Claude Code セッションのみで有効になります。
+Codex 対応は `spotter codex-hook install` で別途有効化します。Codex hook は user-level に登録されますが、実際に動くプロジェクトは `spotter install` が作る `.spotter/marker.json` で制限されます。
 
 Spotter を upgrade した後、release note で hook 設定変更が案内されている場合は、各 install 済みプロジェクトで `spotter install` を再実行してください。global package update でコード経路は変わりますが、既存 `.claude/settings.json` の timeout 値は自動では書き換わりません。
 
@@ -56,6 +59,7 @@ spotter uninstall        # このプロジェクトの hook 登録を解除
 - **Node.js 22.5 以上**
 - **Claude Code 2.0 以上**
 - **現行 Claude-backed auditor path では Claude Max プラン** (`claude -p` で Haiku を起動するため)
+- **Codex native hooks では Codex CLI**。Codex host の監査は既定で `codex exec` を使い、Haiku へ fallback しません
 
 ## アーキテクチャ
 
@@ -138,9 +142,9 @@ spotter codex work --findings findings.json --instruction "docs 更新" --approv
   --allowed-path docs/ --preserve-worktree
                          # 承認済み codex-sidecar work を isolated worktree で実行
 spotter codex-hook install
-                         # experimental: Codex native SessionStart / UserPromptSubmit / Stop hook を登録
+                         # Codex native SessionStart / UserPromptSubmit / Stop hook を登録
 spotter codex-hook diagnostics
-                         # experimental: Codex hooks feature と Spotter hook 登録を診断
+                         # Codex hooks feature と Spotter hook 登録を診断
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ```
 
@@ -165,7 +169,7 @@ Codex 側の SessionStart hook は `.spotter/tool-db.codex.json` を bg refresh 
 - **現時点で塞がっていない穴 + 実測未検証の懸念**: [docs/open-issues.md](docs/open-issues.md) — 新規作業に入る前に必読
 - **Claude contract capture**: [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) — Codex 作業で維持すべき hook / daemon / Haiku の現行契約
 - **Claude / Codex 両対応ブリーフ**: [docs/SPOTTER_CODEX_DUAL_SUPPORT.md](docs/SPOTTER_CODEX_DUAL_SUPPORT.md) と完了済み [TODO](docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md) — second-pass `codex-sidecar` workflow
-- **Primary auditor backend migration**: [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) — Codex CLI / `codex-sidecar` を auditor backend として扱う次計画
+- **Primary auditor backend migration**: [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) — Codex CLI / `codex-sidecar` auditor backend の rollout 状況
 - **実装規範と不変条件 (§0)**: [CLAUDE.md](CLAUDE.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止
 - **歴史記録 (v0.1 時点の設計議事録)**: [docs/spotter-plan.md](docs/spotter-plan.md) — 作成時点で固定された議論過程のスナップショット、現行設計は上記 3 点を参照
 
@@ -180,6 +184,7 @@ Codex 側の SessionStart hook は `.spotter/tool-db.codex.json` を bg refresh 
 - **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Bell の監査から silent に脱落させていた)
 - **プロジェクト単位の監査隔離** — daemon が監査に使うのはローカル DB のみ。グローバル DB は description 再利用キャッシュに役割限定。**他プロジェクト**でインストールしたツールが現プロジェクトの監査に混入することはない
 - **手放しでカタログ維持** — `spotter install` が Claude DB を自動 seed、Claude / Codex それぞれの SessionStart が host-local DB を bg refresh する。手書き管理は一切不要
+- **Codex native hooks** — Codex host は primary auditor backend として Codex CLI を使い、`.spotter/tool-db.codex.json` を Claude DB と分離し、backend failure は Haiku fallback ではなく明示 error として扱う
 - **監査対象** — ユーザー追加分 (MCP / スキル / サブエージェント) のみ。Claude Code 本体側のツールは意図的に対象外 (Bell は元から自発率が高いため)
 - **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([CLAUDE.md §0](CLAUDE.md))
 

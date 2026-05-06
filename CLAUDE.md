@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.0** (2026-05-06): **Codex native hooks を npm 配布可能な完成状態へ昇格**。Codex host は `spotter codex-hook install` で `SessionStart` / `UserPromptSubmit` / `Stop` を登録し、primary auditor backend は既定で Codex CLI (`codex exec`) を使う。Codex tool catalog は `.spotter/tool-db.codex.json` に分離し、Codex `SessionStart` が `spotter db refresh --host-agent codex` を detached 起動するため、Claude DB を上書きしない。Codex CLI 子プロセスは read-only sandbox / stdin ignore / `model_reasoning_effort="low"` / 20s hook timeout / schema-valid last-message timeout escape / `SPOTTER_PARENT_PID` + `SPOTTER_BACKEND` + `SPOTTER_CHILD_BACKEND` 再入ガードを持つ。`codex-sidecar` は primary auditor の明示 backend と second-pass / work workflow として維持。npm release では `bin.spotter` を `bin/spotter.mjs` に正規化し、global install 後は各プロジェクトで `spotter install`、Codex 利用時は追加で `spotter codex-hook install` だけを必要手順とする。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
 **v1.3.0** (2026-05-04): **WSL2 で観測された CPU 100% 飽和 + 孤児 `npm exec` プロセス累積 + チャット入力無反応 の根本原因を断つ**。Spotter 自身が動く WSL2 で `ps -eo pid,ppid,pcpu,etime,cmd --sort=-pcpu` 上位に etime 3〜10 秒の `npm exec @modelcontextprotocol/server-*` 等が大量並走、親 PID は `claude -p --resume <uuid> --model claude-haiku-4-5-20251001` (= Spotter daemon の Haiku caller) と判明。`sanitizeHaikuEnv` (v1.1.6) で `CLAUDE_CONFIG_DIR` を strip してデフォルト `~/.claude/` で Haiku を起動していたが、デフォルト config dir には User scope MCP + plugin MCP がフル登録されており claude CLI 2.1.x は `--print` 起動時に全 MCP server を eager spawn する仕様。Haiku は `{name, description}` カタログ監査しか必要としないのに 60+ 個の MCP server が毎回 spawn → 終了 → 再 spawn して CPU 飽和、`daemon-702a677d-...log` で同 sessionId の sudden death + auto-resurrect が 15 分間に 8 回観測された (cgroup OOM 推定)。修正: [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs) の `buildSpawnArgs` に `--strict-mcp-config --mcp-config <empty>` を必ず付ける + `ensureWorkdir` で `~/.spotter/workdir/empty-mcp.json` (`{"mcpServers":{}}`) を idempotent 生成 + `mcpConfigPath` を必須引数化。回帰ガード 5 件追加、既存 2 件追従。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
 **v1.2.6** (2026-05-04): **チャット入力が無視される実害バグの根治** — Chime プロジェクトのセッションで Spotter daemon の Haiku 呼び出しが `E_INTERNAL: haiku exited with code 1` を繰り返し、Claude Code 側 hook timeout (30s) に貼り付いて入力無反応が頻発していた。実プロジェクト同条件 (`tools=357 件 / preamble=93 KB`) で最小再現したところ、claude CLI 2.1.126 が `--print` モードで stdin 最初の read attempt が約 3 秒以内に間に合わないと「stdin 無し」と判定して exit 1 する仕様と、Spotter が `child.stdin.end(prompt)` で 93 KB を pipe (Linux pipe buffer 64 KB) に投げて drain 待ちさせていた実装の組合せが原因と確定。修正: [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs) に新規 `preparePromptFile` を追加し prompt を `os.tmpdir()` の tempfile に書いて fd を `stdio[0]` に渡す方式に変更 (file は kernel が即時 readable と判定するので CLI 側の 3s タイマーに引っかからず、pipe buffer 制約からも独立)。settle 経路 3 種 (close / error / timeout) に `settleAfterCleanup` を入れて tempfile leak 防止。回帰ガード 6 件追加。Chime 同条件の実測で `child.stdin.end → 17s exit 1` から `tempfile fd → 24-32s exit 0` に改善を確認。詳細は [CHANGELOG.md](CHANGELOG.md)。
@@ -136,7 +138,7 @@ spotter diagnostics logs [--json]
 spotter codex risk-check --findings <file> [--host-agent <agent>]
 spotter codex review / explore / opinion --findings <file> [--host-agent <agent>]
 spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path> (--preserve-worktree | --remove-worktree)
-spotter codex-hook install / uninstall / diagnostics   # experimental Codex native hooks; SessionStart refreshes Codex DB
+spotter codex-hook install / uninstall / diagnostics   # Codex native hooks; SessionStart refreshes Codex DB
 spotter daemon start              # 内部用 (hook から呼ばれる)
 spotter hook <event>              # 内部用 (Claude Code hook から呼ばれる)
 ```
@@ -145,7 +147,7 @@ spotter hook <event>              # 内部用 (Claude Code hook から呼ばれ�
 `spotter codex *` は `SpotterFinding[]` を `codex-sidecar` に渡す explicit second-pass workflow であり、
 `UserPromptSubmit` / `Stop` の primary auditor backend 置換ではない。primary backend migration は
 [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) を参照する。
-`spotter codex-hook *` は Codex native hooks 用の experimental adapter であり、Codex host の
+`spotter codex-hook *` は Codex native hooks 用の adapter であり、Codex host の
 primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査専用の子 Codex は
 `model_reasoning_effort="low"`、hook auditor timeout 20s を既定にし、短い Codex `Stop`
 応答は重複監査せず skip する。Codex `SessionStart` は `spotter db refresh --host-agent codex`

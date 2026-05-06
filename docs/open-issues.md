@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点 (v1.3.0 時点, 2026-05-04) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点 (v1.4.0 時点, 2026-05-06) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -171,21 +171,17 @@ timeout 突破頻発なら緊急対処。
 
 **次アクション**: P2 (機会があれば)。対処するなら (a) file lock (`~/.spotter/runtime/tool-db.lock`) で refresh を mutex、(b) saveDb 層で既存ファイルとの merge 差分書き込み、のどちらか。現状は実害観測なしなので放置で可。
 
-### MCP clientInfo.version が package.json と drift (2026-04-20 監査で発見)
-
-**背景**: [src/tool-db/investigate-mcp.mjs:250](../src/tool-db/investigate-mcp.mjs#L250) と [src/tool-db/investigate-mcp-http.mjs:90](../src/tool-db/investigate-mcp-http.mjs#L90) の `clientInfo: { name: 'spotter', version: '0.10.0' }` が hardcode で v1.0.0 と drift している。動作影響なし (MCP server 側が client version を使う実装はほぼない)、cosmetic 問題。MEMORY.md の "package.json bump 時は src/version.mjs も同期" の同類。
-
-**次アクション**: [src/version.mjs](../src/version.mjs) から `SPOTTER_VERSION` を import して使う形に置換。次の bump のタイミングで同梱。
-
 ---
 
 ## 解決済み (参照用)
 
 | 課題 | 解決版 |
 |---|---|
-| `parseMcpListOutput` の stdio tokenizer が `beforeStatus.split(/\s+/)` で、`C:\Program Files\nodejs\node.exe --foo ...` のような空白入り Windows 実行ファイルパスを `C:\Program` に壊していた問題。unquoted Windows absolute executable path (`.exe` / `.cmd` / `.bat`) の抽出と quoted arg 対応を追加し、プラグイン MCP の list-line 由来 spawn descriptor を壊しにくくした | unreleased |
-| Unix daemon IPC が `~/.spotter/runtime` の umask 継承と socket mode 任せで、同一ユーザー外プロセスから connect できる可能性があった問題。runtime dir を `0700`、Unix socket を daemon listen 後に `0600` へ固定し、transport test で mode を検証 | unreleased |
-| frontmatter parser が `description: >` / `description: |` の YAML block scalar に非対応で、block scalar を使う SKILL.md / agent md が description 空扱いになり recall から silent skip され得た問題。zero-deps の最小 parser のまま folded (`>`) / literal (`|`) block scalar を読み取り、skill discovery の回帰テストを追加 | unreleased |
+| Codex native hooks が npm 未配布で、Codex host では `spotter codex-hook install` から Codex CLI primary auditor / host-local `.spotter/tool-db.codex.json` / SessionStart refresh / structured backend error / recursion guard が使えなかった問題。Codex host default を Codex CLI にし、`codex-sidecar` は explicit primary auditor と second-pass / work workflow として残した | v1.4.0 |
+| MCP initialize の `clientInfo.version` が `0.10.0` hardcode のまま package.json と drift していた cosmetic issue。`src/version.mjs` の package version を stdio / HTTP MCP investigate の `clientInfo.version` に使うよう修正 | v1.4.0 |
+| `parseMcpListOutput` の stdio tokenizer が `beforeStatus.split(/\s+/)` で、`C:\Program Files\nodejs\node.exe --foo ...` のような空白入り Windows 実行ファイルパスを `C:\Program` に壊していた問題。unquoted Windows absolute executable path (`.exe` / `.cmd` / `.bat`) の抽出と quoted arg 対応を追加し、プラグイン MCP の list-line 由来 spawn descriptor を壊しにくくした | v1.4.0 |
+| Unix daemon IPC が `~/.spotter/runtime` の umask 継承と socket mode 任せで、同一ユーザー外プロセスから connect できる可能性があった問題。runtime dir を `0700`、Unix socket を daemon listen 後に `0600` へ固定し、transport test で mode を検証 | v1.4.0 |
+| frontmatter parser が `description: >` / `description: |` の YAML block scalar に非対応で、block scalar を使う SKILL.md / agent md が description 空扱いになり recall から silent skip され得た問題。zero-deps の最小 parser のまま folded (`>`) / literal (`|`) block scalar を読み取り、skill discovery の回帰テストを追加 | v1.4.0 |
 | Haiku spawn 時に user/project の MCP server 60+ 個を毎回 load して CPU 100% 飽和 + 孤児 `npm exec` プロセス累積。WSL2 で daemon 3 並走 × 各 Haiku 呼出 = `npm exec @modelcontextprotocol/...` 等の MCP server を秒単位で spawn → 終了 → 再 spawn のサイクル → CPU/メモリ圧 → daemon 自体が cgroup OOM で死亡 → auto-resurrect ループ → 「Chime のチャット入力が無反応」体感症状。`buildSpawnArgs` に `--strict-mcp-config --mcp-config <empty>` 強制 + `ensureWorkdir` で `~/.spotter/workdir/empty-mcp.json` (`{"mcpServers":{}}`) を idempotent 生成。Haiku は `{name, description}` カタログ監査しか必要としないので副作用ゼロ | v1.3.0 |
 | `install.mjs` の `HOOK_EVENTS` が settings.json に書く Stop/UserPromptSubmit timeout が 15s/30s のままで、v0.13.1 の Haiku timeout 緩和 (30→45s) が既存 install ユーザーに届かず Chime 等の重い環境で hook kill による「チャット入力無反応」を誘発していた問題。`HOOK_EVENTS` の該当 timeout を 60s に統一 (Haiku 45s + IPC 往復 + 余裕)。既存 project の settings は global update だけでは書き換わらないため、各 project で `spotter install` 再実行が必要 | v1.3.0 |
 | Claude Code 公式の MCP scope 3 段 (User / Project / Local) のうち User (`~/.claude.json` 直下 `mcpServers`) と Local (`~/.claude.json` `projects[<root>].mcpServers`) を読み損ねていた構造バグ。`claude mcp add -s user -e KEY=val ...` 等で登録した MCP が `claude mcp list` で発見されるが env 抜きで spawn → tools/list 空 → `resolveAll` の prune でカタログから silent に脱落していた。`readMcpServers` を 4 ソース merge (`legacy < user < project < local`) に拡張、Windows の `projects[]` キー揺れ (separator / 大小 / 末尾スラッシュ) を正規化して照合 | v1.2.1 |

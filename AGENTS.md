@@ -38,7 +38,8 @@ The historical incident is documented in `docs/spotter-plan.md` section 18. The
 product contract is to prevent that class of incident. The current proven
 baseline is:
 
-- `SPOTTER_PARENT_PID` blocks hooks spawned by Spotter's own `claude -p`.
+- `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND`, and `SPOTTER_CHILD_BACKEND` block hooks
+  spawned by Spotter's own child backends (`claude -p`, Codex CLI, and sidecar).
 - `agent_id` blocks Bell Task subagent hooks.
 - `source === "startup"` is required before `SessionStart` may spawn a daemon.
 - `.spotter/marker.json` keeps hooks scoped to installed projects.

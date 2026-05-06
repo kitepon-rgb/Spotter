@@ -13,6 +13,8 @@
 // servers. If a server requires auth beyond public URL access, investigate will fail
 // with a descriptive error — caller logs and skips that server.
 
+import { version as SPOTTER_VERSION } from '../version.mjs';
+
 const PROTOCOL_VERSION = '2025-03-26';
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -87,7 +89,7 @@ export async function listToolsHttp({ url, serverName, headers: staticHeaders = 
     params: {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'spotter', version: '0.10.0' },
+      clientInfo: { name: 'spotter', version: SPOTTER_VERSION },
     },
   });
   if (!initResult || initResult.error) {

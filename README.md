@@ -41,9 +41,12 @@ Spotter audits in two stages:
 npm install -g claude-spotter
 cd your-project
 spotter install
+# Optional, for Codex native hooks:
+spotter codex-hook install
 ```
 
 Since `v0.3.0`, Spotter requires **explicit per-project install** (the earlier `postinstall` auto-registration was the leading cause of orphan daemons). `spotter install` writes hooks into the project's `.claude/settings.json`; the audit is then active only in Claude Code sessions for that project.
+Codex support is enabled separately by `spotter codex-hook install`, which writes user-level Codex hooks; project activation still depends on the same per-project `.spotter/marker.json` created by `spotter install`.
 
 After upgrading Spotter, re-run `spotter install` in each installed project when release notes mention hook setting changes. The global package update changes the code path, but existing `.claude/settings.json` timeout values are not rewritten automatically.
 
@@ -56,6 +59,7 @@ spotter uninstall        # remove hooks from this project
 - **Node.js 22.5+**
 - **Claude Code 2.0+**
 - **Claude Max plan** for the current Claude-backed auditor path (Spotter spawns Haiku via `claude -p`)
+- **Codex CLI** for Codex native hooks. Codex host auditing uses `codex exec` by default and does not fall back to Haiku
 
 ## Architecture
 
@@ -139,9 +143,9 @@ spotter codex work --findings findings.json --instruction "Update docs" --approv
   --allowed-path docs/ --preserve-worktree
                          # run approved codex-sidecar work in an isolated worktree
 spotter codex-hook install
-                         # experimental: register Codex native SessionStart / UserPromptSubmit / Stop hooks
+                         # register Codex native SessionStart / UserPromptSubmit / Stop hooks
 spotter codex-hook diagnostics
-                         # experimental: check Codex hooks feature and Spotter hook entries
+                         # check Codex hooks feature and Spotter hook entries
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
 ```
 
@@ -167,7 +171,7 @@ without touching the Claude DB.
 - **Open issues + unverified concerns**: [docs/open-issues.md](docs/open-issues.md) — read this before starting new work
 - **Claude contract capture**: [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) — current hook / daemon / Haiku behavior that Codex work must preserve
 - **Claude / Codex dual-support brief**: [docs/SPOTTER_CODEX_DUAL_SUPPORT.md](docs/SPOTTER_CODEX_DUAL_SUPPORT.md) and completed [TODO](docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md) — second-pass `codex-sidecar` workflows
-- **Primary auditor backend migration**: [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) — next plan for Codex CLI / `codex-sidecar` auditor backends
+- **Primary auditor backend migration**: [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) — Codex CLI / `codex-sidecar` auditor backend rollout status
 - **Implementation invariants (§0)**: [CLAUDE.md](CLAUDE.md) — no fallbacks, no silent failures, no provisional code
 - **Historical record (v0.1 design discussion)**: [docs/spotter-plan.md](docs/spotter-plan.md) — frozen design-discussion snapshot
 
@@ -182,6 +186,7 @@ without touching the Claude DB.
 - **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Bell's audit
 - **Per-project audit isolation** — the daemon audits against the local DB only; the global DB has been demoted to a description-reuse cache. Tools discovered in *other* projects can never bleed into this project's audit set
 - **Zero-touch catalog** — `spotter install` seeds the Claude DB automatically; Claude and Codex SessionStart hooks keep their host-local DBs fresh in the background. You never have to maintain the tool list by hand
+- **Codex native hooks** — Codex host uses Codex CLI as the primary auditor backend, keeps a separate `.spotter/tool-db.codex.json`, and surfaces backend failures explicitly instead of falling back to Haiku
 - **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Bell already uses those reliably
 - **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in CLAUDE.md](CLAUDE.md))
 

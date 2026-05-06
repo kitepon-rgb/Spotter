@@ -30,7 +30,7 @@ Public CLI:
 - `spotter codex opinion --findings <file> [--project <dir>] [--host-agent <agent>]`
 - `spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path>
   (--preserve-worktree | --remove-worktree) [--project <dir>] [--host-agent <agent>]`
-- `spotter codex-hook install [--codex-home <dir>]` (experimental Codex native hooks)
+- `spotter codex-hook install [--codex-home <dir>]` (Codex native hooks)
 - `spotter codex-hook uninstall [--codex-home <dir>]`
 - `spotter codex-hook diagnostics [--codex-home <dir>] [--project <dir>]`
 - `spotter --help | -h`
@@ -56,7 +56,7 @@ hook event exit with code `2` and print usage / error to stderr.
 All hooks read one JSON object from stdin, unless `SPOTTER_PARENT_PID` is set. Invalid or
 empty stdin is an unexpected hook failure.
 
-Codex native hooks are experimental and use Codex hook payloads, not Claude hook JSON. The
+Codex native hooks use Codex hook payloads, not Claude hook JSON. The
 current Codex adapter installs user-level `~/.codex/hooks.json` entries for `SessionStart`,
 `UserPromptSubmit`, and `Stop`, keeps `.spotter/marker.json` project gating, exits early when
 `SPOTTER_PARENT_PID` is set, and selects Codex CLI as the default primary auditor backend.

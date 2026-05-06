@@ -22,8 +22,11 @@ if (process.env.CI === 'true' || process.env.CI === '1') {
 }
 
 console.log('claude-spotter installed.');
-console.log('  Next step (per project you want audited):');
+console.log('  Next step for Claude Code projects you want audited:');
 console.log('    cd <your-project>');
 console.log('    spotter install');
 console.log('  This writes hooks to <project>/.claude/settings.json and a .spotter/');
 console.log('  marker so unrelated `claude -p` invocations do not trigger Spotter.');
+console.log('  Optional for Codex native hooks:');
+console.log('    spotter codex-hook install');
+console.log('  Codex hooks refresh .spotter/tool-db.codex.json on SessionStart.');

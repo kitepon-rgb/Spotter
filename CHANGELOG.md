@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.4.0
+
+**Codex native hooks を npm 配布可能な完成状態へ昇格する minor bump**。`npm install -g claude-spotter@1.4.0` で `spotter` CLI を global install し、各プロジェクトでは `spotter install`、Codex を使う場合は追加で `spotter codex-hook install` を実行するだけで動く状態にした。手書き tool list や install 時の Codex seed は不要で、Codex 側 catalog は SessionStart hook が自動更新する。
+
+### 主要変更
+
+- **Codex native hooks**: `spotter codex-hook install|uninstall|diagnostics|session-start|user-prompt-submit|stop` を npm 配布対象として整備。Codex `SessionStart` は `spotter db refresh --host-agent codex` を detached 起動し、Codex tool catalog を `.spotter/tool-db.codex.json` に更新する。Claude `.spotter/tool-db.json` には触れない
+- **Codex primary auditor backend**: Codex host の既定 backend を Codex CLI (`codex exec`) にした。`UserPromptSubmit` / `Stop` は Codex local DB だけを読み、Codex CLI unavailable / schema invalid / non-zero exit / timeout は structured error として surface する。Haiku への hidden fallback はしない
+- **Codex CLI safety**: 子 Codex は read-only sandbox、stdin `ignore`、`model_reasoning_effort="low"`、hook auditor timeout 20s、bounded stderr diagnostics、`--output-schema` / `--output-last-message` を使う。timeout 時も last-message file に schema-valid final JSON があれば `completionReason=last_message_before_process_close` として success 扱いし、process close 遅延による誤 timeout を避ける
+- **再帰 / セッション増殖ガード**: Codex CLI / `codex-sidecar` 子プロセスに `SPOTTER_PARENT_PID`、`SPOTTER_BACKEND`、`SPOTTER_CHILD_BACKEND` を入れ、hook 共通入口 `isChildCall()` がこれらを stdin 読み取り前に検知して return する。Claude 時代に経験した sub-agent / child session 増殖事故の再発を避ける
+- **host-local tool-db 分離**: Claude は `.spotter/tool-db.json`、Codex は `.spotter/tool-db.codex.json` を使う。`spotter db refresh --host-agent codex` は Codex MCP / skills discovery だけを反映し、Claude refresh と相互に prune / overwrite しない
+- **`codex-sidecar` の位置づけ整理**: primary auditor としては明示 override (`SPOTTER_AUDITOR_BACKEND=codex-sidecar`) で使えるが、Codex host default は Codex CLI。`codex-sidecar` は durable result / diagnostics / worktree / MCP boundary を持つ second-pass (`risk-check`, `review`, `explore`, `opinion`) と approved `work` workflow の基盤として残す
+- **diagnostics / docs**: `spotter doctor` に Codex CLI / Codex hooks / `codex-sidecar` readiness を追加。README / README.ja / CLAUDE.md / contract docs / open issues / migration TODO を v1.4.0 の完成条件へ更新
+- **packaging hardening**: npm publish 時に bin が消える罠を避けるため `package.json` の `bin.spotter` を `bin/spotter.mjs` に正規化。package-lock も `1.4.0` に更新。MCP initialize の `clientInfo.version` は `src/version.mjs` 由来にして package version drift を解消
+
+### 実測 / 検証
+
+- `npm test`: 272 tests, 271 pass, 1 skip
+- Codex native hook smoke: `UserPromptSubmit Completed` / `Stop Completed`
+- Codex hook latency smoke: normal `UserPromptSubmit` 約 7.4s、short `Stop` skip 約 0.08s
+- 4 象限 primary auditor matrix: `claude.codex-cli=10041ms`, `claude.codex-sidecar=12863ms`, `codex.codex-cli=10383ms`, `codex.codex-sidecar=13983ms`
+- `spotter codex risk-check --host-agent codex`: durable `.spotter/sidecar-results/*-codex-risk-check.json` を保存
+- `spotter codex work --dry-run --approve-work --allowed-path ... --remove-worktree --host-agent codex`: scoped work workflow success
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.0` で global update
+2. Claude Code で使う各プロジェクトで `spotter install` を実行する。これは `.claude/settings.json` と `.spotter/marker.json` を作り、Claude catalog の初回 seed も実行する
+3. Codex native hooks を使う場合は一度だけ `spotter codex-hook install` を実行する。以後、Codex `SessionStart` が `.spotter/tool-db.codex.json` を自動 refresh する
+4. `spotter doctor` と `spotter codex-hook diagnostics` で global CLI / Codex hooks / tool-db 状態を確認できる
+
 ## 1.3.0
 
 **Haiku spawn 時に user/project の MCP server を一切 load しないよう強制 — WSL2 で観測された CPU 100% 飽和 + 孤児 `npm exec` プロセス累積 + チャット入力無反応 の根本原因を断った minor bump**。修正は `claude -p` 起動引数に `--strict-mcp-config --mcp-config <empty>` を必ず付けるだけの最小実装、副作用なし。

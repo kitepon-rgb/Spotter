@@ -57,7 +57,7 @@ test('cli: auditor subcommand help exits successfully', async () => {
 test('cli: codex-hook subcommand help exits successfully', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'codex-hook', '--help']);
   assert.equal(stderr, '');
-  assert.ok(stdout.includes('spotter codex-hook — experimental Codex native hook adapter'));
+  assert.ok(stdout.includes('spotter codex-hook — Codex native hook adapter'));
   assert.ok(stdout.includes('spotter codex-hook install [--codex-home DIR]'));
 });
 

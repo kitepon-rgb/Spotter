@@ -29,7 +29,7 @@ const DEFAULT_CODEX_STOP_SHORT_FINAL_MAX_CHARS = 120;
 const CODEX_PENDING_DIR = 'codex-pending';
 const CODEX_HOOK_EVENTS_FILE = 'codex-hook-events.jsonl';
 
-const CODEX_HOOK_USAGE = `spotter codex-hook — experimental Codex native hook adapter
+const CODEX_HOOK_USAGE = `spotter codex-hook — Codex native hook adapter
 
 Usage:
   spotter codex-hook install [--codex-home DIR]
@@ -39,7 +39,7 @@ Usage:
   spotter codex-hook user-prompt-submit
   spotter codex-hook stop
 
-This command is experimental. It installs Codex SessionStart / UserPromptSubmit / Stop hooks and uses Codex CLI as the default primary auditor backend.
+Installs Codex SessionStart / UserPromptSubmit / Stop hooks and uses Codex CLI as the default primary auditor backend.
 `;
 
 export async function runCodexHookCommand({ argv = process.argv.slice(2) } = {}) {

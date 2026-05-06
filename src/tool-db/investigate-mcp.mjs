@@ -14,6 +14,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { listToolsHttp } from './investigate-mcp-http.mjs';
 import { readMcpServers, describeServer } from './mcp-config.mjs';
+import { version as SPOTTER_VERSION } from '../version.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -370,7 +371,7 @@ async function spawnAndQuery({ command, args, env = {} }, serverName) {
         await request('initialize', {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: 'spotter', version: '0.10.0' },
+          clientInfo: { name: 'spotter', version: SPOTTER_VERSION },
         });
         send({ jsonrpc: '2.0', method: 'notifications/initialized' });
         initializedSent = true;

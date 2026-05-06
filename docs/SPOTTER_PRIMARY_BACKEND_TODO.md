@@ -14,17 +14,19 @@ daemon proliferation safety を壊さない。
 - 歴史的な daemon 増殖事故: [`spotter-plan.md`](spotter-plan.md) §18
 
 この文書は、完了済みの `codex_risk_check` / `codex_review` / `codex_work` を
-`UserPromptSubmit` / `Stop` の主判定 backend と混同しないための次段階計画です。
+`UserPromptSubmit` / `Stop` の主判定 backend と混同しないために作成した次段階計画です。
+v1.4.0 で Codex host 側の primary auditor migration は npm 配布まで完了済みです。
+残作業は主に Claude host へ Codex 系 backend を移植するかどうかの実測判断と rollout 観測です。
 
 ## Goal
 
-最終 default は Phase 4 の backend matrix evaluation で決める。
-現時点の初期仮説は次の通り。
+Codex host の default は v1.4.0 で Codex CLI に固定した。
+Claude host の最終 default は Claude rate limit 解除後の実測で決める。
 
 | Host | Primary auditor backend | Compatibility / fallback |
 |---|---|---|
 | Codex | Codex CLI (`codex exec`) | なし。失敗は structured error |
-| Claude | Codex CLI を有力候補。ただし `Claude + codex-sidecar` も整合性候補として評価継続 | 明示 compatibility mode の場合だけ現行 Claude Haiku |
+| Claude | 未固定。Codex CLI を有力候補。ただし `Claude + codex-sidecar` も整合性候補として評価継続 | 明示 compatibility mode の場合だけ現行 Claude Haiku |
 | Unknown / automation | 明示設定がある場合のみ | 明示設定なしなら structured error |
 
 ここでいう backend は、`UserPromptSubmit` / `Stop` 相当の主判定
