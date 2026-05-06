@@ -54,6 +54,17 @@ export function formatDaemonLogSummary(summary) {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([mode, modeStats]) => `${mode}:n=${modeStats.count},avg=${modeStats.averageDurationMs}ms,max=${modeStats.maxDurationMs}ms`);
     if (modes.length > 0) lines.push(`    modes: ${modes.join('; ')}`);
+    const backends = Object.entries(stats.backends)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([backend, backendStats]) => `${backend}:n=${backendStats.count},avg=${backendStats.averageDurationMs}ms,max=${backendStats.maxDurationMs}ms,pass=false=${backendStats.passFalse}`);
+    if (backends.length > 0) lines.push(`    backends: ${backends.join('; ')}`);
+  }
+
+  const backendLines = Object.entries(summary.backends)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([backend, stats]) => `${backend}:n=${stats.count},avg=${stats.averageDurationMs}ms,max=${stats.maxDurationMs}ms,pass=false=${stats.passFalse},missing=${stats.missingTotal}`);
+  if (backendLines.length > 0) {
+    lines.push(`  backends: ${backendLines.join('; ')}`);
   }
 
   lines.push(

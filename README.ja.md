@@ -123,8 +123,8 @@ spotter db refresh       # MCP / スキル / サブエージェントから desc
                          # (v1.1.0 以降、install 時と SessionStart 時に自動実行されるので通常は不要)
 spotter db rebuild       # local + global DB を両方消してから refresh (カタログ設計変更時のクリーン用)
 spotter status           # 稼働中の daemon 一覧
-spotter doctor           # 環境診断 (Node / claude CLI / tool-db 整合性)
-spotter diagnostics logs # daemon log から pass=false / latency / anomaly signal を集計
+spotter doctor           # 環境診断 (Node / claude CLI / Codex readiness / tool-db 整合性)
+spotter diagnostics logs # daemon log から pass=false / backend latency / anomaly signal を集計
 spotter codex risk-check --findings findings.json --host-agent claude
                          # Spotter finding を codex-sidecar に渡して read-only risk analysis
 spotter codex review|explore|opinion --findings findings.json --host-agent claude
@@ -148,6 +148,10 @@ SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root 
 有効時は daemon が `pass:false` finding を detached process の
 `spotter codex risk-check` に渡します。hook 応答は Codex を待ちません。
 配線だけ確認する場合は `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` を併用します。
+
+Primary auditor backend policy: Claude hooks は現行の Haiku compatibility path を既定のまま維持します。
+Codex native hooks は Codex CLI を既定 backend とし、Haiku へ fallback しません。
+明示 smoke には `SPOTTER_AUDITOR_BACKEND=codex-sidecar` も使えます。
 
 ## 設計ドキュメント
 

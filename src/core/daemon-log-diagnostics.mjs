@@ -72,6 +72,7 @@ function createEmptySummary({ logDir }) {
       user_input: createStageSummary(),
       turn_end: createStageSummary(),
     },
+    backends: {},
     anomalies: {
       roleCollapseReset: 0,
       hallucinationFiltered: 0,
@@ -110,6 +111,7 @@ function createStageSummary() {
     missingByTool: {},
     reasons: {},
     modes: {},
+    backends: {},
   };
 }
 
@@ -141,7 +143,18 @@ function parseMessage(summary, message) {
 
   const stageLine = message.match(/^(user_input|turn_end): pass=(true|false), missing=(.*?), (?:backend=([^,]+), )?mode=([^,]+), duration_ms=(\d+)(?:, reason=([^,]+))?$/);
   if (stageLine) {
+    const backend = stageLine[4] ?? 'unknown';
     recordStageCall(summary.stages[stageLine[1]], {
+      pass: stageLine[2] === 'true',
+      missing: parseMissingList(stageLine[3]),
+      backend,
+      mode: stageLine[5],
+      durationMs: Number(stageLine[6]),
+      reason: stageLine[7] ?? null,
+    });
+    recordBackendCall(summary.backends, {
+      backend,
+      stage: stageLine[1],
       pass: stageLine[2] === 'true',
       missing: parseMissingList(stageLine[3]),
       mode: stageLine[5],
@@ -206,23 +219,70 @@ function parseMessage(summary, message) {
   }
 }
 
-function recordStageCall(stage, { pass, missing, mode, durationMs, reason }) {
+function recordStageCall(stage, { pass, missing, backend, mode, durationMs, reason }) {
   stage.calls += 1;
   if (pass) stage.passTrue += 1;
   else stage.passFalse += 1;
   stage.missingTotal += missing.length;
   for (const name of missing) increment(stage.missingByTool, name);
   if (reason) increment(stage.reasons, reason);
-  const modeStats = stage.modes[mode] ?? {
+  addDurationStats(stage.modes, mode, durationMs);
+  if (backend) {
+    const backendStats = stage.backends[backend] ?? createBackendSummary();
+    recordBackendStats(backendStats, { stage: null, pass, missing, mode, durationMs, reason });
+    stage.backends[backend] = backendStats;
+  }
+}
+
+function recordBackendCall(backends, input) {
+  const backend = input.backend || 'unknown';
+  const stats = backends[backend] ?? createBackendSummary();
+  recordBackendStats(stats, input);
+  backends[backend] = stats;
+}
+
+function createBackendSummary() {
+  return {
+    count: 0,
+    passTrue: 0,
+    passFalse: 0,
+    missingTotal: 0,
+    missingByTool: {},
+    stages: {},
+    modes: {},
+    reasons: {},
+    totalDurationMs: 0,
+    maxDurationMs: 0,
+    averageDurationMs: 0,
+  };
+}
+
+function recordBackendStats(stats, { stage, pass, missing, mode, durationMs, reason }) {
+  if (pass) stats.passTrue += 1;
+  else stats.passFalse += 1;
+  stats.missingTotal += missing.length;
+  for (const name of missing) increment(stats.missingByTool, name);
+  if (stage) increment(stats.stages, stage);
+  if (reason) increment(stats.reasons, reason);
+  addDurationFields(stats, durationMs);
+  addDurationStats(stats.modes, mode, durationMs);
+}
+
+function addDurationStats(bucket, key, durationMs) {
+  const stats = bucket[key] ?? {
     count: 0,
     totalDurationMs: 0,
     maxDurationMs: 0,
     averageDurationMs: 0,
   };
-  modeStats.count += 1;
-  modeStats.totalDurationMs += durationMs;
-  modeStats.maxDurationMs = Math.max(modeStats.maxDurationMs, durationMs);
-  stage.modes[mode] = modeStats;
+  addDurationFields(stats, durationMs);
+  bucket[key] = stats;
+}
+
+function addDurationFields(stats, durationMs) {
+  stats.count += 1;
+  stats.totalDurationMs += durationMs;
+  stats.maxDurationMs = Math.max(stats.maxDurationMs, durationMs);
 }
 
 function parseMissingList(value) {
@@ -239,6 +299,7 @@ function mergeSummary(target, source) {
   target.daemon.stops += source.daemon.stops;
   target.daemon.heartbeatTimeouts += source.daemon.heartbeatTimeouts;
   for (const stage of STAGES) mergeStage(target.stages[stage], source.stages[stage]);
+  mergeBackends(target.backends, source.backends);
   target.anomalies.roleCollapseReset += source.anomalies.roleCollapseReset;
   target.anomalies.hallucinationFiltered += source.anomalies.hallucinationFiltered;
   mergeCounter(target.anomalies.catalogExternalDropped.names, source.anomalies.catalogExternalDropped.names);
@@ -263,17 +324,41 @@ function mergeStage(target, source) {
   mergeCounter(target.missingByTool, source.missingByTool);
   mergeCounter(target.reasons, source.reasons);
   for (const [mode, stats] of Object.entries(source.modes)) {
-    const targetStats = target.modes[mode] ?? {
-      count: 0,
-      totalDurationMs: 0,
-      maxDurationMs: 0,
-      averageDurationMs: 0,
-    };
+    mergeDurationStats(target.modes, mode, stats);
+  }
+  mergeBackends(target.backends, source.backends);
+}
+
+function mergeBackends(target, source) {
+  for (const [backend, stats] of Object.entries(source)) {
+    const targetStats = target[backend] ?? createBackendSummary();
     targetStats.count += stats.count;
+    targetStats.passTrue += stats.passTrue;
+    targetStats.passFalse += stats.passFalse;
+    targetStats.missingTotal += stats.missingTotal;
     targetStats.totalDurationMs += stats.totalDurationMs;
     targetStats.maxDurationMs = Math.max(targetStats.maxDurationMs, stats.maxDurationMs);
-    target.modes[mode] = targetStats;
+    mergeCounter(targetStats.missingByTool, stats.missingByTool);
+    mergeCounter(targetStats.stages, stats.stages);
+    mergeCounter(targetStats.reasons, stats.reasons);
+    for (const [mode, modeStats] of Object.entries(stats.modes)) {
+      mergeDurationStats(targetStats.modes, mode, modeStats);
+    }
+    target[backend] = targetStats;
   }
+}
+
+function mergeDurationStats(bucket, key, source) {
+  const target = bucket[key] ?? {
+    count: 0,
+    totalDurationMs: 0,
+    maxDurationMs: 0,
+    averageDurationMs: 0,
+  };
+  target.count += source.count;
+  target.totalDurationMs += source.totalDurationMs;
+  target.maxDurationMs = Math.max(target.maxDurationMs, source.maxDurationMs);
+  bucket[key] = target;
 }
 
 function finalizeSummary(summary) {
@@ -286,6 +371,23 @@ function finalizeSummary(summary) {
         ? Math.round(stats.totalDurationMs / stats.count)
         : 0;
     }
+    for (const backendStats of Object.values(summary.stages[stage].backends)) {
+      finalizeBackendStats(backendStats);
+    }
+  }
+  for (const backendStats of Object.values(summary.backends)) {
+    finalizeBackendStats(backendStats);
+  }
+}
+
+function finalizeBackendStats(stats) {
+  stats.averageDurationMs = stats.count > 0
+    ? Math.round(stats.totalDurationMs / stats.count)
+    : 0;
+  for (const modeStats of Object.values(stats.modes)) {
+    modeStats.averageDurationMs = modeStats.count > 0
+      ? Math.round(modeStats.totalDurationMs / modeStats.count)
+      : 0;
   }
 }
 

@@ -80,7 +80,16 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) で扱う。順序は
 Codex native に Spotter を適用して先に最適化し、実測できた改善だけを Claude host に移植する。
 
-**次アクション**: v1.3.0 以降の daemon ログを `spotter diagnostics logs --json` で集計し、`stages.user_input.modes.first` / `stages.turn_end.modes.first` の duration を見る。40s 付近に張り付くようなら (a) description truncate、(b) daemon timeout 60s 緩和、(c) プラグイン単位の選別機構 のどれかを検討。timeout 突破頻発なら緊急対処。
+**2026-05-06 更新**: `spotter diagnostics logs --json` は backend 別集計 (`backends`,
+`stages.*.backends`) を持つようになった。Haiku first/resumed だけでなく、Codex CLI /
+codex-sidecar primary auditor の duration / pass=false / missing 件数を同じ summary で比較できる。
+
+**次アクション**: v1.3.0 以降の daemon ログを `spotter diagnostics logs --json` で集計し、
+`backends.haiku`, `backends.codex-cli`, `backends.codex-sidecar` と
+`stages.user_input.backends.*` / `stages.turn_end.backends.*` の duration を見る。
+40s 付近に張り付く backend があれば (a) description truncate、(b) timeout 調整、
+(c) プラグイン単位の選別機構、(d) Codex native 側での skip / cache 条件追加、のどれかを検討。
+timeout 突破頻発なら緊急対処。
 
 ### claude.ai MCP (Gmail/Calendar/Drive) の過検出率 — 連携環境でのみ残存
 

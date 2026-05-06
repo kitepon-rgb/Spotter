@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { loadDb, globalDbPath, localDbPath } from '../tool-db/loader.mjs';
 import { findSpotterMarker } from '../hooks/lib.mjs';
+import { codexHookDiagnostics } from './codex-hook-cmd.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -45,6 +46,34 @@ export async function runDoctor() {
     if (!ok) warnings += 1;
   }
 
+  const projectRoot = findSpotterMarker(process.cwd());
+
+  // Codex native readiness. These are warnings because Claude-backed installs may
+  // still be valid, but Codex-first tuning needs the signal in one place.
+  try {
+    const { stdout } = await execFileP('codex', ['--version'], { timeout: 5_000, windowsHide: true });
+    mark(true, `codex CLI: ${stdout.trim()}`);
+  } catch (err) {
+    mark(false, 'codex CLI', `not found or failed: ${err.message}`);
+    warnings += 1;
+  }
+
+  try {
+    const diagnostics = await codexHookDiagnostics();
+    const hooksOk = diagnostics.availability === 'available';
+    mark(hooksOk, `codex hooks: ${diagnostics.availability}`, `feature=${diagnostics.codexHooksFeature}, user_prompt=${diagnostics.installedHooks.userPromptSubmit}, stop=${diagnostics.installedHooks.stop}`);
+    if (!hooksOk) warnings += 1;
+  } catch (err) {
+    mark(false, 'codex hooks diagnostics', err.message);
+    warnings += 1;
+  }
+
+  if (projectRoot) {
+    const sidecar = await codexSidecarAuditorReadiness(projectRoot);
+    mark(sidecar.ok, `codex-sidecar auditor: ${sidecar.status}`, sidecar.detail);
+    if (!sidecar.ok) warnings += 1;
+  }
+
   // tool-db (global cache). Since v1.2.0 this is not part of daemon audit input;
   // the daemon audits the project-local DB only. Empty global cache is fine.
   try {
@@ -57,7 +86,6 @@ export async function runDoctor() {
   }
 
   // tool-db (local) if cwd is inside a Spotter project
-  const projectRoot = findSpotterMarker(process.cwd());
   if (projectRoot) {
     try {
       const local = await loadDb(localDbPath(projectRoot));
@@ -75,6 +103,36 @@ export async function runDoctor() {
     process.exit(1);
   }
   console.log(`result: OK (${warnings} warnings)`);
+}
+
+async function codexSidecarAuditorReadiness(projectRoot) {
+  const args = ['diagnostics', '--project', projectRoot, '--preset', 'auditor', '--json'];
+  const cliPath = process.env.SPOTTER_CODEX_SIDECAR_CLI_PATH;
+  const cmd = cliPath ? process.execPath : 'codex-sidecar';
+  const finalArgs = cliPath ? [cliPath, ...args] : args;
+  try {
+    const { stdout } = await execFileP(cmd, finalArgs, {
+      timeout: 15_000,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
+    const parsed = JSON.parse(stdout);
+    const ok = parsed?.status === 'ok' && parsed?.normalizedRequest?.workflow === 'auditor';
+    return {
+      ok,
+      status: ok ? 'available' : 'unavailable',
+      detail: ok
+        ? `workflow=${parsed.normalizedRequest.workflow}, reasoning=${parsed.normalizedRequest.modelReasoningEffort ?? 'default'}`
+        : `unexpected diagnostics: status=${parsed?.status ?? 'unknown'}`,
+    };
+  } catch (err) {
+    const stderr = typeof err?.stderr === 'string' && err.stderr.trim() ? ` stderr=${err.stderr.trim().split('\n').slice(-1)[0]}` : '';
+    return {
+      ok: false,
+      status: 'unavailable',
+      detail: `${err.message}${stderr}`,
+    };
+  }
 }
 
 async function exists(path) {

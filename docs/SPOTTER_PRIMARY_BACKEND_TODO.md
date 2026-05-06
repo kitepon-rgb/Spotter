@@ -413,17 +413,17 @@ Gate:
 
 ### Phase 6. Diagnostics And Operations
 
-- [ ] `spotter diagnostics logs` に backend 別集計を追加する:
+- [x] `spotter diagnostics logs` に backend 別集計を追加する:
   `haiku`, `codex-cli`, `codex-sidecar`, `compatibility_haiku`。
-- [ ] Phase 1 の `backend=<name>` log を前提に、daemon log / diagnostics parser を拡張し、
-  mode, duration, timeout, availability state を backend 別に集計できるようにする。
-- [ ] `spotter doctor` に Codex CLI / codex-sidecar backend readiness を追加する。
-- [ ] README / README.ja に backend policy を短く追記する。
-- [ ] `docs/open-issues.md` の Haiku レイテンシ観測を backend 比較観測へ更新する。
+- [x] Phase 1 の `backend=<name>` log を前提に、daemon log / diagnostics parser を拡張し、
+  mode, duration, timeout / handler error signal を backend 比較と合わせて読めるようにする。
+- [x] `spotter doctor` に Codex CLI / codex-sidecar backend readiness を追加する。
+- [x] README / README.ja に backend policy を短く追記する。
+- [x] `docs/open-issues.md` の Haiku レイテンシ観測を backend 比較観測へ更新する。
 
 Gate:
 
-- [ ] ユーザーが「今どの backend で判定されたか」を logs / diagnostics から説明できる。
+- [x] ユーザーが「今どの backend で判定されたか」を logs / diagnostics から説明できる。
 
 ### Phase 7. Rollout
 
@@ -554,6 +554,13 @@ Gate:
   `codex-sidecar auditor --project <repo> --preset auditor --json --context-file <temp>` を呼ぶ。
   global install が古い可能性がある間は、local built CLI を
   `SPOTTER_CODEX_SIDECAR_CLI_PATH` で指定して smoke する。
+- Codex native を先に詰める方針に合わせ、Phase 6 diagnostics を前倒しした。
+  `spotter diagnostics logs --json` は top-level `backends` と stage-level
+  `stages.*.backends` を出し、backend 別の count / pass=false / missing / duration を比較できる。
+  `spotter doctor` は Codex CLI、Codex hooks feature / installed hooks、project-local
+  `codex-sidecar` auditor preset readiness を warning として表示する。
+  2026-05-06 local smoke では `SPOTTER_CODEX_SIDECAR_CLI_PATH=/home/kite/projects/codex-sidecar/packages/cli/dist/index.js`
+  付きで doctor result OK / 0 warnings。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に

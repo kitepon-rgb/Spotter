@@ -125,8 +125,8 @@ spotter db refresh       # rediscover MCP / skills / sub-agents and update the D
 spotter db rebuild       # wipe both local + global DBs and refresh from scratch
                          #   (use after catalog-shape changes)
 spotter status           # list running daemons
-spotter doctor           # environment check (Node / claude CLI / tool-db integrity)
-spotter diagnostics logs # summarize daemon logs for pass=false / latency / anomaly signals
+spotter doctor           # environment check (Node / claude CLI / Codex readiness / tool-db integrity)
+spotter diagnostics logs # summarize daemon logs for pass=false / backend latency / anomaly signals
 spotter codex risk-check --findings findings.json --host-agent claude
                          # run read-only codex-sidecar risk analysis for Spotter findings
 spotter codex review|explore|opinion --findings findings.json --host-agent claude
@@ -150,6 +150,10 @@ SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root 
 When enabled, the daemon dispatches `pass:false` findings to `spotter codex risk-check`
 in a detached process. Hook responses do not wait for Codex. Add
 `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` to exercise the wiring without calling Codex.
+
+Primary auditor backend policy: Claude hooks keep the current Haiku-compatible path by
+default. Codex native hooks use Codex CLI by default and do not fall back to Haiku;
+`SPOTTER_AUDITOR_BACKEND=codex-sidecar` is available for explicit sidecar auditor smoke.
 
 ## Design docs
 

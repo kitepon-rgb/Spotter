@@ -13,9 +13,9 @@ const SAMPLE_LOG = [
   '[2026-05-06T00:00:00.000Z] tool-db loaded: 268 tools (project=/repo)',
   '[2026-05-06T00:00:01.000Z] daemon listening on /tmp/sock',
   '[2026-05-06T00:00:02.000Z] started on /tmp/sock',
-  '[2026-05-06T00:00:03.000Z] user_input: pass=false, missing=mcp__caveat__caveat_search,current_time, mode=first, duration_ms=21000',
+  '[2026-05-06T00:00:03.000Z] user_input: pass=false, missing=mcp__caveat__caveat_search,current_time, backend=haiku, mode=first, duration_ms=21000',
   '[2026-05-06T00:00:04.000Z] turn_end: dropped catalog-external names: Read,Skill(tl)',
-  '[2026-05-06T00:00:05.000Z] turn_end: pass=true, missing=, mode=resumed, duration_ms=1200, reason=hallucination_filtered',
+  '[2026-05-06T00:00:05.000Z] turn_end: pass=true, missing=, backend=codex-cli, mode=exec, duration_ms=1200, reason=hallucination_filtered',
   '[2026-05-06T00:00:06.000Z] user_input: role collapse detected, session reset: not json',
   '[2026-05-06T00:00:07.000Z] turn_end: haiku invocation failed (E_HAIKU_TIMEOUT), rotating session before rethrow: timeout',
   '[2026-05-06T00:00:08.000Z] handler error on turn_end: E_HAIKU_TIMEOUT: timeout',
@@ -42,8 +42,13 @@ test('summarizeDaemonLogText: aggregates daemon precision signals', () => {
   assert.equal(summary.stages.user_input.missingTotal, 2);
   assert.equal(summary.stages.user_input.missingByTool.mcp__caveat__caveat_search, 1);
   assert.equal(summary.stages.user_input.modes.first.averageDurationMs, 21000);
+  assert.equal(summary.stages.user_input.backends.haiku.averageDurationMs, 21000);
   assert.equal(summary.stages.turn_end.calls, 1);
   assert.equal(summary.stages.turn_end.reasons.hallucination_filtered, 1);
+  assert.equal(summary.stages.turn_end.backends['codex-cli'].passTrue, 1);
+  assert.equal(summary.backends.haiku.passFalse, 1);
+  assert.equal(summary.backends.haiku.missingTotal, 2);
+  assert.equal(summary.backends['codex-cli'].averageDurationMs, 1200);
   assert.equal(summary.anomalies.hallucinationFiltered, 1);
   assert.equal(summary.anomalies.catalogExternalDropped.events, 1);
   assert.equal(summary.anomalies.catalogExternalDropped.names.Read, 1);
@@ -78,6 +83,10 @@ test('summarizeDaemonLogText: parses Phase 1 backend-tagged stage lines', () => 
   assert.equal(summary.stages.user_input.calls, 1);
   assert.equal(summary.stages.user_input.passTrue, 1);
   assert.equal(summary.stages.user_input.modes.first.averageDurationMs, 42);
+  assert.equal(summary.stages.user_input.backends.haiku.count, 1);
+  assert.equal(summary.backends.haiku.count, 1);
+  assert.equal(summary.backends.haiku.stages.user_input, 1);
+  assert.equal(summary.backends.haiku.averageDurationMs, 42);
 });
 
 test('formatDaemonLogSummary: produces compact human-readable output', () => {
@@ -90,6 +99,8 @@ test('formatDaemonLogSummary: produces compact human-readable output', () => {
   assert.match(output, /spotter diagnostics logs/);
   assert.match(output, /user_input: calls=1, pass=false=1, missing=2/);
   assert.match(output, /top missing: current_time=1, mcp__caveat__caveat_search=1/);
+  assert.match(output, /backends: haiku:n=1,avg=21000ms,max=21000ms,pass=false=1/);
+  assert.match(output, /backends: codex-cli:n=1,avg=1200ms,max=1200ms,pass=false=0/);
   assert.match(output, /anomalies: role_collapse=1, hallucination_filtered=1/);
   assert.match(output, /codex_risk_check: dispatched=1, disabled_skips=1/);
 });
