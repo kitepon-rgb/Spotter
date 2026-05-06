@@ -70,13 +70,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **v0.4.4** (2026-04-19): Stop hook が **Bell の最終応答を Haiku に渡していなかったバグ**を修正。`input.final_response` (存在しないフィールド) を廃止し、`input.transcript_path` から JSONL 末尾の assistant text だけを抽出する `getLastAssistantText()` を新設 ([src/hooks/transcript-reader.mjs](src/hooks/transcript-reader.mjs))。thinking / tool_use ブロックは除外、ユーザーが見た最終応答テキストのみ Haiku に渡る。Throughline から移植 (MIT, 同作者)。
 
-**v0.5.0 の核心設計**: daemon は session-scoped (hook イベント集約・used_tools 記録)。**Haiku 呼び出しも session-scoped** (`--session-id` を daemon 生存期間中保持、2 回目以降は `--resume` で再接続)。5 層防御 (`SPOTTER_PARENT_PID` env / `agent_id` gate / `source=startup` 限定 / PID preexist check / 10 秒ウィンドウ) は維持。プラン §18.3 の都度起動型 (daemon レベルでの都度起動) は引き続き棄却、再議論しない。
+**v0.5.0 の核心設計**: daemon は session-scoped (hook イベント集約・used_tools 記録)。**Haiku 呼び出しも session-scoped** (`--session-id` を daemon 生存期間中保持、2 回目以降は `--resume` で再接続)。再帰ガード 5 層 (`SPOTTER_PARENT_PID` env / `agent_id` gate / `source=startup` 限定 / PID preexist check / 10 秒ウィンドウ) と、v0.3.0 以降の project marker gate (`.spotter/marker.json`) は維持。プラン §18.3 の都度起動型 (daemon レベルでの都度起動) は引き続き棄却、再議論しない。
 
 ### v0.5.0 で投入した対策
 
 - **Session-scoped Haiku** (`createHaikuCaller` @ [haiku-caller.mjs](src/daemon/haiku-caller.mjs)): closure で `currentSessionId` と `isFirstCall` を保持。初回は `--session-id` のみ、以降は `--session-id + --resume`。2 回目以降の cold-start を消す。
 - **Role-collapse recovery** (`runHaikuJudgment` @ [daemon.mjs](src/daemon/daemon.mjs)): `parseHaikuResponse` が `E_HAIKU_SCHEMA` を throw したら `callHaiku.reset()` で session-id を renew し、当該ターンは `{pass: true, reason: 'role_collapse_reset'}` で silent pass。次ターンから fresh session で監査再開。
-- **Timeout 短縮** (60s → 30s): 2 回目以降は cold-start がないので延長の必要なし。初回だけは 30s 以内に終わる想定。
+- **Timeout 短縮** (60s → 30s): v0.5.0 時点では、2 回目以降は cold-start がないので延長不要、初回だけは 30s 以内に終わる想定だった。現行の daemon timeout は v0.13.1 以降 45s。
 - **Warmup 削除**: stateless 対策だったので不要。
 
 ### v0.5.0 時点の既知課題 (歴史記録)
@@ -85,7 +85,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Spotter 本体プロジェクトでの install に関する警告
 
-**Spotter リポジトリで Spotter を install すると、Bell 側の会話が Spotter 自体の議論になり、Haiku が自己言及で混乱する**。v0.5.0 で session-scoped に戻したため、過去より persona drift リスクが高い環境。開発時は他プロジェクトで動作確認するか、install せず手動で `spotter catalog lint` を回すこと。
+**Spotter リポジトリで Spotter を install すると、Bell 側の会話が Spotter 自体の議論になり、Haiku が自己言及で混乱する**。v0.5.0 で session-scoped に戻したため、過去より persona drift リスクが高い環境。開発時は他プロジェクトで動作確認するか、install せず `node --test` / `spotter db refresh` などの明示コマンドで確認すること。
 
 ## Product Concept (一行)
 
@@ -93,7 +93,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 判定軸 (v0.13.0 で 2 軸化)
 
-- **stage=user_input**: ユーザー要請に対し `when_to_use` が明確に該当するツールを列挙する **要請充足チェック**。挨拶・雑談は pass
+- **stage=user_input**: ユーザー要請に対し、ローカル tool-db の `{name, description}` から用途が明確に該当するツールを列挙する **要請充足チェック**。挨拶・雑談は pass
 - **stage=turn_end**: Bell の最終応答に対し、事実の断定 / 記録すべき新情報 / 既知情報の参照 それぞれに、カタログ上のツール (検証 / 登録 / 照会) を差し込める余地がないか監査する **ツール適用機会の監査**。指摘ゼロは歓迎、`used_tools` 既含は再指摘しない
 
 ## Architecture の核 (実装判断に効く部分)
@@ -101,47 +101,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **並走デーモン型**: SessionStart で 1 プロセス起動、SessionEnd で shutdown。Bell から呼ぶのではなく、hook 経由で **Bell の意思と独立に** user_input / tool_used / turn_end を受け取る。「Bell が自覚して呼ぶ」設計は **本プロダクトの存在意義を破壊する**ので却下されている。
 - **Claude 呼び出しは session-scoped + preamble-once + 事後回復** (v0.6.0 で更新): `claude -p --session-id <uuid>` で初回セッション確立、以降 `--resume` で再接続。**初回のみ preamble (role + schema + few-shot + catalog) を送り、以降は per-turn delta のみ**送ることで session を肥大化させない (v0.5.x は毎回 full 送信していて resumed が first より遅いという逆の結果が出ていた)。role collapse は `parseHaikuResponse` が `E_HAIKU_SCHEMA` を返した瞬間に `callHaiku.reset()` で session-id を rotate、次回呼び出しで preamble が新 session に自動で再送される。当該ターンは silent pass。**これは §0 の silent fallback 禁止違反ではなく、「想定済み異常 = 記録 + 正常リターン」の適用**。
 - **隔離実行**: Spotter の workdir (`~/.spotter/workdir/`) には **CLAUDE.md を置かない**。プロジェクト文脈に引きずられないことが品質保証の要件。
-- **ツールカタログは YAML**: `purpose` / `when_to_use` / `keywords` (一次判定用) と `usage` / `examples` (確定後) を分離した 2 段階コンテキスト。`test_cases` フィールドで回帰検出する。
+- **ツールカタログは project-local tool-db**: daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。グローバル DB は description 再利用キャッシュで、Haiku の audit 入力には混ぜない。MCP は `tools/list`、スキル / サブエージェントは frontmatter の description から収集する。
 - **Stop hook の介入**: `decision: "block"` + `reason` で Bell に継続応答を生成させる。`stop_hook_active: true` を見たら即 pass することで max 1 回ループを担保 (Claude Code 側の機構で自動)。
 
 ## §0 実装規範 (最重要)
 
 コードを書く前にこの 3 点を内面化すること。プラン §14 の詳細版だが、実装時に効くのはここ:
 
-1. **フォールバック禁止**. daemon 起動失敗 / socket 疎通失敗 / Haiku 呼び出し失敗 / YAML パース失敗 / カタログ欠損は **全て throw**. `try/catch` で潰すコードはレビューで棄却される。例外は SessionEnd の cleanup 失敗 (warn ログのみ、セッション終了は止めない) と PostToolUse 等の非ブロッキング系のみ。
+1. **フォールバック禁止**. daemon 起動失敗 / socket 疎通失敗 / Haiku 呼び出し失敗 / tool-db / frontmatter パース失敗 / カタログ欠損は **全て throw**. `try/catch` で潰すコードはレビューで棄却される。例外は SessionEnd の cleanup 失敗 (warn ログのみ、セッション終了は止めない) と PostToolUse 等の非ブロッキング系のみ。
 2. **「daemon が死んでたら pass」は最悪の失敗モード**. ユーザーは Spotter が守ってる気になって実は素の Bell、という状況は silent fallback で起こる。hook が daemon 疎通できなければ exit code 1 + stderr にメッセージ。
 3. **動かすためだけの暫定コード禁止**. スタブ・TODO のみの関数・型が曖昧なコードを本流に混ぜない。MVP スコープを狭めるのは OK (v0.2 に送る)、**範囲内は常に完成形**。暫定コードを書く必要があるなら代替設計と一緒に提示してから書く。
 
 想定済み異常 (例: カタログに該当ツールなし) は記録 + 正常リターン。**想定外**は throw + stderr + exit code 2。この分類を曖昧にしない。
 
-## Planned Stack (実装時の拘束)
+## Current Stack / Runtime Requirements
 
-プラン §15 より、実装が始まったらこれらを満たすこと:
+現行実装はこれらを満たすこと:
 
 - **Node.js 22.5+** (組み込み fetch, test runner 使用)
-- **Claude Code 2.0+** (Stop hook block 挙動, async hook 利用)
+- **Claude Code 2.0+** (Stop hook block 挙動)
 - **Claude Max plan** (`claude -p` で Haiku 起動)
 - **ゼロ依存志向**. 依存追加時は理由をコミットログに記録。
-- パッケージング: `npm install -g spotter`, CLI 名 `spotter`, MIT ライセンス。
+- パッケージング: npm package は `claude-spotter`、global install は `npm install -g claude-spotter`、CLI 名は `spotter`、MIT ライセンス。
 
-## Planned Commands (実装後)
+## Current Commands
 
-プラン §15.3 で定義済み。実装時はこの構成を逸脱しない:
+現行のユーザー向け command surface:
 
 ```
 spotter install / uninstall
-spotter catalog edit / lint / refresh
-spotter daemon start / stop       # 内部用 (hook から呼ばれる)
+spotter db list / refresh / rebuild
+spotter daemon start              # 内部用 (hook から呼ばれる)
+spotter hook <event>              # 内部用 (Claude Code hook から呼ばれる)
 spotter status / doctor
 ```
 
-テストランナーは Node 組み込み (`node --test`)、CI は `.github/workflows/ci.yml` で Node 22.5 / lint / test を走らせる想定。
+`spotter catalog *` は v0.1 設計時の YAML catalog 時代のコマンドで、現行実装には存在しない。現行の catalog は project-local `.spotter/tool-db.json` を中心に `spotter db *` で扱う。
 
-## MVP スコープ境界
+テストランナーは Node 組み込み (`node --test`)。現行 CI は `.github/workflows/ci.yml` で Node 22.5 / 22.x の Linux / Windows / macOS matrix を `node --test` で走らせる。
 
-v0.1 に含める / 含めないの判断で迷ったらプラン §9 を参照。**越境禁止**:
+## Historical MVP Scope Boundary
 
-- v0.1: SessionStart/UserPromptSubmit/**PreToolUse**/Stop/SessionEnd hook + 手動 YAML 1 ファイル + 同期実装 + 差し戻し 1 回 + `spotter catalog lint` (test_cases を Haiku 実呼びで検証)
+以下は v0.1 設計時の歴史記録。現行作業の優先順位は [docs/open-issues.md](docs/open-issues.md) と、このファイル上部の Repository Status を参照する。
+
+- v0.1: SessionStart/UserPromptSubmit/**PreToolUse**/Stop/SessionEnd hook + 手動 YAML 1 ファイル + 同期実装 + 差し戻し 1 回 + `spotter catalog lint` (test_cases を Haiku 実呼びで検証)。これは歴史記録であり、現行実装は tool-db + `spotter db *` に移行済み。
 - v0.2: 孤児プロセス cleanup + Haiku JSON 遵守率計測 + リトライ設計 (必要時)
 - v0.3: MCP サーバー列挙によるカタログ自動生成 + カタログ分割 + `/ask-spotter` スラッシュコマンド
 - v0.4+: async hook, ドメイン別カタログ, CI 回帰テスト整備

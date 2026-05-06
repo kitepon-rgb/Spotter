@@ -1,0 +1,193 @@
+# Spotter Claude Contract
+
+この文書は Phase 1a の contract capture。Codex adapter を足す前に、Claude-first の
+既存動作を変えないための実装契約を短く固定する。
+
+正本は `CLAUDE.md`。ここは実装時に参照する checklist と test 対応表。
+
+## Command Contract
+
+Public CLI:
+
+- `spotter install [-y|--yes] [--user]`
+- `spotter uninstall [-y|--yes] [--user]`
+- `spotter db list`
+- `spotter db refresh`
+- `spotter db rebuild`
+- `spotter status`
+- `spotter doctor`
+- `spotter diagnostics logs [--log-dir <dir>] [--json]`
+- `spotter codex risk-check --findings <file> [--project <dir>] [--host-agent <agent>]`
+- `spotter codex review --findings <file> [--project <dir>] [--host-agent <agent>]`
+- `spotter codex explore --findings <file> [--project <dir>] [--host-agent <agent>]`
+- `spotter codex opinion --findings <file> [--project <dir>] [--host-agent <agent>]`
+- `spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path>
+  (--preserve-worktree | --remove-worktree) [--project <dir>] [--host-agent <agent>]`
+- `spotter --help | -h`
+- `spotter --version | -v`
+
+Internal CLI:
+
+- `spotter daemon start --session-id <id>`
+- `spotter hook session-start`
+- `spotter hook user-prompt`
+- `spotter hook pre-tool-use`
+- `spotter hook stop`
+- `spotter hook session-end`
+
+Unknown public command, unknown `db` subcommand, unknown `daemon` subcommand, and unknown
+hook event exit with code `2` and print usage / error to stderr.
+
+## Hook Contract
+
+All hooks read one JSON object from stdin, unless `SPOTTER_PARENT_PID` is set. Invalid or
+empty stdin is an unexpected hook failure.
+
+- `SessionStart`
+  - returns without spawning when `SPOTTER_PARENT_PID` is set.
+  - returns without spawning when `agent_id` is present.
+  - returns without spawning when `source !== "startup"`.
+  - returns without spawning outside a project containing `.spotter/marker.json`.
+  - otherwise starts the daemon for `session_id`, waits for readiness, then launches bg refresh.
+- `UserPromptSubmit`
+  - returns early for child calls, subagent calls, outside-project calls, and short prompts.
+  - sends `event:"user_input"` to the daemon.
+  - on `E_UNREACHABLE`, respawns daemon once and retries.
+  - when daemon returns `pass:false`, emits `additionalContext` with transparent Spotter wording.
+- `PreToolUse`
+  - records `tool_name` as `event:"tool_used"`.
+  - never calls Haiku.
+- `Stop`
+  - sends visible assistant text as `event:"turn_end"`.
+  - when daemon returns `pass:false`, returns `decision:"block"` with transparent Spotter wording.
+- `SessionEnd`
+  - requests daemon shutdown for the session.
+
+## Daemon Safety Contract
+
+Recursive hook / daemon proliferation must stay blocked by:
+
+- `SPOTTER_PARENT_PID`
+- `agent_id`
+- `source === "startup"`
+- `.spotter/marker.json`
+- PID preexist check
+- 10 second Haiku call window
+
+Lifecycle cleanup uses heartbeat + `UserPromptSubmit` auto-resurrect. Do not restore
+`process.ppid` parent-watch cleanup.
+
+## IPC Contract
+
+Hook to daemon transport is newline-delimited JSON over a Unix socket / Windows named pipe.
+
+Request envelope:
+
+```json
+{"id":"<uuid>","event":"<event>","session_id":"<session>","payload":{}}
+```
+
+Success response:
+
+```json
+{"id":"<same uuid>","ok":true,"result":{}}
+```
+
+Error response:
+
+```json
+{"id":"<same uuid or null>","ok":false,"error":{"code":"E_*","message":"..."}}
+```
+
+Client-side transport errors use:
+
+- `E_UNREACHABLE`
+- `E_TIMEOUT`
+- `E_INTERNAL`
+
+## Haiku Contract
+
+Haiku receives the full preamble only on the first call of a session. Resumed calls receive
+only the per-turn delta. This avoids transcript bloat with `claude --resume`.
+
+Preamble contains:
+
+- role / output rules
+- JSON schema
+- few-shot examples
+- project-local tool catalog `{name, description}`
+
+Per-turn prompts:
+
+- `stage=user_input` contains only `<user_input>`.
+- `stage=turn_end` contains only `<used_tools>` and `<final_response>`.
+- `stage=turn_end` intentionally does not include user input.
+
+Haiku response schema:
+
+```json
+{"pass":true,"missing_tools":[]}
+```
+
+or:
+
+```json
+{"pass":false,"missing_tools":[{"name":"<catalog tool name>","reason":"<reason>"}]}
+```
+
+Schema violations throw `E_HAIKU_SCHEMA` and trigger role-collapse recovery. Catalog-external
+tool names are filtered out after parse. `E_HAIKU_TIMEOUT` and `E_INTERNAL` continue to throw.
+
+## Neutral Projection Contract
+
+Haiku parse results are converted to `SpotterJudgment` before being projected back to the
+existing Claude-facing `{pass, missing_tools, reason?}` shape.
+
+- `SpotterFinding` fields: `id`, `stage`, `toolName`, `reason`, `category`, `severity`,
+  `confidence`, `references`, `source`, `raw`.
+- `role_collapse_reset` and `hallucination_filtered` are represented as normal judgment
+  `anomalies`, then projected back to the existing `reason` field.
+- `E_HAIKU_TIMEOUT` and `E_INTERNAL` are not normal judgments. They continue to surface
+  as thrown daemon errors after session reset.
+- Codex context projection uses local JSON compatibility only in Phase 3:
+  `kind:"manual_note"`, `source:"spotter"`, `trust:"local"`.
+- Codex sidecar policy is explicit: `unavailable` and `explicitly disabled` return
+  compatibility mode, Codex host does not call Codex sidecar without an independent
+  boundary, and sidecar children are spawned with `SPOTTER_PARENT_PID` so Claude hooks do
+  not start nested Spotter daemons.
+- `spotter codex risk-check|review|explore|opinion` are explicit read-only sidecar
+  workflows. They read `SpotterFinding[]`, build a temporary context-file, invoke the
+  matching `codex-sidecar` workflow, and store `spotter.sidecar_result.v1`.
+  `risk-check` can be dispatched from the daemon only through the opt-in async path below.
+- Daemon-side risk dispatch is opt-in only. With `SPOTTER_CODEX_RISK_CHECK=1`, `pass:false`
+  judgments are written under `.spotter/sidecar-inputs/` and dispatched through a detached
+  `spotter codex risk-check` process. Hook responses do not wait for Codex. Use
+  `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` for wiring smoke.
+- `spotter codex work` is write-capable and explicit only. It requires `--approve-work`,
+  an instruction, at least one `--allowed-path`, and an explicit cleanup policy. Spotter
+  writes a temporary scoped sidecar config that narrows `allowed_paths`, invokes
+  `codex-sidecar work --preset work`, and then validates returned `changedFiles` against
+  the approved scope before marking the result successful.
+- `spotter diagnostics logs` is read-only. It parses daemon log files and reports
+  `pass:false`, missing-tool counts, duration summaries, catalog-external drops,
+  role-collapse resets, Haiku failures, handler errors, fatal exits, and Codex risk
+  dispatch signals without changing daemon behavior.
+
+## Regression Coverage
+
+- `test/hooks.test.mjs`: hook wording, marker gate, child/subagent/non-startup gates.
+- `test/haiku-caller.test.mjs`: prompt builders, catalog-only rule, parse/filter schema.
+- `test/daemon.test.mjs`: daemon event behavior, heartbeat, role-collapse recovery, call window.
+- `test/judgment.test.mjs`: neutral finding / judgment schema and Claude legacy projection.
+- `test/sidecar-context.test.mjs`: Codex context block projection and structured result record.
+- `test/codex-sidecar-policy.test.mjs`: host / availability policy, Codex-on-Codex guard,
+  and sidecar env hook recursion guard.
+- `test/codex-sidecar-runner.test.mjs`: read-only Codex sidecar runners, work-capable
+  scoped workflow, context-file handoff, unavailable structured skip, and findings JSON
+  input shapes.
+- `test/codex-risk-dispatch.test.mjs`: daemon-side detached dispatch input files, env gates,
+  and recursion-blocking child env.
+- `test/daemon-log-diagnostics.test.mjs`: read-only daemon log aggregation for precision
+  diagnostics and operational anomaly signals.
+- `test/transport.test.mjs`: IPC response shape and transport errors.
+- `test/install.test.mjs`: hook registration and timeout updates.

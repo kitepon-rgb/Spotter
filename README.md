@@ -13,7 +13,7 @@
 
 > **Separate the spotter from the doer.** Spotter runs alongside Claude Code and quietly flags the moments when Bell (your primary Claude) **forgets to use a tool it has access to**.
 
-Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It will guess the current time instead of calling `current_time`, answer with stale knowledge instead of `web_search`, describe a config file from its name instead of `read_file`. The model can't always tell when it doesn't know — so the tool stays unused.
+Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It may skip a project memory MCP when a decision should be recorded, answer from stale memory instead of a docs-lookup MCP, or reason about UI state without a browser-automation MCP. The model can't always tell when it doesn't know — so the tool stays unused.
 
 Spotter pins a second agent (Claude Haiku 4.5) next to Bell. The second agent has the full tool catalog memorized and audits both the user's prompt and Bell's reply in parallel. When it spots a missed tool, it injects a transparent recommendation into Bell's context and, if needed, asks Bell to amend its answer. **Bell is never asked to self-audit** — that would defeat the entire premise. Detection happens through hooks, independent of Bell's intent.
 
@@ -23,17 +23,16 @@ Examples of what Spotter catches:
 
 | Situation | What Bell would do | What Spotter flags |
 |---|---|---|
-| "What's the weather today?" | Guess from training data | Missed call to `web_search` |
-| "What's in this config file?" | Describe based on the filename | Missed call to `read_file` |
-| "What time is it?" | Answer from training-time knowledge | Missed call to `current_time` |
+| "Please remember this OAuth gotcha" | Acknowledge and move on | Missed call to a memory / caveat MCP |
+| "How does this package API work in the latest version?" | Answer from training-time knowledge | Missed call to a docs-lookup MCP |
+| "Review this risky patch" | Self-review only | Missed call to a reviewer sub-agent |
 | Asserting a fact | State it without verification | Opportunity to call a verification tool |
-| "How does this library API work in the latest version?" | Recite from training data | Missed call to a docs-lookup MCP |
 | "Does this UI still render correctly?" | Reason from source code alone | Missed call to a browser-automation MCP |
 | "What did we decide about X earlier?" | Guess or admit forgetting | Missed call to a memory / notes MCP |
 
 Spotter audits in two stages:
 
-- **`stage=user_input`** — given the user's prompt, list any tools whose `when_to_use` clearly applies. A *prompt-fulfillment* check
+- **`stage=user_input`** — given the user's prompt, list any local catalog tools whose description clearly applies. A *prompt-fulfillment* check
 - **`stage=turn_end`** — given Bell's final reply, look for places where a catalog tool (verification / recording / lookup) could plug in. A *missed-opportunity* audit. Zero findings is fine; tools already used in this turn are not re-flagged
 
 ## Install
@@ -45,6 +44,8 @@ spotter install
 ```
 
 Since `v0.3.0`, Spotter requires **explicit per-project install** (the earlier `postinstall` auto-registration was the leading cause of orphan daemons). `spotter install` writes hooks into the project's `.claude/settings.json`; the audit is then active only in Claude Code sessions for that project.
+
+After upgrading Spotter, re-run `spotter install` in each installed project when release notes mention hook setting changes. The global package update changes the code path, but existing `.claude/settings.json` timeout values are not rewritten automatically.
 
 ```bash
 spotter uninstall        # remove hooks from this project
@@ -125,13 +126,32 @@ spotter db rebuild       # wipe both local + global DBs and refresh from scratch
                          #   (use after catalog-shape changes)
 spotter status           # list running daemons
 spotter doctor           # environment check (Node / claude CLI / tool-db integrity)
+spotter diagnostics logs # summarize daemon logs for pass=false / latency / anomaly signals
+spotter codex risk-check --findings findings.json --host-agent claude
+                         # run read-only codex-sidecar risk analysis for Spotter findings
+spotter codex review|explore|opinion --findings findings.json --host-agent claude
+                         # run other read-only codex-sidecar second-pass workflows
+spotter codex work --findings findings.json --instruction "Update docs" --approve-work \
+  --allowed-path docs/ --preserve-worktree
+                         # run approved codex-sidecar work in an isolated worktree
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
 ```
+
+Optional async Codex risk dispatch:
+
+```bash
+SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root ...
+```
+
+When enabled, the daemon dispatches `pass:false` findings to `spotter codex risk-check`
+in a detached process. Hook responses do not wait for Codex. Add
+`SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` to exercise the wiring without calling Codex.
 
 ## Design docs
 
 - **Current design** (catalog, discovery, classification axes): [docs/catalog-design.md](docs/catalog-design.md) — source of truth from v1.0.0
 - **Open issues + unverified concerns**: [docs/open-issues.md](docs/open-issues.md) — read this before starting new work
+- **Claude / Codex dual-support brief**: [docs/SPOTTER_CODEX_DUAL_SUPPORT.md](docs/SPOTTER_CODEX_DUAL_SUPPORT.md) and [TODO](docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)
 - **Implementation invariants (§0)**: [CLAUDE.md](CLAUDE.md) — no fallbacks, no silent failures, no provisional code
 - **Historical record (v0.1 design discussion)**: [docs/spotter-plan.md](docs/spotter-plan.md) — frozen design-discussion snapshot
 

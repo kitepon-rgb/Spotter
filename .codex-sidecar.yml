@@ -1,0 +1,50 @@
+project: spotter
+
+defaults:
+  readonly: true
+  result_format: json
+
+safety_profile: claude-hook-package
+
+allowed_paths:
+  - AGENTS.md
+  - CLAUDE.md
+  - CHANGELOG.md
+  - README.md
+  - README.ja.md
+  - bin/
+  - docs/
+  - src/
+  - test/
+
+deny_paths:
+  - .env
+  - .env.*
+  - "**/*.key"
+  - "**/*.pem"
+  - ".spotter/"
+  - ".claude/"
+  - ".codegraph/"
+
+presets:
+  review:
+    workflow: review
+    readonly: true
+    prompt: "Review Spotter changes for regressions in Claude Code hook behavior, daemon lifecycle, tool-db isolation, and missing tests."
+  risk-check:
+    workflow: risk-check
+    readonly: true
+    prompt: "Analyze Spotter findings or changes for daemon proliferation, recursive hook execution, latency, and compatibility risks."
+  explore:
+    workflow: explore
+    readonly: true
+    prompt: "Explore Spotter code paths and return structured evidence with file references."
+  opinion:
+    workflow: opinion
+    readonly: true
+    prompt: "Challenge the proposed Spotter implementation plan and identify concrete failure modes."
+  work:
+    workflow: work
+    readonly: false
+    require_worktree: true
+    prompt: "Implement a small scoped Spotter change within allowed_paths and return changed files, tests, and residual risks."

@@ -13,7 +13,7 @@
 
 > **気づく役と実行する役を分離する。** Claude Code の横で並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**だけ静かに指摘する監査役。
 
-Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。現在時刻を推測で答える、`web_search` を呼ばずに古い情報で応答する、`read_file` を使わずにファイルの中身を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
+Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。記録すべき決定を memory / caveat MCP に残さない、docs lookup MCP を呼ばずに古い知識で応答する、ブラウザ自動化 MCP で確認せず UI 状態を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
 
 Spotter はツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎に常駐させ、Bell の発話予定と応答を並走監査します。見落としを検出すると透明化された指摘として Bell に届け、補正応答を促します。**Bell が自覚して呼ぶ**設計は本プロダクトの存在意義を破壊するため、Bell から呼ぶのではなく hook 経由で Bell の意思と独立に検出する構造を取っています。
 
@@ -23,17 +23,16 @@ Spotter が拾うのは、たとえばこういう瞬間です。
 
 | 状況 | Bell の応答 | Spotter の指摘 |
 |---|---|---|
-| 「今日の天気を教えて」 | 推測で答えようとする | `web_search` の使用機会 |
-| 「この設定ファイルの中身は？」 | 名前から推測で説明 | `read_file` の使用機会 |
-| 「今何時？」 | 学習時点の情報で答える | `current_time` の使用機会 |
+| 「この OAuth の落とし穴を覚えて」 | 了解だけして進める | memory / caveat MCP の使用機会 |
+| 「このパッケージの最新版 API は？」 | 学習時点の知識で答える | docs lookup MCP の照会機会 |
+| 「この危ない patch をレビューして」 | 自分だけで見直す | reviewer sub-agent の使用機会 |
 | 事実の断定 | 裏付けなしで「〜です」 | 検証用ツールの差し込み余地 |
-| 「このライブラリの最新版の使い方は？」 | 学習データから書き起こす | docs lookup MCP の照会機会 |
 | 「この UI 今もちゃんと動く？」 | コード読みだけで結論 | ブラウザ自動化 MCP の使用機会 |
 | 「以前何を決めたっけ？」 | 推測 / 失念のまま回答 | メモリ / ノート系 MCP の照会機会 |
 
 判定軸は 2 段階:
 
-- **入力時 (`stage=user_input`)**: ユーザー要請に対し、`when_to_use` の条件に明確に該当するツールを列挙する **要請充足チェック**
+- **入力時 (`stage=user_input`)**: ユーザー要請に対し、ローカルカタログの description から用途が明確に該当するツールを列挙する **要請充足チェック**
 - **応答後 (`stage=turn_end`)**: Bell の最終応答に対し、事実の断定 / 記録すべき新情報 / 既知情報の参照それぞれに、カタログ上のツール (検証 / 登録 / 照会) を差し込める余地がないかを問う **ツール適用機会の監査**
 
 ## インストール
@@ -45,6 +44,8 @@ spotter install
 ```
 
 `v0.3.0` 以降は**プロジェクト単位の明示的 install** を採用しています (v0.2 までの `postinstall` 自動登録はデーモン増殖の主因だったため撤回)。各プロジェクトの `.claude/settings.json` に hook を登録し、そのプロジェクトでの Claude Code セッションのみで有効になります。
+
+Spotter を upgrade した後、release note で hook 設定変更が案内されている場合は、各 install 済みプロジェクトで `spotter install` を再実行してください。global package update でコード経路は変わりますが、既存 `.claude/settings.json` の timeout 値は自動では書き換わりません。
 
 ```bash
 spotter uninstall        # このプロジェクトの hook 登録を解除
@@ -123,13 +124,32 @@ spotter db refresh       # MCP / スキル / サブエージェントから desc
 spotter db rebuild       # local + global DB を両方消してから refresh (カタログ設計変更時のクリーン用)
 spotter status           # 稼働中の daemon 一覧
 spotter doctor           # 環境診断 (Node / claude CLI / tool-db 整合性)
+spotter diagnostics logs # daemon log から pass=false / latency / anomaly signal を集計
+spotter codex risk-check --findings findings.json --host-agent claude
+                         # Spotter finding を codex-sidecar に渡して read-only risk analysis
+spotter codex review|explore|opinion --findings findings.json --host-agent claude
+                         # その他の read-only codex-sidecar second-pass workflow
+spotter codex work --findings findings.json --instruction "docs 更新" --approve-work \
+  --allowed-path docs/ --preserve-worktree
+                         # 承認済み codex-sidecar work を isolated worktree で実行
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ```
+
+Codex risk dispatch を daemon から非同期に流す場合:
+
+```bash
+SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root ...
+```
+
+有効時は daemon が `pass:false` finding を detached process の
+`spotter codex risk-check` に渡します。hook 応答は Codex を待ちません。
+配線だけ確認する場合は `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` を併用します。
 
 ## 設計ドキュメント
 
 - **現行設計 (カタログ / 収集経路 / 分類軸)**: [docs/catalog-design.md](docs/catalog-design.md) — v1.0.0 以降の真実源
 - **現時点で塞がっていない穴 + 実測未検証の懸念**: [docs/open-issues.md](docs/open-issues.md) — 新規作業に入る前に必読
+- **Claude / Codex 両対応ブリーフ**: [docs/SPOTTER_CODEX_DUAL_SUPPORT.md](docs/SPOTTER_CODEX_DUAL_SUPPORT.md) と [TODO](docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)
 - **実装規範と不変条件 (§0)**: [CLAUDE.md](CLAUDE.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止
 - **歴史記録 (v0.1 時点の設計議事録)**: [docs/spotter-plan.md](docs/spotter-plan.md) — 作成時点で固定された議論過程のスナップショット、現行設計は上記 3 点を参照
 

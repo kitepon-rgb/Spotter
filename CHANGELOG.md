@@ -41,8 +41,9 @@ WSL2 の CPU 使用率が 100% に張り付き、何かがプロセスを「無�
 ### Chime / Spotter ユーザー側で必要な手順
 
 1. `npm install -g claude-spotter@1.3.0` で global update
-2. 既 install プロジェクトでは hook 設定 (`spotter.mjs` のパス固定) は変わらないので **再 install 不要**、次の SessionStart から自動的に新コードが効く
-3. 既存の孤児 daemon があれば `kill <pid>` + `rm ~/.spotter/runtime/session-*.pid` で掃除 (今後は v1.3.0 の MCP-disable で sudden death 自体が大幅減少見込み)
+2. Haiku spawn の MCP-disable は次の SessionStart から自動的に新コードが効く
+3. 既 install プロジェクトでも `spotter install` を再実行して、`.claude/settings.json` の UserPromptSubmit / Stop hook timeout を 60s に更新する (旧 settings の 15s/30s は global update だけでは書き換わらない)
+4. 既存の孤児 daemon があれば `kill <pid>` + `rm ~/.spotter/runtime/session-*.pid` で掃除 (今後は v1.3.0 の MCP-disable で sudden death 自体が大幅減少見込み)
 
 ## 1.2.6
 
