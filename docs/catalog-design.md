@@ -141,15 +141,16 @@ Codex host の refresh は [investigate-codex.mjs](../src/tool-db/investigate-co
 
 ## 収集タイミング (v1.1.0 以降)
 
-- **`spotter install` 時**: `refresh({projectRoot, hostAgent:"claude"})` を同期実行。初回 setup で Claude 用 tool-db.json を seed、install 完了時点で次セッションの daemon が audit に使える状態にする。refresh throw 時は hook 登録も含めて install 自体を失敗扱い (§0 準拠)
-- **SessionStart hook 発火時**: `spotter db refresh` を detached child として bg 起動 ([session-start.mjs](../src/hooks/session-start.mjs) の `spawnRefreshDetached`)。hook 自体は即 return、Claude drift 追従 (新規 MCP / スキル / サブエージェントの追加、削除) は**次セッション以降**に反映される (現セッションの daemon は起動時の tool-db を固定保持)
-- **`spotter db refresh` CLI**: 明示的に叩いた場合も同じ refresh ロジック。`--host-agent codex` を付けると `.spotter/tool-db.codex.json` を更新し、Claude DB には触れない。Claude 側は install / SessionStart の自動化で通常運用では手動不要
+- **`spotter install` 時**: `refresh({projectRoot, hostAgent:"claude"})` を同期実行。初回 setup で Claude 用 tool-db.json を seed、install 完了時点で次セッションの daemon が audit に使える状態にする。refresh throw 時は hook 登録も含めて install 自体を失敗扱い (§0 準拠)。Codex 用 DB は Codex hook の SessionStart が更新するため、Codex hook install 時には seed しない
+- **SessionStart hook 発火時**: Claude SessionStart は `spotter db refresh --host-agent claude` を detached child として bg 起動 ([session-start.mjs](../src/hooks/session-start.mjs) の `spawnRefreshDetached`)。Codex native SessionStart は `spotter db refresh --host-agent codex` を detached child として bg 起動 ([codex-hook-cmd.mjs](../src/cli/codex-hook-cmd.mjs) の `runCodexSessionStartHook`)。hook 自体は即 return、drift 追従 (新規 MCP / スキル / サブエージェントの追加、削除) は**次セッション以降**に反映される。Claude daemon は起動時の Claude DB を固定保持し、Codex hooks は次 hook 実行時に Codex DB を読み直す
+- **`spotter db refresh` CLI**: 明示的に叩いた場合も同じ refresh ロジック。`--host-agent codex` を付けると `.spotter/tool-db.codex.json` を更新し、Claude DB には触れない。Claude / Codex とも SessionStart の自動化が通常経路なので、手動実行は smoke / 修復 / 即時反映用
 - **`spotter db rebuild` CLI**: host-local + global DB を wipe してから refresh。既定は Claude local、`--host-agent codex` なら Codex local。カタログ設計変更時 (v1.0.0 の切り替え等) のクリーンスレート用、通常運用では不使用
 
 ## 歴史
 
 - v0.7.0〜v0.13.3: カタログは「MCP + Claude Code 組込み遅延ツール」17 件を手書き baseline で保持。理由は「遅延ツールは Bell が呼び忘れやすい」という仮定
 - v1.0.0: 実測で「Claude Code 組込みツールは Bell が使いこなしており、呼び忘れ率は低い」と確認。遅延 / 即時の境界も Claude Code バージョンで動的に変わることが判明。**本体側は全面除外**、ユーザー追加分 (MCP + スキル + サブエージェント) のみに監査範囲を絞る設計転換
-- v1.1.x: 収集タイミングの自動化。install 時同期 seed + SessionStart bg refresh で手動 `spotter db refresh` を不要化、drift 自動追従を実現
+- v1.1.x: Claude 収集タイミングの自動化。install 時同期 seed + SessionStart bg refresh で手動 `spotter db refresh` を不要化、drift 自動追従を実現
+- 2026-05-06 Codex native work: Codex host-local DB を `.spotter/tool-db.codex.json` に分離し、Codex native SessionStart で `spotter db refresh --host-agent codex` を bg 起動。Claude / Codex 間で tool list を上書きしない構造にした
 - v1.1.4: MCP 投資経路の 2 件の silent mismatch を修正。(1) `listMcpServers` / `getStdioConfig` の `claude mcp list / get` spawn 時に `cwd: projectRoot` を付与、名乗っている project scope と claude CLI が walk-up で見つける project scope の乖離を解消。(2) claude.ai baseline を server 単位構造に再編、`filterClaudeAiBaseline` で `claude mcp list` に該当サーバーが実在する環境のみ注入。隔離 `CLAUDE_CONFIG_DIR` / 未連携 / 部分連携環境で最大 25 件の幻ツールが catalog に残る問題を解消 (Bell 側実環境で 25 件消失を実測確認済み)
 - v1.2.0: daemon の audit 入力をローカル DB のみに変更し、グローバル DB は他プロジェクトでの description 再利用キャッシュに役割を限定 (`readMerged` → `readLocal`)。同時に `resolveAll` 末尾に prune ループ追加で「現プロジェクトの discovery 結果に含まれない既存ローカルエントリ」を削除。過去の別プロジェクトで discover した MCP / スキル / サブエージェントが Haiku 視野に幻として漏れる構造的バグを解消

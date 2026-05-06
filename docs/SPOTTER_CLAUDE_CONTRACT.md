@@ -30,7 +30,9 @@ Public CLI:
 - `spotter codex opinion --findings <file> [--project <dir>] [--host-agent <agent>]`
 - `spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path>
   (--preserve-worktree | --remove-worktree) [--project <dir>] [--host-agent <agent>]`
-- `spotter codex-hook install|uninstall|diagnostics` (experimental Codex native hooks)
+- `spotter codex-hook install [--codex-home <dir>]` (experimental Codex native hooks)
+- `spotter codex-hook uninstall [--codex-home <dir>]`
+- `spotter codex-hook diagnostics [--codex-home <dir>] [--project <dir>]`
 - `spotter --help | -h`
 - `spotter --version | -v`
 
@@ -42,6 +44,7 @@ Internal CLI:
 - `spotter hook pre-tool-use`
 - `spotter hook stop`
 - `spotter hook session-end`
+- `spotter codex-hook session-start`
 - `spotter codex-hook user-prompt-submit`
 - `spotter codex-hook stop`
 
@@ -54,21 +57,28 @@ All hooks read one JSON object from stdin, unless `SPOTTER_PARENT_PID` is set. I
 empty stdin is an unexpected hook failure.
 
 Codex native hooks are experimental and use Codex hook payloads, not Claude hook JSON. The
-current Codex adapter installs user-level `~/.codex/hooks.json` entries for `UserPromptSubmit`
-and `Stop`, keeps `.spotter/marker.json` project gating, exits early when `SPOTTER_PARENT_PID`
-is set, and selects Codex CLI as the default primary auditor backend. Codex `Stop` does not
+current Codex adapter installs user-level `~/.codex/hooks.json` entries for `SessionStart`,
+`UserPromptSubmit`, and `Stop`, keeps `.spotter/marker.json` project gating, exits early when
+`SPOTTER_PARENT_PID` is set, and selects Codex CLI as the default primary auditor backend.
+Codex `SessionStart` does not start a daemon; it only launches a detached
+`spotter db refresh --host-agent codex` so `.spotter/tool-db.codex.json` follows the Codex
+tool environment without overwriting Claude `.spotter/tool-db.json`. Codex `Stop` does not
 block the just-finished answer. It queues Spotter context under `.spotter/codex-pending/` and
 surfaces it on the next same-session `UserPromptSubmit`; backend errors are also written to
 stderr so one-shot `codex exec` runs do not hide the failure. Codex hook auditor calls use
 `model_reasoning_effort="low"` and a 20s timeout by default. Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
 
-- `SessionStart`
+- Claude `SessionStart`
   - returns without spawning when `SPOTTER_PARENT_PID` is set.
   - returns without spawning when `agent_id` is present.
   - returns without spawning when `source !== "startup"`.
   - returns without spawning outside a project containing `.spotter/marker.json`.
   - otherwise starts the daemon for `session_id`, waits for readiness, then launches bg refresh.
+- Codex `SessionStart`
+  - returns early when `SPOTTER_PARENT_PID` is set.
+  - returns outside a project containing `.spotter/marker.json`.
+  - otherwise starts detached `spotter db refresh --host-agent codex` and returns without waiting.
 - `UserPromptSubmit`
   - returns early for child calls, subagent calls, outside-project calls, and short prompts.
   - sends `event:"user_input"` to the daemon.

@@ -44,7 +44,7 @@ Usage:
                                         run read-only codex-sidecar second-pass workflows
   spotter codex work --findings FILE --approve-work --allowed-path PATH
                                         run approved codex-sidecar worktree workflow
-  spotter codex-hook install|diagnostics
+  spotter codex-hook install|uninstall|diagnostics
                                         (experimental) manage Codex native hooks
   spotter auditor judge --stage STAGE --input FILE
                                         (experimental) run primary auditor backend once

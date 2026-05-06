@@ -8,6 +8,7 @@ import { createAuditorBackend } from '../core/auditor-backend.mjs';
 import { codexLastAssistantMessage, readCodexUsedTools } from '../core/codex-transcript.mjs';
 import { legacyResultFromJudgment } from '../core/judgment.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
+import { spawnRefreshDetached } from '../hooks/spawn-daemon.mjs';
 import {
   die,
   findSpotterMarker,
@@ -34,10 +35,11 @@ Usage:
   spotter codex-hook install [--codex-home DIR]
   spotter codex-hook uninstall [--codex-home DIR]
   spotter codex-hook diagnostics [--codex-home DIR] [--project DIR]
+  spotter codex-hook session-start
   spotter codex-hook user-prompt-submit
   spotter codex-hook stop
 
-This command is experimental. It installs Codex UserPromptSubmit / Stop hooks and uses Codex CLI as the default primary auditor backend.
+This command is experimental. It installs Codex SessionStart / UserPromptSubmit / Stop hooks and uses Codex CLI as the default primary auditor backend.
 `;
 
 export async function runCodexHookCommand({ argv = process.argv.slice(2) } = {}) {
@@ -58,6 +60,10 @@ export async function runCodexHookCommand({ argv = process.argv.slice(2) } = {})
     await runCodexHookDiagnosticsCommand({ argv: argv.slice(1) });
     return;
   }
+  if (sub === 'session-start') {
+    await runCodexSessionStartHook();
+    return;
+  }
   if (sub === 'user-prompt-submit') {
     await runCodexUserPromptSubmitHook();
     return;
@@ -68,6 +74,29 @@ export async function runCodexHookCommand({ argv = process.argv.slice(2) } = {})
   }
   process.stderr.write(`unknown codex-hook subcommand: ${sub}\n${CODEX_HOOK_USAGE}`);
   process.exit(2);
+}
+
+export async function runCodexSessionStartHook({
+  readInput = readStdinJson,
+  spawnRefreshDetachedFn = spawnRefreshDetached,
+  recordHookEventFn = appendCodexHookEvent,
+  writeError = (text) => process.stderr.write(text),
+} = {}) {
+  if (isChildCall()) return;
+  const input = await readInput();
+  const projectRoot = findSpotterMarker(input.cwd);
+  if (!projectRoot) return;
+  const startedAt = Date.now();
+
+  spawnRefreshDetachedFn({ projectRoot, hostAgent: 'codex' });
+  await recordCodexHookEventSafe(recordHookEventFn, {
+    projectRoot,
+    event: {
+      hook: 'SessionStart',
+      status: 'refresh_spawned',
+      durationMs: Date.now() - startedAt,
+    },
+  }, writeError);
 }
 
 export async function runCodexUserPromptSubmitHook({
@@ -294,6 +323,7 @@ export async function installCodexHooks({ codexHome = defaultCodexHome(), nodePa
     hooksPath,
     configPath,
     hooks: {
+      sessionStart: hookState(next, 'SessionStart', 'codex-hook session-start'),
       userPromptSubmit: hookState(next, 'UserPromptSubmit', 'codex-hook user-prompt-submit'),
       stop: hookState(next, 'Stop', 'codex-hook stop'),
     },
@@ -315,6 +345,7 @@ export async function uninstallCodexHooks({ codexHome = defaultCodexHome() } = {
     codexHome,
     hooksPath,
     hooks: {
+      sessionStart: hookState(next, 'SessionStart', 'codex-hook session-start'),
       userPromptSubmit: hookState(next, 'UserPromptSubmit', 'codex-hook user-prompt-submit'),
       stop: hookState(next, 'Stop', 'codex-hook stop'),
     },
@@ -328,6 +359,7 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), pro
   const hooks = await loadJson(join(codexHome, 'hooks.json'));
   const codexHooksFeature = /^codex_hooks\s+\S+\s+true\b/m.test(featureOutput) ? 'enabled' : 'not-enabled';
   const installed = {
+    sessionStart: hookState(hooks, 'SessionStart', 'codex-hook session-start'),
     userPromptSubmit: hookState(hooks, 'UserPromptSubmit', 'codex-hook user-prompt-submit'),
     stop: hookState(hooks, 'Stop', 'codex-hook stop'),
   };
@@ -335,7 +367,7 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), pro
   return {
     availability: features.error || features.status !== 0 || codexHooksFeature !== 'enabled'
       ? 'unavailable'
-      : installed.userPromptSubmit === 'installed' && installed.stop === 'installed'
+      : installed.sessionStart === 'installed' && installed.userPromptSubmit === 'installed' && installed.stop === 'installed'
         ? 'available'
         : 'not-installed',
     codexBinary: features.error ? 'missing' : 'present',
@@ -589,21 +621,25 @@ async function loadJson(path) {
 function mergeCodexHooks(current, { nodePath, spotterBin }) {
   const next = structuredClone(current ?? {});
   next.hooks = next.hooks ?? {};
+  addCodexHook(next, 'SessionStart', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook session-start`, {
+    timeoutSec: 5,
+    async: true,
+  });
   addCodexHook(next, 'UserPromptSubmit', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook user-prompt-submit`);
   addCodexHook(next, 'Stop', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook stop`);
   return next;
 }
 
-function addCodexHook(settings, event, command) {
+function addCodexHook(settings, event, command, { timeoutSec = CODEX_HOOK_TIMEOUT_SEC, async = false } = {}) {
   const groups = settings.hooks[event] = Array.isArray(settings.hooks[event]) ? settings.hooks[event] : [];
   for (const group of groups) {
     if (!Array.isArray(group.hooks)) continue;
     for (const hook of group.hooks) {
       if (hook?.type !== 'command') continue;
-      if (!String(hook.command ?? '').includes('spotter.mjs') || !String(hook.command ?? '').includes(`codex-hook ${event === 'Stop' ? 'stop' : 'user-prompt-submit'}`)) continue;
+      if (!String(hook.command ?? '').includes('spotter.mjs') || !String(hook.command ?? '').includes(`codex-hook ${codexHookSubcommandForEvent(event)}`)) continue;
       hook.command = command;
-      hook.timeoutSec = CODEX_HOOK_TIMEOUT_SEC;
-      hook.async = false;
+      hook.timeoutSec = timeoutSec;
+      hook.async = async;
       hook.statusMessage = null;
       return;
     }
@@ -612,17 +648,23 @@ function addCodexHook(settings, event, command) {
     hooks: [{
       type: 'command',
       command,
-      timeoutSec: CODEX_HOOK_TIMEOUT_SEC,
-      async: false,
+      timeoutSec,
+      async,
       statusMessage: null,
     }],
   });
 }
 
+function codexHookSubcommandForEvent(event) {
+  if (event === 'SessionStart') return 'session-start';
+  if (event === 'Stop') return 'stop';
+  return 'user-prompt-submit';
+}
+
 function removeCodexHooks(current) {
   const next = structuredClone(current ?? {});
   if (!next.hooks || typeof next.hooks !== 'object') return next;
-  for (const event of ['UserPromptSubmit', 'Stop']) {
+  for (const event of ['SessionStart', 'UserPromptSubmit', 'Stop']) {
     const groups = Array.isArray(next.hooks[event]) ? next.hooks[event] : [];
     next.hooks[event] = groups
       .map((group) => ({

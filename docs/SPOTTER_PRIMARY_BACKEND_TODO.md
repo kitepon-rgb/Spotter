@@ -309,6 +309,9 @@ Gate:
 - [x] Codex host では primary backend default を Codex CLI にする。
   `spotter codex-hook user-prompt-submit|stop` は `SPOTTER_AUDITOR_BACKEND` が無い限り
   `codex-cli` を選ぶ。
+- [x] Codex native hook install は `SessionStart` も登録し、Codex session 開始時に
+  `spotter db refresh --host-agent codex` を detached 起動する。Claude 既存仕様と同じく
+  catalog 更新は session start hook の責務であり、install 時 seed には依存しない。
 - [x] Codex host では `codex-sidecar` を primary backend default にしない。
 - [x] Codex host で Codex CLI unavailable のとき、明示 error を返す。
   Codex hook adapter は Haiku に落とさず、Codex CLI backend の structured error を表面化する。
@@ -512,7 +515,7 @@ Gate:
   `mcp__caveat__caveat_search` の missing tool を検出し、finding `source=codex-cli`、
   `durationMs=11670`, schema-valid `SpotterJudgment` を確認済み。これは internal smoke であり、
   Codex native event source から Spotter が呼ばれた証明ではない。
-- Phase 3 実装で `spotter codex-hook install|uninstall|diagnostics|user-prompt-submit|stop` を追加した。
+- Phase 3 実装で `spotter codex-hook install|uninstall|diagnostics|session-start|user-prompt-submit|stop` を追加した。
   Codex hook adapter は `~/.codex/hooks.json` に `UserPromptSubmit` / `Stop` を登録し、
   `[features].codex_hooks = true` を有効化する。hook runtime は `.spotter/marker.json` で
   project gating し、`SPOTTER_PARENT_PID` で子 Codex CLI backend の再入を遮断し、

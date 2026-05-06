@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import {
   codexHookDiagnostics,
   installCodexHooks,
+  runCodexHookInstallCommand,
+  runCodexSessionStartHook,
   runCodexStopHook,
   runCodexUserPromptSubmitHook,
   uninstallCodexHooks,
@@ -38,7 +40,12 @@ test('installCodexHooks: merges Spotter hooks and enables codex_hooks feature', 
     const config = await readFile(join(codexHome, 'config.toml'), 'utf8');
 
     assert.equal(result.hooks.userPromptSubmit, 'installed');
+    assert.equal(result.hooks.sessionStart, 'installed');
     assert.equal(result.hooks.stop, 'installed');
+    assert.equal(hooks.hooks.SessionStart.length, 1);
+    assert.ok(hooks.hooks.SessionStart[0].hooks[0].command.includes('codex-hook session-start'));
+    assert.equal(hooks.hooks.SessionStart[0].hooks[0].timeoutSec, 5);
+    assert.equal(hooks.hooks.SessionStart[0].hooks[0].async, true);
     assert.equal(hooks.hooks.UserPromptSubmit.length, 2);
     assert.equal(hooks.hooks.UserPromptSubmit[0].hooks[0].command, 'keep me');
     assert.ok(hooks.hooks.UserPromptSubmit[1].hooks[0].command.includes('codex-hook user-prompt-submit'));
@@ -47,6 +54,23 @@ test('installCodexHooks: merges Spotter hooks and enables codex_hooks feature', 
     assert.match(config, /^\[features\]$/m);
     assert.match(config, /^codex_hooks = true$/m);
     assert.match(config, /^other = true$/m);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('runCodexHookInstallCommand: registers SessionStart without seeding catalog at install time', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-install-cmd-'));
+  const out = [];
+  try {
+    await runCodexHookInstallCommand({
+      argv: ['--codex-home', codexHome],
+      writeOutput: (text) => out.push(text),
+    });
+
+    const parsed = JSON.parse(out.join(''));
+    assert.equal(parsed.hooks.sessionStart, 'installed');
+    assert.equal(parsed.catalogSeed, undefined);
   } finally {
     await rm(codexHome, { recursive: true, force: true });
   }
@@ -61,6 +85,9 @@ test('uninstallCodexHooks: removes only Spotter Codex hook entries', async () =>
           { hooks: [{ type: 'command', command: 'keep me' }] },
           { hooks: [{ type: 'command', command: 'node /repo/bin/spotter.mjs codex-hook user-prompt-submit' }] },
         ],
+        SessionStart: [
+          { hooks: [{ type: 'command', command: 'node /repo/bin/spotter.mjs codex-hook session-start' }] },
+        ],
         Stop: [
           { hooks: [{ type: 'command', command: 'node /repo/bin/spotter.mjs codex-hook stop' }] },
         ],
@@ -71,12 +98,69 @@ test('uninstallCodexHooks: removes only Spotter Codex hook entries', async () =>
     const hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
 
     assert.equal(result.hooks.userPromptSubmit, 'not-installed');
+    assert.equal(result.hooks.sessionStart, 'not-installed');
     assert.equal(result.hooks.stop, 'not-installed');
+    assert.deepEqual(hooks.hooks.SessionStart, []);
     assert.equal(hooks.hooks.UserPromptSubmit.length, 1);
     assert.equal(hooks.hooks.UserPromptSubmit[0].hooks[0].command, 'keep me');
     assert.deepEqual(hooks.hooks.Stop, []);
   } finally {
     await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('runCodexSessionStartHook: spawns Codex host refresh for installed Spotter projects', async () => {
+  const project = await makeProject();
+  const seen = [];
+  try {
+    await runCodexSessionStartHook({
+      readInput: async () => ({
+        cwd: project,
+        hook_event_name: 'SessionStart',
+        session_id: 'sess-codex-start',
+      }),
+      spawnRefreshDetachedFn: (args) => seen.push(args),
+      recordHookEventFn: async ({ projectRoot, event }) => {
+        assert.equal(projectRoot, project);
+        assert.equal(event.hook, 'SessionStart');
+        assert.equal(event.status, 'refresh_spawned');
+      },
+    });
+    assert.deepEqual(seen, [{ projectRoot: project, hostAgent: 'codex' }]);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexSessionStartHook: exits outside installed Spotter project', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-codex-start-outside-'));
+  try {
+    await runCodexSessionStartHook({
+      readInput: async () => ({ cwd: dir, hook_event_name: 'SessionStart' }),
+      spawnRefreshDetachedFn: () => {
+        throw new Error('should not refresh outside marker project');
+      },
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('runCodexSessionStartHook: child Codex backend env exits before reading stdin', async () => {
+  const old = process.env.SPOTTER_PARENT_PID;
+  process.env.SPOTTER_PARENT_PID = 'codex-cli:test';
+  try {
+    await runCodexSessionStartHook({
+      readInput: async () => {
+        throw new Error('should not read stdin for Spotter child calls');
+      },
+      spawnRefreshDetachedFn: () => {
+        throw new Error('should not refresh for Spotter child calls');
+      },
+    });
+  } finally {
+    if (old === undefined) delete process.env.SPOTTER_PARENT_PID;
+    else process.env.SPOTTER_PARENT_PID = old;
   }
 });
 
@@ -380,6 +464,7 @@ test('codexHookDiagnostics: reports feature and hook installation state', async 
 
     assert.equal(result.availability, 'available');
     assert.equal(result.codexHooksFeature, 'enabled');
+    assert.equal(result.installedHooks.sessionStart, 'installed');
     assert.equal(result.installedHooks.userPromptSubmit, 'installed');
   } finally {
     await rm(codexHome, { recursive: true, force: true });

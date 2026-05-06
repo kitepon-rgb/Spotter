@@ -21,7 +21,7 @@ test('cli: --help prints public and internal command contract', async () => {
   assert.ok(stdout.includes('spotter codex risk-check --findings FILE'));
   assert.ok(stdout.includes('spotter codex review|explore|opinion --findings FILE'));
   assert.ok(stdout.includes('spotter codex work --findings FILE --approve-work --allowed-path PATH'));
-  assert.ok(stdout.includes('spotter codex-hook install|diagnostics'));
+  assert.ok(stdout.includes('spotter codex-hook install|uninstall|diagnostics'));
   assert.ok(stdout.includes('spotter auditor judge --stage STAGE --input FILE'));
   assert.ok(stdout.includes('spotter auditor matrix --stage STAGE --input FILE'));
   assert.ok(stdout.includes('spotter daemon start --session-id ID'));

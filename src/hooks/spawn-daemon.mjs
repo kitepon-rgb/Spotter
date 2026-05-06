@@ -69,11 +69,11 @@ function spawnDaemon(sessionId, projectRoot) {
 // Fire-and-forget `spotter db refresh`. The daemon in THIS session already loaded the
 // pre-refresh tool-db, so any updates land in time for the NEXT session. Detached so
 // the hook doesn't wait for MCP/skill/agent discovery to finish.
-export function spawnRefreshDetached({ projectRoot }) {
+export function spawnRefreshDetached({ projectRoot, hostAgent = 'claude' }) {
   const spotterBin = resolveSpotterBin();
   const child = spawn(
     process.execPath,
-    [spotterBin, 'db', 'refresh'],
+    [spotterBin, 'db', 'refresh', '--host-agent', hostAgent],
     {
       cwd: projectRoot,
       detached: true,

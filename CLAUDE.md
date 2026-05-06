@@ -136,7 +136,7 @@ spotter diagnostics logs [--json]
 spotter codex risk-check --findings <file> [--host-agent <agent>]
 spotter codex review / explore / opinion --findings <file> [--host-agent <agent>]
 spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path> (--preserve-worktree | --remove-worktree)
-spotter codex-hook install / uninstall / diagnostics   # experimental Codex native hooks
+spotter codex-hook install / uninstall / diagnostics   # experimental Codex native hooks; SessionStart refreshes Codex DB
 spotter daemon start              # 内部用 (hook から呼ばれる)
 spotter hook <event>              # 内部用 (Claude Code hook から呼ばれる)
 ```
@@ -148,7 +148,8 @@ spotter hook <event>              # 内部用 (Claude Code hook から呼ばれ�
 `spotter codex-hook *` は Codex native hooks 用の experimental adapter であり、Codex host の
 primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査専用の子 Codex は
 `model_reasoning_effort="low"`、hook auditor timeout 20s を既定にし、短い Codex `Stop`
-応答は重複監査せず skip する。`SPOTTER_CODEX_CLI_MODEL` /
+応答は重複監査せず skip する。Codex `SessionStart` は `spotter db refresh --host-agent codex`
+を detached 起動し、Claude DB には触れない。`SPOTTER_CODEX_CLI_MODEL` /
 `SPOTTER_CODEX_CLI_REASONING_EFFORT` / `SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS` /
 `SPOTTER_CODEX_STOP_SHORT_FINAL_MAX_CHARS` で実測用に上書き可能。
 
