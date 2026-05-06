@@ -4,7 +4,7 @@
 
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { chmod, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,8 +21,16 @@ export function socketPath(sessionId) {
 }
 
 export async function ensureRuntimeDir() {
-  await mkdir(RUNTIME_DIR, { recursive: true });
+  await mkdir(RUNTIME_DIR, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') {
+    await chmod(RUNTIME_DIR, 0o700);
+  }
   return RUNTIME_DIR;
+}
+
+export async function secureSocketFile(path) {
+  if (process.platform === 'win32') return;
+  await chmod(path, 0o600);
 }
 
 // Request/response over a single connection. Used by hooks.

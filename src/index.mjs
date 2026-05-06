@@ -13,6 +13,39 @@ export {
   createHaikuCaller,
   HaikuError,
 } from './daemon/haiku-caller.mjs';
+export { legacyResultFromJudgment, toSpotterFinding, toSpotterJudgment } from './core/judgment.mjs';
+export {
+  createSidecarResultRecord,
+  spotterFindingsToSidecarContextBlocks,
+  spotterFindingToSidecarContextBlock,
+} from './core/sidecar-context.mjs';
+export {
+  buildDiagnosticsCommand,
+  buildSidecarSpawnOptions,
+  classifySidecarAvailability,
+  decideCodexSidecarUse,
+  detectHostAgent,
+  workCapabilitySmokeFromDiagnostics,
+} from './core/codex-sidecar-policy.mjs';
+export {
+  dispatchCodexRiskCheck,
+  isCodexRiskDispatchDryRun,
+  isCodexRiskDispatchEnabled,
+} from './core/codex-risk-dispatch.mjs';
+export {
+  readFindingsJson,
+  runCodexExplore,
+  runCodexOpinion,
+  runCodexReadOnlyWorkflow,
+  runCodexReview,
+  runCodexRiskCheck,
+  runCodexWork,
+} from './core/codex-sidecar-runner.mjs';
+export {
+  defaultDaemonLogDir,
+  summarizeDaemonLogText,
+  summarizeDaemonLogs,
+} from './core/daemon-log-diagnostics.mjs';
 export { loadDb, saveDb, emptyDb, ToolDbSchemaError, globalDbPath, localDbPath } from './tool-db/loader.mjs';
 export { resolveAll } from './tool-db/lookup.mjs';
 export { refresh, readLocal, buildInvestigationSnapshot } from './tool-db/refresh.mjs';

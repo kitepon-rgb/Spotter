@@ -32,7 +32,7 @@
 //     the env-var gate)
 
 import { readFile } from 'node:fs/promises';
-import { createServer, ensureRuntimeDir, socketPath } from './transport.mjs';
+import { createServer, ensureRuntimeDir, secureSocketFile, socketPath } from './transport.mjs';
 import {
   buildFirstStagePrompt,
   buildFinalStagePrompt,
@@ -43,6 +43,12 @@ import {
   HaikuError,
 } from './haiku-caller.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
+import { legacyResultFromJudgment, toSpotterJudgment } from '../core/judgment.mjs';
+import {
+  dispatchCodexRiskCheck,
+  isCodexRiskDispatchDryRun,
+  isCodexRiskDispatchEnabled,
+} from '../core/codex-risk-dispatch.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
@@ -76,6 +82,9 @@ export async function startDaemon({
   logFn = () => {},
   haikuCallWindowMs = DEFAULT_HAIKU_CALL_WINDOW_MS,
   heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
+  codexRiskCheckEnabled = isCodexRiskDispatchEnabled(),
+  codexRiskCheckDryRun = isCodexRiskDispatchDryRun(),
+  dispatchCodexRiskCheckFn = dispatchCodexRiskCheck,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -253,12 +262,15 @@ export async function startDaemon({
     state.usedTools = []; // reset tools for this turn
 
     const { parsed, meta } = await runHaikuJudgment('user_input', buildFirstStagePrompt({ userInput }));
+    const judgment = toSpotterJudgment({ stage: 'user_input', parsed, meta });
+    const result = legacyResultFromJudgment(judgment);
     logFn(
-      `user_input: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
-        parsed.reason ? `, reason=${parsed.reason}` : ''
+      `user_input: pass=${result.pass}, missing=${result.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
+        result.reason ? `, reason=${result.reason}` : ''
       }`
     );
-    return parsed;
+    maybeDispatchCodexRiskCheck('user_input', judgment);
+    return result;
   }
 
   function handleToolUsed(payload) {
@@ -302,15 +314,46 @@ export async function startDaemon({
         finalResponse,
       })
     );
+    const judgment = toSpotterJudgment({ stage: 'turn_end', parsed, meta });
+    const result = legacyResultFromJudgment(judgment);
     logFn(
-      `turn_end: pass=${parsed.pass}, missing=${parsed.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
-        parsed.reason ? `, reason=${parsed.reason}` : ''
+      `turn_end: pass=${result.pass}, missing=${result.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
+        result.reason ? `, reason=${result.reason}` : ''
       }`
     );
+    maybeDispatchCodexRiskCheck('turn_end', judgment);
 
     state.usedTools = [];
     state.lastUserInput = null;
-    return parsed;
+    return result;
+  }
+
+  function maybeDispatchCodexRiskCheck(stage, judgment) {
+    if (!codexRiskCheckEnabled) {
+      if (judgment.pass === false && judgment.findings.length > 0) {
+        logFn(`${stage}: codex_risk_check skipped: disabled`);
+      }
+      return;
+    }
+    if (!projectRoot) {
+      logFn(`${stage}: codex_risk_check skipped: no projectRoot`);
+      return;
+    }
+    if (judgment.pass === true || judgment.findings.length === 0) return;
+    dispatchCodexRiskCheckFn({
+      projectRoot,
+      judgment,
+      sessionId,
+      stage,
+      hostAgent: 'claude',
+      dryRun: codexRiskCheckDryRun,
+    }).then((dispatch) => {
+      if (dispatch?.dispatched) {
+        logFn(`${stage}: codex_risk_check dispatched pid=${dispatch.pid ?? 'unknown'} result=${dispatch.resultPath}`);
+      }
+    }).catch((err) => {
+      logFn(`${stage}: codex_risk_check dispatch failed: ${err.message}`);
+    });
   }
 
   const onErrorFn = (err, envelope) => {
@@ -322,11 +365,10 @@ export async function startDaemon({
 
   await new Promise((resolve, reject) => {
     server.on('error', (err) => reject(err));
-    server.listen(path, () => {
-      logFn(`daemon listening on ${path}`);
-      resolve();
-    });
+    server.listen(path, resolve);
   });
+  await secureSocketFile(path);
+  logFn(`daemon listening on ${path}`);
 
   // Write PID file so uninstall/doctor can reason about liveness (§15.3 doctor).
   const pidPath = pidFilePath(sessionId);

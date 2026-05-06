@@ -24,9 +24,15 @@ import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
 const TIMEOUT_MS = 50_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
 
-export async function runUserPrompt() {
+export async function runUserPrompt({
+  readInput = readStdinJson,
+  sendRequestFn = sendRequest,
+  spawnDaemonAndWaitReadyFn = spawnDaemonAndWaitReady,
+  writeOutput = (text) => process.stdout.write(text),
+  dieFn = die,
+} = {}) {
   if (isChildCall()) return;
-  const input = await readStdinJson();
+  const input = await readInput();
   if (isSubagentCall(input)) return;
   if (isOutsideSpotterProject(input)) return;
 
@@ -36,7 +42,7 @@ export async function runUserPrompt() {
   if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) return;
 
   const sendUserInput = () =>
-    sendRequest({
+    sendRequestFn({
       sessionId,
       event: 'user_input',
       payload: { user_input: prompt },
@@ -51,29 +57,29 @@ export async function runUserPrompt() {
       // v0.12.0: daemon is gone (heartbeat shutdown, crash, missing). Resurrect and retry.
       const projectRoot = findSpotterMarker(input.cwd);
       if (!projectRoot) {
-        die(`user-prompt: cannot resurrect daemon — no .spotter/marker.json above cwd=${input.cwd}`, 2);
+        dieFn(`user-prompt: cannot resurrect daemon — no .spotter/marker.json above cwd=${input.cwd}`, 2);
         return;
       }
       try {
-        await spawnDaemonAndWaitReady({ sessionId, projectRoot });
+        await spawnDaemonAndWaitReadyFn({ sessionId, projectRoot });
       } catch (spawnErr) {
-        die(`user-prompt: daemon resurrect failed: ${spawnErr.message}`, spawnErr.exitCode ?? 2);
+        dieFn(`user-prompt: daemon resurrect failed: ${spawnErr.message}`, spawnErr.exitCode ?? 2);
         return;
       }
       try {
         response = await sendUserInput();
       } catch (retryErr) {
-        die(`user-prompt transport failure after resurrect: ${retryErr.code ?? '?'}: ${retryErr.message}`, exitCodeFor(retryErr));
+        dieFn(`user-prompt transport failure after resurrect: ${retryErr.code ?? '?'}: ${retryErr.message}`, exitCodeFor(retryErr));
         return;
       }
     } else {
-      die(`user-prompt transport failure: ${err.code ?? '?'}: ${err.message}`, exitCodeFor(err));
+      dieFn(`user-prompt transport failure: ${err.code ?? '?'}: ${err.message}`, exitCodeFor(err));
       return;
     }
   }
 
   if (response.ok !== true) {
-    die(`daemon error on user_input: ${response.error?.code ?? '?'}: ${response.error?.message ?? ''}`, 2);
+    dieFn(`daemon error on user_input: ${response.error?.code ?? '?'}: ${response.error?.message ?? ''}`, 2);
     return;
   }
 
@@ -89,7 +95,7 @@ export async function runUserPrompt() {
       additionalContext,
     },
   };
-  process.stdout.write(JSON.stringify(output));
+  writeOutput(JSON.stringify(output));
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {

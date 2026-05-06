@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { socketPath, sendRequest, createServer, TransportError, ensureRuntimeDir } from '../src/daemon/transport.mjs';
+import { socketPath, sendRequest, createServer, TransportError, ensureRuntimeDir, secureSocketFile } from '../src/daemon/transport.mjs';
 import { randomUUID } from 'node:crypto';
+import { stat, unlink } from 'node:fs/promises';
 
 test('socketPath: Windows uses Named Pipe namespace', { skip: process.platform !== 'win32' }, () => {
   assert.equal(socketPath('abc'), '\\\\.\\pipe\\spotter-abc');
@@ -23,6 +24,33 @@ test('sendRequest: returns E_UNREACHABLE when daemon not listening', async () =>
     sendRequest({ sessionId: bogusId, event: 'readiness', timeoutMs: 500 }),
     (err) => err instanceof TransportError && err.code === 'E_UNREACHABLE'
   );
+});
+
+test('ensureRuntimeDir: Unix runtime dir is owner-only', { skip: process.platform === 'win32' }, async () => {
+  const dir = await ensureRuntimeDir();
+  const mode = (await stat(dir)).mode & 0o777;
+  assert.equal(mode, 0o700);
+});
+
+test('secureSocketFile: Unix socket is owner-only', { skip: process.platform === 'win32' }, async () => {
+  await ensureRuntimeDir();
+  const sessionId = `perm-${randomUUID()}`;
+  const { server, path } = createServer({ sessionId, handler: async () => ({ ok: true }) });
+  await new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(path, resolve);
+  });
+
+  try {
+    await secureSocketFile(path);
+    const mode = (await stat(path)).mode & 0o777;
+    assert.equal(mode, 0o600);
+  } finally {
+    await new Promise((r) => server.close(r));
+    await unlink(path).catch((err) => {
+      if (err.code !== 'ENOENT') throw err;
+    });
+  }
 });
 
 test('round-trip: server echoes result through envelope', async () => {

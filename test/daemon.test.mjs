@@ -649,3 +649,79 @@ test('startDaemon: keeps valid tools when hallucinations mixed in (v0.13.3)', as
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('startDaemon: opt-in codex_risk_check dispatches pass=false findings asynchronously', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `codex-risk-${randomUUID()}`;
+  const dispatches = [];
+  const haikuCaller = async (_prompt) =>
+    JSON.stringify({
+      pass: false,
+      missing_tools: [{ name: 'current_time', reason: 'time question' }],
+    });
+  const running = await startDaemon({
+    sessionId,
+    projectRoot: dir,
+    tools,
+    haikuCaller,
+    codexRiskCheckEnabled: true,
+    codexRiskCheckDryRun: true,
+    dispatchCodexRiskCheckFn: async (args) => {
+      dispatches.push(args);
+      return { dispatched: true, pid: 123, resultPath: '/tmp/result.json' };
+    },
+  });
+  try {
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '今何時?' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.pass, false);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(dispatches.length, 1);
+    assert.equal(dispatches[0].projectRoot, dir);
+    assert.equal(dispatches[0].sessionId, sessionId);
+    assert.equal(dispatches[0].stage, 'user_input');
+    assert.equal(dispatches[0].dryRun, true);
+    assert.equal(dispatches[0].judgment.findings[0].toolName, 'current_time');
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: codex_risk_check disabled by default does not dispatch pass=false findings', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `codex-risk-off-${randomUUID()}`;
+  const haikuCaller = async (_prompt) =>
+    JSON.stringify({
+      pass: false,
+      missing_tools: [{ name: 'current_time', reason: 'time question' }],
+    });
+  const running = await startDaemon({
+    sessionId,
+    projectRoot: dir,
+    tools,
+    haikuCaller,
+    codexRiskCheckEnabled: false,
+    dispatchCodexRiskCheckFn: async () => {
+      throw new Error('dispatch should not be called when disabled');
+    },
+  });
+  try {
+    const resp = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '今何時?' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.pass, false);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

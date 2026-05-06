@@ -19,10 +19,15 @@
 import { readStdinJson, requireString, die, isChildCall, isSubagentCall, isOutsideSpotterProject, findSpotterMarker } from './lib.mjs';
 import { spawnDaemonAndWaitReady, spawnRefreshDetached } from './spawn-daemon.mjs';
 
-export async function runSessionStart({ now = Date.now } = {}) {
+export async function runSessionStart({
+  now = Date.now,
+  readInput = readStdinJson,
+  spawnDaemonAndWaitReadyFn = spawnDaemonAndWaitReady,
+  spawnRefreshDetachedFn = spawnRefreshDetached,
+} = {}) {
   if (isChildCall()) return;
 
-  const input = await readStdinJson();
+  const input = await readInput();
 
   if (isSubagentCall(input)) return;
   if (input.source !== 'startup') return;
@@ -34,8 +39,8 @@ export async function runSessionStart({ now = Date.now } = {}) {
     die(`SessionStart: failed to locate project root from cwd=${input.cwd}`, 2);
   }
 
-  await spawnDaemonAndWaitReady({ sessionId, projectRoot, now });
-  spawnRefreshDetached({ projectRoot });
+  await spawnDaemonAndWaitReadyFn({ sessionId, projectRoot, now });
+  spawnRefreshDetachedFn({ projectRoot });
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {
