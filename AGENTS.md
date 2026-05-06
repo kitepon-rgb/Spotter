@@ -9,11 +9,11 @@ commands, hooks, error handling, and release workflow.
 1. Read `CLAUDE.md` before changing code.
 2. Read `docs/open-issues.md` before starting new work.
 3. For Claude / Codex dual-support work, also read
-   `docs/SPOTTER_CODEX_DUAL_SUPPORT.md`.
-4. For the executable dual-support TODO and phase gates, read
-   `docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`.
-5. For primary auditor backend migration work, read
-   `docs/SPOTTER_PRIMARY_BACKEND_TODO.md`.
+   `docs/SPOTTER_CLAUDE_CONTRACT.md`.
+4. For catalog / tool-db behavior, read `docs/catalog-design.md`.
+
+Completed plans and historical design snapshots live under `docs/archive/` and
+are reference material, not required reading for normal work.
 
 If this file conflicts with `CLAUDE.md`, follow `CLAUDE.md` and update this file
 only as a pointer or clarification.
@@ -34,7 +34,7 @@ only as a pointer or clarification.
 ## Critical Safety Note
 
 Spotter has a known high-impact failure mode: recursive hook / daemon proliferation.
-The historical incident is documented in `docs/spotter-plan.md` section 18. The
+The historical incident is archived in `docs/archive/spotter-plan.md` section 18. The
 product contract is to prevent that class of incident. The current proven
 baseline is:
 
@@ -60,7 +60,7 @@ which failure path it covers, and adds regression coverage.
   provisional implementation in the mainline.
 - Treat `codex-sidecar` unavailable behavior as an explicit second-pass skip /
   compatibility mode only when the design says so. Primary auditor backend
-  unavailability follows `docs/SPOTTER_PRIMARY_BACKEND_TODO.md`; do not invent a
+  unavailability follows `docs/SPOTTER_CLAUDE_CONTRACT.md`; do not invent a
   hidden Haiku fallback.
 - Avoid recursive Codex-on-Codex delegation unless there is a concrete boundary:
   isolated worktree execution, durable structured result, raw diagnostics, a

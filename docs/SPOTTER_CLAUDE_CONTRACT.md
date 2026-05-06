@@ -5,12 +5,17 @@
 
 正本は `CLAUDE.md`。ここは実装時に参照する checklist と test 対応表。
 
-関連文書:
+現役文書:
 
-- Claude / Codex second-pass workflow: [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md)
-- 完了済み dual-support TODO: [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)
-- 主判定 backend migration: [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md)
 - 現状課題と観測タスク: [`open-issues.md`](open-issues.md)
+- カタログ / tool-db 設計: [`catalog-design.md`](catalog-design.md)
+
+完了済み計画と歴史記録:
+
+- Claude / Codex second-pass workflow brief: [`archive/SPOTTER_CODEX_DUAL_SUPPORT.md`](archive/SPOTTER_CODEX_DUAL_SUPPORT.md)
+- Dual-support TODO / phase gates: [`archive/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](archive/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)
+- Primary backend migration TODO / smoke logs: [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
+- v0.1 design discussion: [`archive/spotter-plan.md`](archive/spotter-plan.md)
 
 ## Command Contract
 
@@ -63,8 +68,12 @@ current Codex adapter installs user-level `~/.codex/hooks.json` entries for `Ses
 Codex `SessionStart` does not start a daemon; it only launches a detached
 `spotter db refresh --host-agent codex` so `.spotter/tool-db.codex.json` follows the Codex
 tool environment without overwriting Claude `.spotter/tool-db.json`. Codex `Stop` does not
-block the just-finished answer. It queues Spotter context under `.spotter/codex-pending/` and
-surfaces it on the next same-session `UserPromptSubmit`; backend errors are also written to
+block the just-finished answer. It uses deferred delivery: Spotter context is queued under
+`.spotter/codex-pending/` and surfaced on the next same-session `UserPromptSubmit`.
+This is intentional. Real Codex hook smoke showed that `decision:"block"` after final
+answer becomes `Stop Blocked` / exit code 1 rather than a clean continuation, so the
+Codex adapter follows the pending-queue pattern until Codex exposes a non-blocking
+Stop continuation / additional-context surface. Backend errors are also written to
 stderr so one-shot `codex exec` runs do not hide the failure. Codex hook auditor calls use
 `model_reasoning_effort="low"` and a 20s timeout by default. Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
@@ -215,8 +224,10 @@ Second-pass workflow は、主判定で得た `SpotterFinding[]` を別の観点
 を呼ぶ場合でも hook の主判定そのものを置き換えません。daemon からの `risk-check`
 dispatch も opt-in かつ detached であり、hook response は Codex を待ちません。
 
-主判定 backend を Codex CLI または `codex-sidecar` に移す作業は
-[`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) の対象です。
+Codex host の primary auditor backend は v1.4.3 時点で Codex CLI (`codex exec`) が既定です。
+Claude host は現行 Haiku-compatible path を既定として維持します。完了済みの migration
+計画と smoke 結果は [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
+に保管しています。
 
 ## Regression Coverage
 

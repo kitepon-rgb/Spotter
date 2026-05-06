@@ -467,7 +467,7 @@ test('runCodexWork: dirty approved scope stops before sidecar invocation', async
       allowedPaths: ['docs/'],
       cleanup: 'preserve',
       save: false,
-      gitStatusFn: async () => ({ stdout: '?? docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md\n', stderr: '' }),
+      gitStatusFn: async () => ({ stdout: '?? docs/archive/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md\n', stderr: '' }),
       execFileFn: async () => {
         sidecarCalls += 1;
         return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
@@ -477,7 +477,7 @@ test('runCodexWork: dirty approved scope stops before sidecar invocation', async
     assert.equal(sidecarCalls, 0);
     assert.equal(record.status, 'error');
     assert.equal(record.error.code, 'codex_work_dirty_approved_scope');
-    assert.equal(record.meta.dirtyScope.entries[0].path, 'docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md');
+    assert.equal(record.meta.dirtyScope.entries[0].path, 'docs/archive/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md');
   } finally {
     await rm(project, { recursive: true, force: true });
   }

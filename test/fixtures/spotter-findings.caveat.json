@@ -11,7 +11,7 @@
       "source": "spotter-smoke",
       "references": [
         {
-          "path": "docs/SPOTTER_PRIMARY_BACKEND_TODO.md",
+          "path": "docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md",
           "label": "primary backend migration plan"
         }
       ]

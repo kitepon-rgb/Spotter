@@ -1,18 +1,22 @@
 # Spotter Claude / Codex Dual Support TODO
 
-この文書は `docs/SPOTTER_CODEX_DUAL_SUPPORT.md` に基づく作業計画書兼 TODO。
+> Archived: この文書は完了済み dual-support phase gate の記録です。
+> 現行仕様は [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)、
+> 現行課題は [`../open-issues.md`](../open-issues.md) を参照してください。
+
+この文書は `docs/archive/SPOTTER_CODEX_DUAL_SUPPORT.md` に基づく作業計画書兼 TODO。
 `CLAUDE.md` を正本とし、Spotter の Claude-first workflow を維持したまま Codex
 adapter を追加する。
 
 ## Source Of Truth
 
-- 正本: [`../CLAUDE.md`](../CLAUDE.md)
-- Claude contract: [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md)
-- 現状課題: [`open-issues.md`](open-issues.md)
+- 正本: [`../../CLAUDE.md`](../../CLAUDE.md)
+- Claude contract: [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)
+- 現状課題: [`../open-issues.md`](../open-issues.md)
 - Dual-support 方針: [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md)
 - 次段階の primary auditor backend migration: [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md)
 - この文書: 実装順序、TODO、現時点の所見
-- Sidecar consuming repo 設定: [`../.codex-sidecar.yml`](../.codex-sidecar.yml)
+- Sidecar consuming repo 設定: [`../../.codex-sidecar.yml`](../../.codex-sidecar.yml)
 
 この文書の実装対象は完了済みの second-pass `codex-sidecar` workflow です。
 `UserPromptSubmit` / `Stop` の主判定 backend を Codex CLI / `codex-sidecar` に移す作業は
@@ -34,7 +38,7 @@ tool-use を監査する。
 - `UserPromptSubmit` は additionalContext を、`Stop` は `decision:"block"` を返す。
 - Haiku spawn は isolated workdir + empty MCP config で動き、Bell 側 MCP を eager load
   しない。
-- Spotter は過去に daemon 増殖事故を起こしている。`docs/spotter-plan.md` §18 に記録があり、
+- Spotter は過去に daemon 増殖事故を起こしている。`docs/archive/spotter-plan.md` §18 に記録があり、
   `SessionStart` が subagent ごとに発火して 213 daemon が spawn した。現行版は
   `SPOTTER_PARENT_PID` / `agent_id` gate / `source=startup` 限定 / PID preexist check /
   10 秒 Haiku call window の再帰ガード 5 層に、`.spotter/marker.json` による
@@ -67,7 +71,7 @@ agent-neutral 化する土台として良い。
 
 ## Safety Invariants
 
-Dual-support 実装では、`docs/spotter-plan.md` §18 の daemon 増殖事故を最優先で保護する。
+Dual-support 実装では、`docs/archive/spotter-plan.md` §18 の daemon 増殖事故を最優先で保護する。
 絶対条件は「recursive hook / daemon proliferation を再発させない」こと。現行の
 再帰ガード 5 層 + project marker gate は実証済み baseline として扱うが、同等以上に単純・堅牢・効率的な手段が
 あるなら置き換えてよい。その場合は、どの failure path を防ぐのか、なぜ同等以上と
@@ -124,10 +128,10 @@ Codex projection を足す → sidecar execution を足す」。Codex を動か�
 
 - [x] Root `AGENTS.md` を追加し、`CLAUDE.md` 正本方針を明文化する。
 - [x] この TODO 文書を作成する。
-- [x] daemon 増殖事故 (`docs/spotter-plan.md` §18) と、同等以上の代替を許す安全保証を明文化する。
+- [x] daemon 増殖事故 (`docs/archive/spotter-plan.md` §18) と、同等以上の代替を許す安全保証を明文化する。
 - [x] VSCode native extension の `process.ppid` trap を反映し、heartbeat + auto-resurrect を safety invariant に含める。
 - [x] `README.md` / `README.ja.md` の Design docs に
-  `docs/SPOTTER_CODEX_DUAL_SUPPORT.md` とこの TODO への導線を追加する。
+  `docs/archive/SPOTTER_CODEX_DUAL_SUPPORT.md` とこの TODO への導線を追加する。
   Phase 0 ではリンク追加だけを行い、Codex projection / execution の説明追加は後続 phase に回す。
 - [x] `.codex-sidecar.yml` を追加し、Spotter repo が `codex-sidecar diagnostics --project <repo> --preset review`
   を実行可能な consuming repo であることを確認する。
@@ -392,7 +396,7 @@ Gate:
   `status:"skipped"` structured result として残し、Claude-backed Haiku auditor は現状維持する。
   Codex host の primary auditor backend unavailable 時に Haiku fallback する、という意味ではない。
 - [x] いつ Codex sidecar が有用で、いつ current-agent direct handling がよいか docs に説明されている。
-  `docs/SPOTTER_CODEX_DUAL_SUPPORT.md` の host / availability policy に反映済み。
+  `docs/archive/SPOTTER_CODEX_DUAL_SUPPORT.md` の host / availability policy に反映済み。
 - [x] daemon proliferation と daemon lifecycle の安全保証が、docs と regression tests の両方で守られている。
   `SPOTTER_PARENT_PID` / `agent_id` / startup source / marker / PID preexist /
   Haiku call window / heartbeat を docs と tests で固定済み。

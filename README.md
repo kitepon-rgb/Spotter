@@ -63,6 +63,10 @@ spotter uninstall        # remove hooks from this project
 
 ### Audit flow per turn
 
+Claude Code and Codex have different `Stop` surfaces. The diagram below is the Claude
+host flow. Codex native `Stop` uses deferred delivery: findings are queued and shown on
+the next same-session `UserPromptSubmit`.
+
 ```mermaid
 flowchart TD
     U([User prompt]) --> UPH[UserPromptSubmit hook<br/>Spotter audits prompt against catalog]
@@ -167,15 +171,14 @@ without touching the Claude DB.
 
 - **Current design** (catalog, discovery, classification axes): [docs/catalog-design.md](docs/catalog-design.md) — source of truth from v1.0.0
 - **Open issues + unverified concerns**: [docs/open-issues.md](docs/open-issues.md) — read this before starting new work
-- **Claude contract capture**: [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) — current hook / daemon / Haiku behavior that Codex work must preserve
-- **Claude / Codex dual-support brief**: [docs/SPOTTER_CODEX_DUAL_SUPPORT.md](docs/SPOTTER_CODEX_DUAL_SUPPORT.md) and completed [TODO](docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md) — second-pass `codex-sidecar` workflows
-- **Primary auditor backend migration**: [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) — Codex CLI / `codex-sidecar` auditor backend rollout status
+- **Runtime contract**: [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) — Claude hook / daemon / Haiku contract plus Codex native hook policy
 - **Implementation invariants (§0)**: [CLAUDE.md](CLAUDE.md) — no fallbacks, no silent failures, no provisional code
-- **Historical record (v0.1 design discussion)**: [docs/spotter-plan.md](docs/spotter-plan.md) — frozen design-discussion snapshot
+- **Archived plans and history**: [docs/archive/](docs/archive/) — completed Codex rollout plans, primary backend smoke logs, and the frozen v0.1 design discussion
 
 ## Known limitations
 
 - The `Stop` hook fires **after** Bell's first answer has already been streamed to the user. When Spotter sends Bell back, the user sees both the original answer and the corrected one. Detection accuracy in `UserPromptSubmit` (the *pre-response* stage) is therefore Spotter's primary axis of quality
+- Codex native `Stop` is **deferred**, not an immediate block. If Spotter finds a missed tool at Codex `Stop`, it writes the finding to `.spotter/codex-pending/` and surfaces it on the next same-session `UserPromptSubmit` as `additionalContext`. This avoids Codex's current `Stop Blocked` / exit-code-1 behavior for `decision:"block"`
 - **Since v0.5.0, JSON schema violations from Haiku are treated as expected-anomalies** (silent pass + session renew, logged as `role_collapse_reset`) — this is the role-collapse recovery path. **Haiku timeouts still throw**, which surfaces as `UserPromptSubmit` blocking the user's prompt from reaching Bell. Timeouts have been raised twice (30s in v0.5.0, 45s in v0.13.1); making timeouts fail-open is deferred until §0 is revisited
 
 <details>

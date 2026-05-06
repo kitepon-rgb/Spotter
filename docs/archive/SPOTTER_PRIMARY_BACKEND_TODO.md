@@ -1,14 +1,18 @@
 # Spotter Primary Backend Migration TODO
 
+> Archived: この文書は完了済み primary backend migration の作業ログと smoke 記録です。
+> 現行 backend policy は [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)、
+> 現行課題は [`../open-issues.md`](../open-issues.md) を参照してください。
+
 この文書は、Spotter の auditor backend を host agent ごとに切り替えるための
 作業計画書兼 TODO。`CLAUDE.md` を正本とし、既存の Claude hook contract と
 daemon proliferation safety を壊さない。
 
 ## Document Map
 
-- 正本: [`../CLAUDE.md`](../CLAUDE.md)
-- 現状課題: [`open-issues.md`](open-issues.md)
-- Claude hook / daemon / Haiku contract: [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md)
+- 正本: [`../../CLAUDE.md`](../../CLAUDE.md)
+- 現状課題: [`../open-issues.md`](../open-issues.md)
+- Claude hook / daemon / Haiku contract: [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)
 - 完了済みの Claude / Codex second-pass workflow 計画: [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)
 - second-pass workflow の設計ブリーフ: [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md)
 - 歴史的な daemon 増殖事故: [`spotter-plan.md`](spotter-plan.md) §18
@@ -155,7 +159,7 @@ Codex backend の不在は structured error にする。
 
 - [x] `docs/SPOTTER_CLAUDE_CONTRACT.md` に "primary auditor backend" と
   "second-pass sidecar workflow" の違いを追記する。
-- [x] `docs/SPOTTER_CODEX_DUAL_SUPPORT.md` に、現状は second-pass 完了であり
+- [x] `docs/archive/SPOTTER_CODEX_DUAL_SUPPORT.md` に、現状は second-pass 完了であり
   primary backend migration はこの文書の対象である、と明記する。
 - [x] `AGENTS.md` にこの TODO への導線を追加する。
 - [x] backend selection policy の初期仮説を文書化する:

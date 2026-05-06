@@ -34,7 +34,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **v1.1.4** (2026-04-20): **MCP 投資経路の 2 件の silent mismatch を修正**。(1) [investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs) の `listMcpServers` / `getStdioConfig` が `projectRoot` を受け取りながら `claude mcp list / get` spawn 時に `cwd` を付けていなかったため、`.mcp.json` 読み込みと claude CLI の walk-up が別プロジェクトを指す可能性があった穴を塞いだ (通常は `process.cwd() === projectRoot` で表面化しないが意味論を一致)。(2) [claude-ai-baseline.mjs](src/tool-db/claude-ai-baseline.mjs) の 25 件 (Gmail/Calendar/Drive) が `claude mcp list` の実在確認なしに全環境で無条件注入されていた bug を修正。baseline を server 単位構造に再編し [refresh.mjs](src/tool-db/refresh.mjs) で `filterClaudeAiBaseline` (named export, 3 件テスト付き) により現実に存在するサーバーのみ注入。隔離 `CLAUDE_CONFIG_DIR` / 未連携 / 部分連携環境で最大 25 件の幻ツールが catalog に残っていた状態を解消。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
-**v1.1.3** (2026-04-20): **v1.1.x の実装進展にドキュメントを追従させる docs-only リリース**。コード変更なし、npm package tarball 同梱の README が古い手順を指していたため再 publish。[README.md](README.md) のバナー / install 手順 / カタログ収集経路 / コマンド表 / 設計ドキュメント節 / timeout 記述を v1.1.2 時点に更新、[docs/catalog-design.md](docs/catalog-design.md) に「収集タイミング (v1.1.0 以降)」節を新設 (install 同期 seed / SessionStart bg refresh / db refresh / db rebuild の 4 経路を整理)、[docs/spotter-plan.md](docs/spotter-plan.md) 冒頭に v0.1 設計議事録である旨のブリッジ追加。詳細は [CHANGELOG.md](CHANGELOG.md)。
+**v1.1.3** (2026-04-20): **v1.1.x の実装進展にドキュメントを追従させる docs-only リリース**。コード変更なし、npm package tarball 同梱の README が古い手順を指していたため再 publish。[README.md](README.md) のバナー / install 手順 / カタログ収集経路 / コマンド表 / 設計ドキュメント節 / timeout 記述を v1.1.2 時点に更新、[docs/catalog-design.md](docs/catalog-design.md) に「収集タイミング (v1.1.0 以降)」節を新設 (install 同期 seed / SessionStart bg refresh / db refresh / db rebuild の 4 経路を整理)、[docs/archive/spotter-plan.md](docs/archive/spotter-plan.md) 冒頭に v0.1 設計議事録である旨のブリッジ追加。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
 **v1.1.2** (2026-04-20): **v1.1.1 の code-review で発見した 2 件を修正**。Spotter 自身が監査役として指摘し実装を補正する自己ドッグフーディング。変更: [install.mjs](src/cli/install.mjs) の `refresh` 呼び出しを try/catch で包み throw 直前に stderr で復旧経路 (`spotter db refresh`) を露出 (§0 fallback 禁止は守りつつ「hook 登録済み + tool-db なし」状態のユーザーに次の一手を示す診断メッセージ)、`runInstall` に `refreshFn` DI パラメータ追加、[test/install.test.mjs](test/install.test.mjs) に回帰ガード 2 件追加 (2 回目 install でも refresh 呼ばれる / refresh 失敗時に stderr 復旧ヒント)、[docs/open-issues.md](docs/open-issues.md) P2 に「tool-db.json の並列書き込み race condition」追記 (実害観測なしなので放置判断)。詳細は [CHANGELOG.md](CHANGELOG.md)。
 
@@ -104,7 +104,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Claude 呼び出しは session-scoped + preamble-once + 事後回復** (v0.6.0 で更新): `claude -p --session-id <uuid>` で初回セッション確立、以降 `--resume` で再接続。**初回のみ preamble (role + schema + few-shot + catalog) を送り、以降は per-turn delta のみ**送ることで session を肥大化させない (v0.5.x は毎回 full 送信していて resumed が first より遅いという逆の結果が出ていた)。role collapse は `parseHaikuResponse` が `E_HAIKU_SCHEMA` を返した瞬間に `callHaiku.reset()` で session-id を rotate、次回呼び出しで preamble が新 session に自動で再送される。当該ターンは silent pass。**これは §0 の silent fallback 禁止違反ではなく、「想定済み異常 = 記録 + 正常リターン」の適用**。
 - **隔離実行**: Spotter の workdir (`~/.spotter/workdir/`) には **CLAUDE.md を置かない**。プロジェクト文脈に引きずられないことが品質保証の要件。
 - **ツールカタログは host-local tool-db**: Claude daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。Codex native hooks は `<project>/.spotter/tool-db.codex.json` だけを読む。グローバル DB は description 再利用キャッシュで、audit 入力には混ぜない。Claude refresh は `claude mcp list` と Claude skills / sub-agents、Codex refresh は `codex mcp list/get` と Codex skills を discovery し、片方の refresh がもう片方の local DB を prune / overwrite してはいけない。
-- **Stop hook の介入**: `decision: "block"` + `reason` で Bell に継続応答を生成させる。`stop_hook_active: true` を見たら即 pass することで max 1 回ループを担保 (Claude Code 側の機構で自動)。
+- **Stop hook の介入**: Claude host では `decision: "block"` + `reason` で Bell に継続応答を生成させる。`stop_hook_active: true` を見たら即 pass することで max 1 回ループを担保 (Claude Code 側の機構で自動)。Codex native `Stop` は immediate block ではなく deferred delivery: 指摘を `.spotter/codex-pending/` に保存し、次の same-session `UserPromptSubmit` の `additionalContext` で提示する。`decision:"block"` は実測で final answer 後の `Stop Blocked` / exit code 1 になったため使わない。
 
 ## §0 実装規範 (最重要)
 
@@ -146,7 +146,9 @@ spotter hook <event>              # 内部用 (Claude Code hook から呼ばれ�
 `spotter catalog *` は v0.1 設計時の YAML catalog 時代のコマンドで、現行実装には存在しない。現行の catalog は host-local DB で扱い、Claude は `.spotter/tool-db.json`、Codex は `.spotter/tool-db.codex.json` を正本にする。CLI では `spotter db * --host-agent codex` で Codex 側を明示する。
 `spotter codex *` は `SpotterFinding[]` を `codex-sidecar` に渡す explicit second-pass workflow であり、
 `UserPromptSubmit` / `Stop` の primary auditor backend 置換ではない。primary backend migration は
-[docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) を参照する。
+[docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) の primary backend policy を参照する。
+完了済みの移行計画と実測ログは [docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
+に保持する。
 `spotter codex-hook *` は Codex native hooks 用の adapter であり、Codex host の
 primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査専用の子 Codex は
 `model_reasoning_effort="low"`、hook auditor timeout 20s を既定にし、短い Codex `Stop`
@@ -159,7 +161,7 @@ primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査
 
 ## Historical MVP Scope Boundary
 
-以下は v0.1 設計時の歴史記録。現行作業の優先順位は [docs/open-issues.md](docs/open-issues.md) と、このファイル上部の Repository Status を参照する。
+以下は v0.1 設計時の歴史記録。詳細な議事録は [docs/archive/spotter-plan.md](docs/archive/spotter-plan.md) に移動済み。現行作業の優先順位は [docs/open-issues.md](docs/open-issues.md) と、このファイル上部の Repository Status を参照する。
 
 - v0.1: SessionStart/UserPromptSubmit/**PreToolUse**/Stop/SessionEnd hook + 手動 YAML 1 ファイル + 同期実装 + 差し戻し 1 回 + `spotter catalog lint` (test_cases を Haiku 実呼びで検証)。これは歴史記録であり、現行実装は tool-db + `spotter db *` に移行済み。
 - v0.2: 孤児プロセス cleanup + Haiku JSON 遵守率計測 + リトライ設計 (必要時)

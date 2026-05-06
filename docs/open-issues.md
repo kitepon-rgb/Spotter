@@ -77,8 +77,10 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 **2026-05-06 実セッション smoke**: Spotter repo の project-local tool-db 366 件で Claude Code 実セッションを起動。`user_input` first call は `duration_ms=11629`、その後の `turn_end` resumed call は `duration_ms=27746`。45s timeout には収まったが、first が 10 秒台に乗ることは確認済み。体感上は許容範囲だが継続観測対象。
 
 **関連計画**: Claude 環境での Spotter 遅延は UX に影響しているため、backend / latency tuning は
-[`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) で扱う。順序は
-Codex native に Spotter を適用して先に最適化し、実測できた改善だけを Claude host に移植する。
+Codex native に Spotter を適用して先に最適化し、実測できた改善だけを Claude host に移植する方針。
+現行 backend policy は [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md) を正とし、
+完了済みの primary backend migration ログは
+[`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md) に保持する。
 
 **2026-05-06 更新**: `spotter diagnostics logs --json` は backend 別集計 (`backends`,
 `stages.*.backends`) を持つようになった。Haiku first/resumed だけでなく、Codex CLI /
@@ -161,7 +163,7 @@ timeout 突破頻発なら緊急対処。
 
 ## P2 — 元プランの未消化分
 
-プラン [docs/spotter-plan.md](spotter-plan.md) §9 のスコープ順に沿った未消化項目。優先度低いが、実装決定時に参照。
+プラン [docs/archive/spotter-plan.md](archive/spotter-plan.md) §9 のスコープ順に沿った未消化項目。優先度低いが、実装決定時に参照。
 
 ### `/ask-spotter` スラッシュコマンド (v0.3 予定)
 
@@ -170,6 +172,12 @@ timeout 突破頻発なら緊急対処。
 ### async hook 化 (v0.4+)
 
 現状 Stop hook は daemon の Haiku 呼び出しを同期的に待つ (daemon 45s、hook IPC 50s、install が書く Claude Code 側 timeout は 60s)。async hook 対応が Claude Code 側で来たら、体感レイテンシを隠蔽できる。
+
+### Codex Stop の immediate block 不在
+
+Codex native `Stop` は現状 immediate block ではなく deferred delivery。`Stop` で見つかった不足ツールは `.spotter/codex-pending/` に保存され、次の same-session `UserPromptSubmit` の `additionalContext` で Codex に提示される。2026-05-06 の実測では `decision:"block"` を返すと final answer 後に `Stop Blocked` / exit code 1 となり、Claude Code のような綺麗な継続応答にはならなかったため、Caveat と同じ pending queue 方式を採用している。
+
+**次アクション**: Codex native hooks が将来 `Stop` で non-blocking continuation / additional context を正式提供したら、pending queue を immediate delivery に置き換えるか再検討する。それまでは deferred であることを README / contract に明記しておく。
 
 ### CI 回帰テスト整備 (v0.4+)
 

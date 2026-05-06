@@ -63,6 +63,10 @@ spotter uninstall        # このプロジェクトの hook 登録を解除
 
 ### 1 ターンの監査フロー
 
+Claude Code と Codex では `Stop` の受け口が違います。下の図は Claude host の流れです。
+Codex native `Stop` は遅延配送で、不足ツールの指摘を queue し、次の same-session
+`UserPromptSubmit` で提示します。
+
 ```mermaid
 flowchart TD
     U([User 発話]) --> UPH[UserPromptSubmit hook<br/>Spotter が発話とカタログから一次判定]
@@ -165,15 +169,14 @@ Codex 側の SessionStart hook は `.spotter/tool-db.codex.json` を bg refresh 
 
 - **現行設計 (カタログ / 収集経路 / 分類軸)**: [docs/catalog-design.md](docs/catalog-design.md) — v1.0.0 以降の真実源
 - **現時点で塞がっていない穴 + 実測未検証の懸念**: [docs/open-issues.md](docs/open-issues.md) — 新規作業に入る前に必読
-- **Claude contract capture**: [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) — Codex 作業で維持すべき hook / daemon / Haiku の現行契約
-- **Claude / Codex 両対応ブリーフ**: [docs/SPOTTER_CODEX_DUAL_SUPPORT.md](docs/SPOTTER_CODEX_DUAL_SUPPORT.md) と完了済み [TODO](docs/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md) — second-pass `codex-sidecar` workflow
-- **Primary auditor backend migration**: [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) — Codex CLI / `codex-sidecar` auditor backend の rollout 状況
+- **Runtime contract**: [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) — Claude hook / daemon / Haiku 契約と Codex native hook policy
 - **実装規範と不変条件 (§0)**: [CLAUDE.md](CLAUDE.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止
-- **歴史記録 (v0.1 時点の設計議事録)**: [docs/spotter-plan.md](docs/spotter-plan.md) — 作成時点で固定された議論過程のスナップショット、現行設計は上記 3 点を参照
+- **Archive**: [docs/archive/](docs/archive/) — 完了済み Codex rollout 計画、primary backend smoke log、v0.1 設計議事録
 
 ## 既知の制約
 
 - Stop hook は Bell の最初の応答が**出力された後**に発火するため、Spotter が Stop で差し戻した場合、ユーザーは「最初の応答 + 補正応答」の 2 連続を見ます (Claude Code の hook 仕様による制約)。UserPromptSubmit 段階での先回り検出を精度の軸にしています
+- Codex native `Stop` は **即時ブロックではなく遅延配送**です。Codex `Stop` で不足ツールを見つけた場合、Spotter は `.spotter/codex-pending/` に指摘を保存し、次の same-session `UserPromptSubmit` で `additionalContext` として提示します。これは Codex の現行 `decision:"block"` が `Stop Blocked` / exit code 1 になりやすい実測結果を避けるためです
 - **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Bell に届かない症状として顕在化します (timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
 
 <details>

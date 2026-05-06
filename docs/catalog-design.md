@@ -2,7 +2,9 @@
 
 この文書は現行 Claude-backed Haiku auditor path と Codex native hook path のカタログ設計を説明する。
 `UserPromptSubmit` / `Stop` の primary auditor backend を Codex CLI / `codex-sidecar` に
-移す将来計画は [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) を参照。
+移す計画は v1.4.3 で Codex host 側が完了済み。現行 backend policy は
+[`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md) を参照し、完了済みの移行ログは
+[`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md) に保持する。
 
 ## 背景: Bell の視野にあるツールの分類
 

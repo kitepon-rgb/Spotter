@@ -411,7 +411,7 @@ v0.8.0 で claude.ai OAuth 系 MCP (Gmail / Calendar / Drive) を手書き basel
 - **編集 [docs/catalog-design.md](docs/catalog-design.md)**:
   - 新節「収集タイミング (v1.1.0 以降)」追加 — install 同期 seed / SessionStart bg refresh / db refresh / db rebuild の 4 経路を整理
   - 歴史節に v1.1.x の「収集タイミング自動化」を追記
-- **編集 [docs/spotter-plan.md](docs/spotter-plan.md)**:
+- **編集 [docs/archive/spotter-plan.md](docs/archive/spotter-plan.md)**:
   - 冒頭に「v0.1 時点の設計議事録」である旨のブリッジ追加、現行設計の真実源 (catalog-design.md / open-issues.md / CLAUDE.md) へのリンクを明示
 
 ## 1.1.2
@@ -1174,7 +1174,7 @@ layers cover the same proliferation cases.
 
 ## 0.1.1 — ⚠️ DEPRECATED 2026-04-19
 
-**Do not install this version.** Real-world testing against a live Claude Code session revealed that the "one daemon per session" model is based on a wrong assumption — `SessionStart` hooks fire per subagent (Task tool invocation), not only at top-level session startup. Within 41 seconds of install, 213 orphan daemons accumulated and Haiku API calls uniformly timed out. `npm uninstall -g` also did not execute `preuninstall`, leaving hook entries in `~/.claude/settings.json`. See [docs/spotter-plan.md §18](https://github.com/kitepon-rgb/Spotter/blob/main/docs/spotter-plan.md#18) for details and the v0.2 redesign plan.
+**Do not install this version.** Real-world testing against a live Claude Code session revealed that the "one daemon per session" model is based on a wrong assumption — `SessionStart` hooks fire per subagent (Task tool invocation), not only at top-level session startup. Within 41 seconds of install, 213 orphan daemons accumulated and Haiku API calls uniformly timed out. `npm uninstall -g` also did not execute `preuninstall`, leaving hook entries in `~/.claude/settings.json`. See [docs/archive/spotter-plan.md §18](https://github.com/kitepon-rgb/Spotter/blob/main/docs/archive/spotter-plan.md#18) for details and the v0.2 redesign plan.
 
 ## 0.1.1 (pre-deprecation notes)
 
@@ -1201,4 +1201,4 @@ Initial release.
 
 ### Design
 
-All non-negotiable design decisions — including transparency vs invisibility, JSON I/O, socket abstraction, message envelope, SessionStart readiness — are documented in [docs/spotter-plan.md](docs/spotter-plan.md).
+All non-negotiable design decisions — including transparency vs invisibility, JSON I/O, socket abstraction, message envelope, SessionStart readiness — are documented in [docs/archive/spotter-plan.md](docs/archive/spotter-plan.md).
