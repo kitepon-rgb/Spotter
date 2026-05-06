@@ -6,12 +6,13 @@ daemon proliferation safety を壊さない。
 
 ## Goal
 
-最終形は次の通り。
+最終 default は Phase 4 の backend matrix evaluation で決める。
+現時点の初期仮説は次の通り。
 
 | Host | Primary auditor backend | Compatibility / fallback |
 |---|---|---|
 | Codex | Codex CLI (`codex exec`) | なし。失敗は structured error |
-| Claude | `codex-sidecar` | `codex-sidecar` unavailable の場合だけ現行 Claude Haiku |
+| Claude | `codex-sidecar` を第一候補。ただし `Claude + Codex CLI` も評価対象 | 明示 compatibility mode の場合だけ現行 Claude Haiku |
 | Unknown / automation | 明示設定がある場合のみ | 明示設定なしなら structured error |
 
 ここでいう backend は、`UserPromptSubmit` / `Stop` 相当の主判定
@@ -44,6 +45,12 @@ result wrapping を挟まず、`codex exec --output-schema` で直接 JSON 判�
 - `codex exec --ephemeral --sandbox read-only` で session / worktree / MCP 副作用を持たない。
 - Haiku first / resumed と比較して、latency と process cost が許容範囲。
 - Codex host から Codex CLI を呼んでも recursive delegation / session proliferation を起こさない。
+
+重要な運用前提として、Claude 環境では Spotter による遅延がすでに UX に影響している。
+そのため latency tuning は Claude hook 上でいきなり詰めない。まず Codex native 環境に
+Spotter を適用し、Codex CLI backend を前提に小さい判定・cache・async 化・skip 条件を
+詰める。その後、効果が実測できたものだけを Claude host に移植する。Claude は最後に
+移植・比較する対象であり、最初の実験場にはしない。
 
 ## Concerns
 
@@ -79,6 +86,10 @@ Codex を待つ。現行 Haiku でも first 10-30s があり、Codex sidecar が
 体感悪化する。Claude host では `codex-sidecar` primary を sync hook に入れる前に、
 timeout budget と observed latency を必ず測る。
 
+この問題は最重要だが、解決順序は「Codex native で最適化 → Claude に移植」。Claude hook は
+UX への影響が直撃するため、backend 実験の場にしない。Claude host での変更は、Codex native
+で latency / schema success / false positive の改善が確認できてから opt-in で入れる。
+
 ### 5. Fallback の扱い
 
 ユーザー方針として hidden fallback は禁止。Claude host で `codex-sidecar` が無い場合に
@@ -95,8 +106,8 @@ structured error にする。
 - [x] `docs/SPOTTER_CODEX_DUAL_SUPPORT.md` に、現状は second-pass 完了であり
   primary backend migration はこの文書の対象である、と明記する。
 - [x] `AGENTS.md` にこの TODO への導線を追加する。
-- [x] backend selection policy を文書化する:
-  `host=codex -> codex-cli`, `host=claude -> codex-sidecar -> haiku`,
+- [x] backend selection policy の初期仮説を文書化する:
+  `host=codex -> codex-cli`, `host=claude -> matrix-selected codex backend -> compatibility_haiku`,
   `host=unknown -> explicit config required`。
 
 Gate:
@@ -138,7 +149,7 @@ Gate:
 - [ ] `codex exec` が Haiku より十分に遅い場合、Codex host primary 採用を再検討する。
 - [ ] Codex CLI unavailable は Codex host で structured error。Haiku fallback しない。
 
-### Phase 3. Codex Host Support
+### Phase 3. Codex Native UX Tuning
 
 - [ ] Codex host detection を定義する。
   既存 `detectHostAgent` の env marker だけで足りるか、Codex plugin / wrapper 側の
@@ -147,19 +158,45 @@ Gate:
   plugin, MCP, wrapper, app-server, exec-server のどれで Spotter を呼ぶか。
 - [ ] Codex 用の input contract を定義する。
   Claude hook JSON をそのまま要求しない。Codex 側で自然に渡せる形にする。
-- [ ] Codex host では primary backend を Codex CLI にする。
-- [ ] Codex host では `codex-sidecar` を primary backend にしない。
+- [ ] Codex host では primary backend default を Codex CLI にする。
+- [ ] Codex host では `codex-sidecar` を primary backend default にしない。
 - [ ] Codex host で Codex CLI unavailable のとき、明示 error を返す。
+- [ ] Codex native 環境で latency tuning を行う:
+  short prompt skip、catalog compression、backend warm path、per-stage timeout、
+  cache / memoization、async advisory 化できる箇所を実測する。
+- [ ] Codex native で `UserPromptSubmit` 相当の体感遅延を記録する。
+- [ ] Codex native での改善策を「Claude に移植可能」「Codex 固有」に分類する。
 
 Gate:
 
 - [ ] Codex 環境で実セッション smoke が通る。
 - [ ] Codex host で recursive Codex-on-Codex が起きない。
 - [ ] Codex host で Spotter が使えない場合、silent pass ではなく明示 error になる。
+- [ ] Codex native で latency の改善・悪化を数値で説明できる。
 
-### Phase 4. Claude Host Primary `codex-sidecar`
+### Phase 4. Backend Matrix Evaluation
 
-- [ ] Claude host の backend selection を `codex-sidecar` 優先にする。
+- [ ] 4 象限を同じ fixture で測る:
+  `Claude + Codex CLI`, `Claude + codex-sidecar`,
+  `Codex + Codex CLI`, `Codex + codex-sidecar`。
+- [ ] primary auditor と second-pass / work の評価を分ける。
+- [ ] primary auditor では latency / schema success / process count / recursion safety を測る。
+- [ ] second-pass / work では durable result / worktree / diagnostics / review quality を測る。
+- [ ] Claude host の primary default を `codex-sidecar` にするか `codex-cli` にするかは、
+  この matrix evaluation で決める。
+- [ ] Codex host の primary default は Codex CLI 優先。ただし sidecar の方が
+  measurable に優れるケースがあれば用途限定で残す。
+
+Gate:
+
+- [ ] `codex-sidecar` の存在意義を primary auditor 以外の workflow boundary として説明できる。
+- [ ] Claude host に移植する backend policy が、Codex native 実測に基づいている。
+
+### Phase 5. Claude Host Port
+
+- [ ] Phase 4 で選んだ Claude host 向け backend policy を Claude hook に移植する。
+  初期候補は `codex-sidecar` だが、`Claude + Codex CLI` が primary auditor として優位なら
+  `codex-cli` を default にする。
 - [ ] `codex-sidecar` primary auditor workflow を追加する。
   既存 risk / review ではなく、`user_input` / `turn_end` 判定専用 workflow が必要。
 - [ ] `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義する。
@@ -175,8 +212,9 @@ Gate:
 - [ ] Claude 実セッション smoke が通る。
 - [ ] `codex-sidecar` available 時に Haiku が呼ばれないことを log / test で確認。
 - [ ] `codex-sidecar` unavailable 時に Haiku compatibility mode が明示される。
+- [ ] Claude host の体感遅延が現行 Haiku より悪化していない、または悪化が明示的に許容されている。
 
-### Phase 5. Diagnostics And Operations
+### Phase 6. Diagnostics And Operations
 
 - [ ] `spotter diagnostics logs` に backend 別集計を追加する:
   `haiku`, `codex-cli`, `codex-sidecar`, `compatibility_haiku`。
@@ -189,12 +227,13 @@ Gate:
 
 - [ ] ユーザーが「今どの backend で判定されたか」を logs / diagnostics から説明できる。
 
-### Phase 6. Rollout
+### Phase 7. Rollout
 
 - [ ] 初期 rollout は env opt-in にする:
   `SPOTTER_AUDITOR_BACKEND_POLICY=next` など。
-- [ ] Spotter repo と別プロジェクトで Claude host smoke を行う。
 - [ ] Codex host smoke を行う。
+- [ ] Codex native で数日運用し、UX 遅延・false positive・failure を先に詰める。
+- [ ] Spotter repo と別プロジェクトで Claude host smoke を行う。
 - [ ] 数日分の diagnostics を見て、latency / false positive / failures を比較する。
 - [ ] 問題なければ default policy を切り替える。
 
