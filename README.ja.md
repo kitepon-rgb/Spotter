@@ -126,7 +126,7 @@ spotter db list --host-agent codex
 spotter db refresh       # Claude MCP / スキル / サブエージェントから description を収集して Claude DB 更新
 spotter db refresh --host-agent codex
                          # Codex MCP / スキルから description を収集して .spotter/tool-db.codex.json を更新
-                         # (Claude は install + Claude SessionStart、Codex は codex-hook install 後の
+                         # (Claude は install + Claude SessionStart、Codex は spotter install 後の
                          #  Codex SessionStart で自動実行されるので通常は不要)
 spotter db rebuild       # Claude local + global DB を両方消してから refresh (カタログ設計変更時のクリーン用)
 spotter status           # 稼働中の daemon 一覧

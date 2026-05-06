@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.3
+
+**README の Codex refresh 手順表現を v1.4.2 の実装と一致させる docs patch release**。v1.4.2 で Codex hooks 登録は `spotter install` に集約済みだが、README / README.ja の common commands コメントに `codex-hook install` 後という古い表現が残っていたため修正。
+
+### 変更点
+
+- **編集 [README.md](README.md) / [README.ja.md](README.ja.md)**: Codex SessionStart refresh は `spotter install` 後に自動実行される、と明記。`spotter codex-hook install` は修復 / 明示登録用 command として残す
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.3`
+2. 各プロジェクトで `spotter install`
+
 ## 1.4.2
 
 **既存 project の hook command path を npm global 版へ更新する patch release**。v1.4.1 の `spotter install` は Codex hooks を自動登録するようになったが、既存 `.claude/settings.json` に `spotter.mjs` hook がある場合、登録済み判定で timeout だけ更新し、command path を現在の package root へ差し替えていなかった。local checkout 由来の hook が残ると、global npm update 後も古い checkout を呼び続け得るため修正。

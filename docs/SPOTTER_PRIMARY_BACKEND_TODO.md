@@ -15,12 +15,12 @@ daemon proliferation safety を壊さない。
 
 この文書は、完了済みの `codex_risk_check` / `codex_review` / `codex_work` を
 `UserPromptSubmit` / `Stop` の主判定 backend と混同しないために作成した次段階計画です。
-v1.4.2 で Codex host 側の primary auditor migration は npm 配布まで完了済みです。
+v1.4.3 で Codex host 側の primary auditor migration は npm docs まで含めて配布完了済みです。
 残作業は主に Claude host へ Codex 系 backend を移植するかどうかの実測判断と rollout 観測です。
 
 ## Goal
 
-Codex host の default は v1.4.2 で Codex CLI に固定した。
+Codex host の default は v1.4.3 時点で Codex CLI に固定済み。
 Claude host の最終 default は Claude rate limit 解除後の実測で決める。
 
 | Host | Primary auditor backend | Compatibility / fallback |

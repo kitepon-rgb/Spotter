@@ -127,7 +127,7 @@ spotter db refresh       # rediscover Claude MCP / skills / sub-agents and updat
 spotter db refresh --host-agent codex
                          # rediscover Codex MCP / skills and update .spotter/tool-db.codex.json
                          #   (Claude refresh is automatic on install + Claude SessionStart;
-                         #    Codex refresh is automatic on Codex SessionStart after codex-hook install)
+                         #    Codex refresh is automatic on Codex SessionStart after spotter install)
 spotter db rebuild       # wipe Claude local + global DBs and refresh from scratch
                          #   (use after catalog-shape changes)
 spotter status           # list running daemons

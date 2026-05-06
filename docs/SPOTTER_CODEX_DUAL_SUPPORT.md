@@ -4,7 +4,7 @@
 
 この文書の範囲は、Claude-first を維持したまま Codex adapter / sidecar workflow を追加することです。
 `UserPromptSubmit` / `Stop` の primary auditor backend を host agent ごとに切り替える次段階計画と、
-v1.4.2 で完了した Codex host primary auditor rollout は
+v1.4.3 で npm docs まで整合した Codex host primary auditor rollout は
 [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) を参照してください。
 実装済み phase と完了条件は [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)、
 維持すべき Claude 側 contract は [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md) にあります。
