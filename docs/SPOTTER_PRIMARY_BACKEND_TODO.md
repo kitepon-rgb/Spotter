@@ -343,9 +343,10 @@ Gate:
   `spotter auditor matrix` は `role:"primary_auditor"` のみを扱い、既存
   `spotter codex risk-check|review|explore|opinion|work` の second-pass / work とは混ぜない。
 - [x] primary auditor matrix に latency / schema success / recursion safety の出力枠を追加する。
-- [ ] primary auditor の process count は実測方法を固定する。
-  現在の matrix output は `processCount` と `processCountMethod` を持つが、Codex CLI 実行時は
-  backend diagnostics が process count を出すまで `not_instrumented`。
+- [x] primary auditor の process count 実測方法を固定する。
+  Codex CLI backend は Spotter が直接 spawn した auditor child process を
+  `processCount=1`, `processCountMethod="direct_child_spawn"` として diagnostics に出す。
+  descendant process tree は現時点では測らない。
 - [ ] second-pass / work では durable result / worktree / diagnostics / review quality を測る。
 - [ ] `codex-sidecar` primary auditor workflow が追加された後、同じ matrix fixture で
   4 row すべてを実測し、`codex-sidecar` row が error でないことを確認する。
@@ -509,12 +510,13 @@ Gate:
 - Phase 4 の測定入口として `spotter auditor matrix --stage user_input|turn_end --input FILE`
   を追加した。同じ fixture から 4 row (`claude.codex-cli`, `claude.codex-sidecar`,
   `codex.codex-cli`, `codex.codex-sidecar`) を評価し、success / error、latency、
-  schema success、process count field、recursion safety label を JSON で出す。
+  schema success、direct child process count、recursion safety label を JSON で出す。
   比較表として読めるよう、Codex CLI の raw stdout / stderr は matrix output では byte count に
   圧縮する。row 実行時は host marker env を row ごとに明示する。
   2026-05-06 の実 matrix smoke では、`GeForce 5000` fixture に対して
-  `claude.codex-cli durationMs=8233`, `codex.codex-cli durationMs=7318` で
-  `mcp__caveat__caveat_search` を検出し、両 row とも schema success / exit code 0。
+  `claude.codex-cli durationMs=9984`, `codex.codex-cli durationMs=7698` で
+  `mcp__caveat__caveat_search` を検出し、両 row とも schema success / exit code 0 /
+  `processCount=1`。
   `claude.codex-sidecar` / `codex.codex-sidecar` は `E_BACKEND_NOT_IMPLEMENTED`。
   `codex-sidecar` primary auditor はまだ `E_BACKEND_NOT_IMPLEMENTED` row になるため、
   sidecar row の実測は auditor workflow / diagnostics preset 追加後に行う。

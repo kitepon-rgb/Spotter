@@ -89,6 +89,7 @@ test('createCodexCliAuditorBackend: reads last-message JSON, filters catalog mis
   const spawnFn = (cmd, args, opts) => {
     captured = { cmd, args, opts };
     const child = new EventEmitter();
+    child.pid = 1234;
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
     child.kill = () => {};
@@ -130,6 +131,9 @@ test('createCodexCliAuditorBackend: reads last-message JSON, filters catalog mis
   assert.equal(judgment.meta.backend, 'codex-cli');
   assert.equal(judgment.meta.mode, 'exec');
   assert.deepEqual(judgment.meta.diagnostics.droppedCatalogExternalNames, ['ghost_tool']);
+  assert.equal(judgment.meta.diagnostics.processCount, 1);
+  assert.equal(judgment.meta.diagnostics.processCountMethod, 'direct_child_spawn');
+  assert.equal(judgment.meta.diagnostics.childPid, 1234);
   assert.match(judgment.meta.diagnostics.stderr, /analytics 403/);
 });
 
@@ -166,6 +170,8 @@ test('createCodexCliAuditorBackend: spawn failure is a structured error', async 
   await assert.rejects(
     backend.judge({ stage: 'user_input', userInput: 'x' }),
     (err) => err instanceof AuditorBackendError && err.code === 'E_CODEX_CLI_SPAWN'
+      && err.diagnostics.processCount === 0
+      && err.diagnostics.processCountMethod === 'spawn_failed'
   );
 });
 

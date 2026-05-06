@@ -216,6 +216,8 @@ async function runCodexExec({
       backend: 'codex-cli',
       diagnostics: {
         durationMs: Date.now() - startedAt,
+        processCount: 0,
+        processCountMethod: 'spawn_failed',
         stdout: '',
         stderr: '',
         stdoutTruncated: false,
@@ -285,13 +287,17 @@ async function runCodexExec({
   });
 
   function diagnostics() {
-    return {
+    const out = {
       durationMs: Date.now() - startedAt,
+      processCount: 1,
+      processCountMethod: 'direct_child_spawn',
       stdout,
       stderr,
       stdoutTruncated,
       stderrTruncated,
     };
+    if (Number.isInteger(child?.pid)) out.childPid = child.pid;
+    return out;
   }
 }
 
