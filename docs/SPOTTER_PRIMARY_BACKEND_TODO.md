@@ -332,7 +332,14 @@ Gate:
 - [ ] `codex-sidecar` を primary auditor 候補として測る場合は、matrix 測定の前に
   `codex-sidecar` 側の auditor preset / workflow を追加または利用可能にする。
   既存 risk / review ではなく、`user_input` / `turn_end` 判定専用 workflow が必要。
+  2026-05-06 時点の local `codex-sidecar-core` の `WORKFLOWS` は
+  `review`, `explore`, `work`, `opinion`, `risk-check` のみ。`auditor` workflow は無い。
+  `risk-check` / `review` preset を primary auditor として流用すると、primary auditor と
+  second-pass の境界が崩れるため禁止。
 - [ ] `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義する。
+  現状の `codex-sidecar diagnostics --project <repo> --preset auditor --json` は
+  `PRESET_NOT_FOUND: preset "auditor" does not exist`。この error が出る間は
+  matrix の `codex-sidecar` row は `E_BACKEND_NOT_IMPLEMENTED` のままにする。
 - [x] 4 象限を同じ fixture で評価する harness を追加する:
   `spotter auditor matrix --stage user_input|turn_end --input FILE [--project DIR]`。
   row は `Claude + Codex CLI`, `Claude + codex-sidecar`, `Codex + Codex CLI`,
@@ -434,6 +441,8 @@ Gate:
 - `codex exec --ephemeral` が本当に session file / project state を汚さないか。
 - Claude host で選択 backend が hook timeout 内に安定して収まるか。
 - `codex-sidecar` 側に auditor 専用 preset / workflow を追加する必要があるか。
+  2026-05-06 の local sidecar 調査では、既存 workflow に `auditor` は無かった。
+  したがって必要。`risk-check` / `review` の流用は primary / second-pass 境界を壊すので不可。
 
 ## Audit Snapshot
 
@@ -520,6 +529,11 @@ Gate:
   `claude.codex-sidecar` / `codex.codex-sidecar` は `E_BACKEND_NOT_IMPLEMENTED`。
   `codex-sidecar` primary auditor はまだ `E_BACKEND_NOT_IMPLEMENTED` row になるため、
   sidecar row の実測は auditor workflow / diagnostics preset 追加後に行う。
+- local `codex-sidecar` 調査では、`codex-sidecar --help` は未対応で `Unknown option: --help`、
+  `codex-sidecar diagnostics --project /home/kite/projects/Spotter --preset auditor --json` は
+  `PRESET_NOT_FOUND: preset "auditor" does not exist`。installed core の `WORKFLOWS` は
+  `review/explore/work/opinion/risk-check` のみ。primary auditor 用に既存 workflow を流用せず、
+  upstream / sidecar 側に auditor workflow を追加してから adapter を実装する。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に
