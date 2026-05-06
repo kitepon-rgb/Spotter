@@ -187,10 +187,17 @@ Gate:
 - [x] catalog-external filtering は parser から独立した backend-neutral post-parse step として残す。
   現行 `filterCatalogMisses(parsed, catalogNames)` の pass-flip semantics と observability を維持し、
   Haiku adapter / Codex CLI adapter の両方から同じ関数を通す。
-- [ ] prompt / catalog formatting の共有境界を決める。
+- [x] prompt / catalog formatting の共有境界を決める。
   `SpotterJudgment` schema、catalog `{name,description}` の列挙、stage 入力タグは共有してよいが、
   Haiku の preamble-once prompt を Codex CLI にそのまま流用しない。Codex CLI 用には
   stateless / small prompt を別 builder にし、snapshot で固定する。
+  実装上の境界: 共有するのは `parseAuditorResponse` / `filterCatalogMisses` /
+  `SpotterJudgment` 変換と `{name,description}` catalog shape まで。Haiku は
+  `buildPreamble({tools})` + preamble-once session、Codex CLI は
+  `buildCodexCliAuditorPrompt` + `--output-schema` / `--output-last-message`、
+  codex-sidecar primary auditor は `buildCodexSidecarAuditorPrompt` + sidecar context file を使う。
+  `test/haiku-caller.test.mjs`, `test/codex-cli-backend.test.mjs`,
+  `test/codex-sidecar-auditor-backend.test.mjs` で境界を固定済み。
 - [x] 現行 Haiku 呼び出しを `haiku` backend adapter として包む。
   `E_HAIKU_SCHEMA` の role-collapse recovery、`E_HAIKU_TIMEOUT` / `E_INTERNAL` の throw 前 reset、
   catalog-external filtering、duration meta を既存挙動と同じにする。
@@ -454,7 +461,11 @@ Gate:
 
 - [ ] 初期 rollout は env opt-in にする:
   `SPOTTER_AUDITOR_BACKEND_POLICY=next` など。
-- [ ] Codex host smoke を行う。
+- [x] Codex host smoke を行う。
+  2026-05-06 Codex native hooks: `codex-hook diagnostics` は `availability=available`、
+  `SessionStart` manual smoke は `refresh_spawned`、`UserPromptSubmit` / `Stop` 実 smoke は
+  Completed。Codex CLI primary auditor、codex-sidecar primary auditor matrix row、
+  second-pass `risk-check`、work `--dry-run` まで Codex host で確認済み。
 - [ ] Codex native で数日運用し、UX 遅延・false positive・failure を先に詰める。
 - [ ] Spotter repo と別プロジェクトで Claude host smoke を行う。
 - [ ] 数日分の diagnostics を見て、latency / false positive / failures を比較する。
