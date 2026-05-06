@@ -44,6 +44,33 @@ test('install: idempotent — re-run does not duplicate entries', async () => {
   }
 });
 
+test('install: re-run updates existing spotter hook timeouts', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-timeout-'));
+  try {
+    await mkdir(join(dir, '.claude'), { recursive: true });
+    await writeFile(
+      join(dir, '.claude', 'settings.json'),
+      JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node "/pkg/bin/spotter.mjs" hook user-prompt', timeout: 30 }] }],
+          Stop: [{ hooks: [{ type: 'command', command: 'node "/pkg/bin/spotter.mjs" hook stop', timeout: 15 }] }],
+        },
+      }),
+      'utf8'
+    );
+
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
+    const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
+
+    assert.equal(settings.hooks.UserPromptSubmit.length, 1, 'should not duplicate UserPromptSubmit hook');
+    assert.equal(settings.hooks.Stop.length, 1, 'should not duplicate Stop hook');
+    assert.equal(settings.hooks.UserPromptSubmit[0].hooks[0].timeout, 60);
+    assert.equal(settings.hooks.Stop[0].hooks[0].timeout, 60);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('install: preserves pre-existing unrelated hooks', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-install-'));
   try {

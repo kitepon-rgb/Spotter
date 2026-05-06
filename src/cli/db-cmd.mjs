@@ -2,7 +2,7 @@
 //
 //   spotter db list             — print the LOCAL tool-db (what the daemon actually audits)
 //   spotter db refresh          — discover available tools and update DB (3-tier resolve)
-//   spotter db rebuild          — wipe local DB then refresh (forces re-investigation)
+//   spotter db rebuild          — wipe local + global DBs then refresh (forces re-investigation)
 //
 // Run inside a project that has been `spotter install`-ed.
 

@@ -18,7 +18,7 @@ import {
 
 const sampleTools = [
   { name: 'mcp__caveat__caveat_record', description: 'Record a new caveat about an external trap.' },
-  { name: 'WebSearch', description: 'Search the web for up-to-date info.' },
+  { name: 'mcp__caveat__caveat_search', description: 'Search recorded caveats before repeating known traps.' },
 ];
 
 test('buildPreamble contains role, schema, tool-db entries, and few-shot examples', () => {
@@ -33,11 +33,61 @@ test('buildPreamble contains role, schema, tool-db entries, and few-shot example
   assert.ok(preamble.includes('会話文は生成せず') || preamble.includes('会話文は生成しません'));
   assert.ok(preamble.includes('mcp__caveat__caveat_record'));
   assert.ok(preamble.includes('Record a new caveat'));
+  assert.ok(!preamble.includes('"current_time"'), 'few-shot examples must not suggest catalog-external current_time');
+  assert.ok(!preamble.includes('"Read"'), 'few-shot examples must not suggest catalog-external Read');
   assert.ok(preamble.includes('"pass":false'));
   assert.ok(preamble.includes('"pass":true'));
   assert.ok(preamble.includes('stage=user_input'));
   assert.ok(preamble.includes('stage=turn_end'));
   assert.ok(preamble.includes('推測禁止'));
+});
+
+test('buildPreamble matches the current prompt snapshot', () => {
+  const preamble = buildPreamble({ tools: sampleTools });
+  const expected = [
+    'あなたは Spotter。Bell (主役の Claude) が呼び忘れるツールを検出する監査役です。',
+    'ユーザーへの会話文は生成せず、必ず下記 JSON のみを返します。',
+    '',
+    '## 出力',
+    '{"pass": <true|false>, "missing_tools": [{"name": "<カタログ名>", "reason": "<一文の日本語>"}]}',
+    '- pass:true なら missing_tools は空、pass:false なら 1 件以上',
+    '- JSON のみ。前置き・コードフェンス禁止',
+    '- **name は後述「## カタログ」に列挙されたツール名そのまま**のみ許可。',
+    '  カタログ外の名前 (Skill(xxx) / 任意のスラッシュコマンド / 記憶した既知ツール等) は禁止。',
+    '  該当するツールがカタログに見当たらなければ、無理に挙げず pass:true を返す。',
+    '',
+    '## 判定対象',
+    '各ターン、以下いずれかの stage で判定リクエストを受けます:',
+    '',
+    '### stage=user_input',
+    '<user_input> のみ届く。カタログの description から用途が明確に該当するツールを列挙。',
+    '推測禁止。該当なしなら pass:true。',
+    '',
+    '### stage=turn_end  (ツール適用機会の監査)',
+    '<final_response> + <used_tools> が届く。',
+    'Bell の応答に含まれる動作 — 事実の断定 / 記録すべき新情報 / 既知情報の参照 —',
+    'それぞれについて、カタログに役立つツールがあれば提示する。',
+    '検証 (Read/Grep/Bash/WebFetch 等) / 登録 (memory/caveat 等) / 照会 (search/list 等) のいずれも対象。',
+    '<used_tools> に既に含まれるツールは再指摘しない。',
+    '指摘ゼロは歓迎。迷ったら pass:true。',
+    '',
+    '## 例',
+    '以下の tool 名は例用カタログに存在すると仮定した例です。実回答では必ず実カタログの名前だけを使う。',
+    '- stage=user_input "この外部仕様の落とし穴を覚えておいて"',
+    '  → {"pass":false,"missing_tools":[{"name":"mcp__caveat__caveat_record","reason":"再利用すべき外部仕様の罠は記録対象"}]}',
+    '- stage=user_input "ありがとう"',
+    '  → {"pass":true,"missing_tools":[]}',
+    '- stage=turn_end 応答「判明: A モジュールは B に依存」(used:なし) ← 登録',
+    '  → {"pass":false,"missing_tools":[{"name":"mcp__caveat__caveat_record","reason":"新発見の依存関係は記録して次回参照可能にすべき"}]}',
+    '- stage=turn_end 応答「この話題は前にも議論したはず」(used:なし) ← 照会',
+    '  → {"pass":false,"missing_tools":[{"name":"mcp__caveat__caveat_search","reason":"過去の議論参照は検索して裏付けるべき"}]}',
+    '- stage=turn_end 応答「作業完了しました」(used:mcp__caveat__caveat_record) ← pass',
+    '  → {"pass":true,"missing_tools":[]}',
+    '',
+    '## カタログ',
+    JSON.stringify(sampleTools, null, 2),
+  ].join('\n');
+  assert.equal(preamble, expected);
 });
 
 test('buildPreamble throws if tools is not an array', () => {
@@ -58,12 +108,12 @@ test('buildFirstStagePrompt is a small per-turn delta — no catalog, no header'
 
 test('buildFirstStagePrompt wraps user input in <user_input> tags', () => {
   const prompt = buildFirstStagePrompt({ userInput: '時間を教えて' });
-  assert.ok(prompt.includes('<user_input>'));
-  assert.ok(prompt.includes('</user_input>'));
-  const opening = prompt.indexOf('<user_input>');
-  const closing = prompt.indexOf('</user_input>');
-  const payload = prompt.indexOf('時間を教えて');
-  assert.ok(opening < payload && payload < closing, 'payload must be between the tags');
+  assert.equal(prompt, [
+    'stage=user_input',
+    '<user_input>',
+    '時間を教えて',
+    '</user_input>',
+  ].join('\n'));
 });
 
 test('buildFinalStagePrompt is a small per-turn delta — no catalog, no header', () => {
@@ -83,13 +133,16 @@ test('buildFinalStagePrompt wraps used_tools and final_response in tags (no user
     usedTools: ['read_file'],
     finalResponse: 'Bell の返答',
   });
+  assert.equal(prompt, [
+    'stage=turn_end',
+    '<used_tools>',
+    '- read_file',
+    '</used_tools>',
+    '<final_response>',
+    'Bell の返答',
+    '</final_response>',
+  ].join('\n'));
   assert.ok(!prompt.includes('<user_input>'), 'user_input tag must not appear in v0.13.0 turn_end prompt');
-  assert.ok(prompt.includes('<used_tools>'));
-  assert.ok(prompt.includes('</used_tools>'));
-  assert.ok(prompt.includes('<final_response>'));
-  assert.ok(prompt.includes('</final_response>'));
-  assert.ok(prompt.includes('read_file'));
-  assert.ok(prompt.includes('Bell の返答'));
 });
 
 test('buildFinalStagePrompt handles empty used_tools', () => {

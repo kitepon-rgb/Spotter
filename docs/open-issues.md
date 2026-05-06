@@ -29,7 +29,7 @@ Spotter で現時点 (v1.3.0 時点, 2026-05-04) に **塞がっていない穴*
 - `claude -p` に thinking 直接フラグ無し。API デフォルトで thinking は OFF
 - つまり「Haiku をさらに速くするつまみ」は存在せず、timeout 緩和しか打ち手が無い
 
-**次アクション**: v0.13.1 リリース後の daemon ログで `E_HAIKU_TIMEOUT` が 45s でも発生するか集計。発生率が下がらなければ (b) retry or (c) 動的延長を検討。発生率がゼロに近ければこの項目は closable。
+**次アクション**: v0.13.1 リリース後の daemon ログで `E_HAIKU_TIMEOUT` が 45s でも発生するか集計。`spotter diagnostics logs --json` で `anomalies.haikuInvocationFailures.byCode.E_HAIKU_TIMEOUT` と duration を確認する。発生率が下がらなければ (b) retry or (c) 動的延長を検討。発生率がゼロに近ければこの項目は closable。
 
 ### daemon プロセスが shutdown ログなしに死ぬ (v1.3.0 で根因が大半解消した可能性、再観測中)
 
@@ -43,7 +43,7 @@ v0.12.0 の UserPromptSubmit auto-resurrect が次のユーザー入力で `E_UN
 - [src/cli/daemon-cmd.mjs](../src/cli/daemon-cmd.mjs) に `process.on('uncaughtException')` / `'unhandledRejection')` handler を登録、**同期 `writeFileSync` で log に書いてから exit**。残った sudden death は stack trace + 種別が必ず残る
 - [src/daemon/haiku-caller.mjs](../src/daemon/haiku-caller.mjs) の `child.stdin/stdout/stderr` に防御的 error listener 追加
 
-**残: v1.3.0 後の再観測**。実運用で daemon 突然死頻度が下がるかを daemon ログで集計。`tool-db loaded` 行を sessionId 別に grep して 1 セッションあたり何回再起動が起きるかを観測する。下がっていなければ別の真因 (Node 内部例外 / WSL 仮想化レイヤ等) を疑う。
+**残: v1.3.0 後の再観測**。実運用で daemon 突然死頻度が下がるかを daemon ログで集計。`spotter diagnostics logs --json` の `daemon.restartSignals` / `daemon.toolDbLoaded` / `daemon.stops` を見て、1 セッションあたり何回再起動が起きるかを観測する。下がっていなければ別の真因 (Node 内部例外 / WSL 仮想化レイヤ等) を疑う。
 
 ---
 
@@ -60,7 +60,7 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **v0.13.3 で部分対処**: カタログ**外**のハルシネーション (例: `Skill(tl)`、training 記憶由来の架空ツール名) は prompt 明示 + `filterCatalogMisses` の二重防御で遮断済み。**カタログ内の過検出** (Read 乱発 / caveat 誤爆等) はそのまま残っているためこの項目は継続。
 
-**次アクション**: 数日の実運用 → daemon ログから turn_end の `pass=false, missing=...` 件数と内訳を集計、ユーザーが受け入れた指摘 / 却下した指摘の比率を観測。過検出が目立つなら (a) few-shot 増量、(b) カテゴリ別優先度付け、(c) カタログ description 側での「on-demand only」明示、のいずれかを検討。v0.13.3 の `dropped catalog-external names: ...` ログで filter 発動回数も併せて観測可能。
+**次アクション**: 数日の実運用 → `spotter diagnostics logs --json` で turn_end の `pass=false` 件数、missing 内訳、catalog-external drop を集計し、ユーザーが受け入れた指摘 / 却下した指摘の比率を観測。過検出が目立つなら (a) few-shot 増量、(b) カテゴリ別優先度付け、(c) カタログ description 側での「on-demand only」明示、のいずれかを検討。
 
 ### preamble 268 件時の Haiku 判定品質
 
@@ -72,7 +72,7 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **背景**: v0.13.1 実測で first=22-32s、45s timeout に対して 50-70% 域。v1.0.0 で preamble が 4 倍以上に膨らんだため first の悪化が懸念される。prompt caching が効けば 2 回目以降は問題ないが、cold の first は直撃する。45s timeout を超えたら daemon が `E_HAIKU_TIMEOUT` で落ちる。
 
-**次アクション**: v1.0.0 リリース後の daemon ログで `mode=first, duration_ms=N` を集計。40s 付近に張り付くようなら (a) description truncate、(b) timeout 60s 緩和、(c) プラグイン単位の選別機構 のどれかを検討。timeout 突破頻発なら緊急対処。
+**次アクション**: v1.3.0 以降の daemon ログを `spotter diagnostics logs --json` で集計し、`stages.user_input.modes.first` / `stages.turn_end.modes.first` の duration を見る。40s 付近に張り付くようなら (a) description truncate、(b) daemon timeout 60s 緩和、(c) プラグイン単位の選別機構 のどれかを検討。timeout 突破頻発なら緊急対処。
 
 ### claude.ai MCP (Gmail/Calendar/Drive) の過検出率 — 連携環境でのみ残存
 
@@ -84,7 +84,7 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **背景**: プラン §9 の v0.2 予定だった観測タスク。v0.5.0 で role-collapse-recovery を事後回復方式にしたが、発生頻度は未集計。頻発するなら予防機構 (N ターン毎の強制 renew 等) の追加を再検討する。
 
-**次アクション**: daemon ログの `role collapse detected, session reset` 件数と、JSON パース成功率を集計する仕組みを足す。
+**次アクション**: `spotter diagnostics logs --json` で `roleCollapseReset` と handler error を集計し、頻発するなら予防機構 (N ターン毎の強制 renew 等) の追加を再検討する。
 
 ---
 
@@ -92,7 +92,7 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 ### `claude mcp list` text パースの脆弱性
 
-**背景**: [src/tool-db/investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) の `parseMcpListOutput` は text フォーマットに依存。Claude Code CLI がフォーマット変更したら壊れる。現時点で `--json` 出力は未提供。
+**背景**: [src/tool-db/investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) の `parseMcpListOutput` は text フォーマットに依存。Claude Code CLI がフォーマット変更したら壊れる。2026-05-06 時点のローカル CLI では `claude mcp list --json` は `unknown option '--json'`。
 
 **次アクション**: `claude mcp list --json` の有無を定期的に再確認し、提供されたら即切り替え。それまでは `.mcp.json` 直読み (v0.9.0 で導入) でカバー、CLI パースは fallback 扱いに格下げ済み。
 
@@ -104,25 +104,29 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **次アクション**: Gmail/Calendar/Drive は Anthropic 製品の一部、API 変更頻度は低い想定。半年に一度見直す運用で十分か要判断。頻度上がるなら自動監視スクリプトの導入を検討。
 
-### daemon IPC に認証なし (2026-04-20 監査で発見)
+### Windows Named Pipe の DACL 制限なし (2026-04-20 監査で発見)
 
-**背景**: [src/daemon/transport.mjs:17-20,102-142](../src/daemon/transport.mjs#L17-L142) の Windows Named Pipe は DACL 未設定で default Everyone、Unix socket も `~/.spotter/runtime/` が `mkdir(..., {recursive:true})` の mode 0777 + umask 継承で他プロセスから connect 可能。daemon 側の認証は session_id 一致チェック ([src/daemon/daemon.mjs:185-189](../src/daemon/daemon.mjs#L185-L189)) のみで、session_id は pipe/socket 名から読めるため認証にならず。同一ユーザー内の別プロセスから `tool_used` 偽造で used_tools 汚染 → Haiku 指摘抑制、または偽 `user_input` で Haiku spend をドライブする攻撃経路が理論上成立する。OWASP A01 Broken Access Control。
+**背景**: Windows Named Pipe は DACL 未設定で default Everyone。daemon 側の認証は session_id 一致チェック ([src/daemon/daemon.mjs](../src/daemon/daemon.mjs)) のみで、session_id は pipe/socket 名から読めるため認証にならず。同一ユーザー内の別プロセスから `tool_used` 偽造で used_tools 汚染 → Haiku 指摘抑制、または偽 `user_input` で Haiku spend をドライブする攻撃経路が理論上成立する。OWASP A01 Broken Access Control。
 
 **補足**: Spotter は個人用ローカル CLI で、同一ユーザー内の別プロセスが敵対的である想定は通常しない = blast radius は「同端末で別のマルウェアが動いている場合のみ」。それでも cheap fix があるので塞ぎたい。
 
-**次アクション**: Unix 側は socket 生成直後に `fs.chmodSync(socketPath, 0o600)` を入れるだけで完了 (runtime dir も 0o700)。Windows 側 Named Pipe DACL 制限は `net.createServer` に pipeMode オプションがないため、プロセス起動時の SECURITY_DESCRIPTOR 設定か、別モジュール経由が必要 — 設計が重いので P2 送り候補。
+**Unix 側は解決済み**: `~/.spotter/runtime` を `0700`、daemon listen 後の Unix socket を `0600` に固定した。
 
-### frontmatter パーサが YAML block scalar 非対応 (2026-04-20 監査で発見)
+**次アクション**: P2。Windows 側 Named Pipe DACL 制限は `net.createServer` に pipeMode オプションがないため、プロセス起動時の SECURITY_DESCRIPTOR 設定か、別モジュール経由が必要。
 
-**背景**: [src/tool-db/frontmatter.mjs:26-45](../src/tool-db/frontmatter.mjs#L26-L45) は 1 行ずつ `key: value` を取るだけで、`description: >` / `description: |` の block scalar および quote 内エスケープに非対応。description が取れなかったエントリは [src/tool-db/investigate-skills.mjs:73](../src/tool-db/investigate-skills.mjs#L73) で `length === 0` で silent skip され log も残らない。v1.0.0 の 268 件 (特に ECC 181 スキル) のうち block scalar を使っている SKILL.md が recall から消えている可能性。
+### frontmatter パーサの quote escape 対応が最小 (2026-04-20 監査で発見)
 
-**次アクション**: (a) 実際に ECC スキルの SKILL.md で block scalar 使用頻度を確認 (grep)、(b) block scalar 未対応の場合のみ silent skip ではなく warn log を残す、(c) 実害があるなら最小パーサを拡張。YAML ライブラリ追加はゼロ依存志向 (CLAUDE.md) に反するので最後の手段。
+**背景**: [src/tool-db/frontmatter.mjs](../src/tool-db/frontmatter.mjs) は Claude Code skill / agent の `name` / `description` 抽出に必要な最小 YAML frontmatter parser。`description: >` / `description: |` の block scalar は zero-deps のまま対応済みだが、double-quoted YAML escape (`\n`, `\"` 等) の完全展開までは行っていない。
+
+**現状の影響**: quote escape 未展開は description の表記揺れに留まり、block scalar 非対応時のように skill / agent が `length === 0` で丸ごと silent skip される実害は確認していない。
+
+**次アクション**: P2 (機会があれば)。実際の SKILL.md / agent frontmatter に escape-heavy な description が出た時点で、依存追加なしの `unquoteYamlString` を追加する。YAML ライブラリ追加はゼロ依存志向 (CLAUDE.md) に反するので最後の手段。
 
 ### `--resume` の実効 spawn 削減量未検証
 
 **背景**: v0.5.0 で session-scoped Haiku を導入して resumed 経路を 30s → 30s (timeout) に短縮した想定。ただし `claude -p --resume` のプロセス起動・認証自体は毎回発生する可能性があり、ネットの仮定ほど削減できていないかも。
 
-**次アクション**: daemon ログから `mode=first/resumed, duration_ms` を集計 (v0.5.2 で可視化済み)。first と resumed の差が小さいなら session-scoped の意義を再評価。
+**次アクション**: `spotter diagnostics logs --json` で `mode=first/resumed, duration_ms` を集計。first と resumed の差が小さいなら session-scoped の意義を再評価。
 
 ---
 
@@ -136,11 +140,11 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 ### async hook 化 (v0.4+)
 
-現状 Stop hook が Haiku 呼び出しを同期的に待つ (30s timeout)。async hook 対応が Claude Code 側で来たら、体感レイテンシを隠蔽できる。
+現状 Stop hook は daemon の Haiku 呼び出しを同期的に待つ (daemon 45s、hook IPC 50s、install が書く Claude Code 側 timeout は 60s)。async hook 対応が Claude Code 側で来たら、体感レイテンシを隠蔽できる。
 
 ### CI 回帰テスト整備 (v0.4+)
 
-`.github/workflows/ci.yml` は Node 22.5 / lint / test の想定だが、実装時の lint フロー・PR ゲートは未整備。`node --test` + `eslint` の最小 CI を立ち上げる。
+現行 `.github/workflows/ci.yml` は Node 22.5 / 22.x と Linux / Windows / macOS の `node --test` matrix。lint フロー・PR ゲートは未整備。導入するなら `node --test` に加えて `eslint` 相当の最小 lint を CI に載せる。
 
 ### tool-db.json の並列書き込み race condition (2026-04-20 v1.1.1 review で発見)
 
@@ -149,14 +153,6 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 **影響**: 失われた差分は次回 refresh で再投入されるので最終的に収束 = 一時的な snapshot 後退のみ。実運用では install はユーザーが対話的に 1 回叩く想定 = 並列発生頻度は極低。`spotter db refresh` / `spotter db rebuild` と SessionStart bg refresh の間も同じ構造。
 
 **次アクション**: P2 (機会があれば)。対処するなら (a) file lock (`~/.spotter/runtime/tool-db.lock`) で refresh を mutex、(b) saveDb 層で既存ファイルとの merge 差分書き込み、のどちらか。現状は実害観測なしなので放置で可。
-
-### parseMcpListOutput の素朴 tokenizer がスペース入りコマンドパスで破綻 (2026-04-29 v1.2.5 review で発見)
-
-**背景**: v1.2.5 で [investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) `parseMcpListOutput` の stdio 分岐に `command` / `args` 抽出を追加した際、tokenisation を `beforeStatus.split(/\s+/)` で素朴に切る実装にした。`claude mcp list` の出力行が `caveat: C:\Program Files\nodejs\node.exe --foo /a/b/c.js mcp-server - ✓ Connected` のように **コマンドパスにスペースを含む** 場合、`command` が `C:\Program` に切れる回帰リスク。
-
-**現状の影響**: 実害は出ていない。`listMcpServers` 経路では `.mcp.json` (User / Project / Local / Legacy scope) にエントリがあれば `describeServer` で `.mcp.json` の `command` (フルパス保持) が優先採用され、CLI 由来の壊れた command は使われない。CLI 由来 command が実際に spawn に渡るのは「`.mcp.json` のどのスコープにも未登録 + stdio」= **プラグイン MCP のみ**。実測 (Web プロジェクト 2026-04-29) でプラグイン MCP 6 件はすべて `npx ...` 起動でスペース無し、現状は発火していない。
-
-**次アクション**: P2 (機会があれば)。発火条件は「プラグイン MCP が空白入りパスで `.exe` 直叩き配布される」になった時点。塞ぎ方は (a) shellquote-aware tokenizer 投入 (依存追加なし、自前で書く)、(b) `claude mcp list --json` 出力が追加されたら全面切り替え (P1 の上位課題と同じ方向性)、(c) 先頭トークンが既存ファイル (`fs.existsSync`) として存在しなければ次のスペース区切りを試行する heuristic。本質的に CLI text パースの脆弱性なので、最終解は `--json` 出力待ち。
 
 ### MCP clientInfo.version が package.json と drift (2026-04-20 監査で発見)
 
@@ -170,8 +166,11 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 | 課題 | 解決版 |
 |---|---|
+| `parseMcpListOutput` の stdio tokenizer が `beforeStatus.split(/\s+/)` で、`C:\Program Files\nodejs\node.exe --foo ...` のような空白入り Windows 実行ファイルパスを `C:\Program` に壊していた問題。unquoted Windows absolute executable path (`.exe` / `.cmd` / `.bat`) の抽出と quoted arg 対応を追加し、プラグイン MCP の list-line 由来 spawn descriptor を壊しにくくした | unreleased |
+| Unix daemon IPC が `~/.spotter/runtime` の umask 継承と socket mode 任せで、同一ユーザー外プロセスから connect できる可能性があった問題。runtime dir を `0700`、Unix socket を daemon listen 後に `0600` へ固定し、transport test で mode を検証 | unreleased |
+| frontmatter parser が `description: >` / `description: |` の YAML block scalar に非対応で、block scalar を使う SKILL.md / agent md が description 空扱いになり recall から silent skip され得た問題。zero-deps の最小 parser のまま folded (`>`) / literal (`|`) block scalar を読み取り、skill discovery の回帰テストを追加 | unreleased |
 | Haiku spawn 時に user/project の MCP server 60+ 個を毎回 load して CPU 100% 飽和 + 孤児 `npm exec` プロセス累積。WSL2 で daemon 3 並走 × 各 Haiku 呼出 = `npm exec @modelcontextprotocol/...` 等の MCP server を秒単位で spawn → 終了 → 再 spawn のサイクル → CPU/メモリ圧 → daemon 自体が cgroup OOM で死亡 → auto-resurrect ループ → 「Chime のチャット入力が無反応」体感症状。`buildSpawnArgs` に `--strict-mcp-config --mcp-config <empty>` 強制 + `ensureWorkdir` で `~/.spotter/workdir/empty-mcp.json` (`{"mcpServers":{}}`) を idempotent 生成。Haiku は `{name, description}` カタログ監査しか必要としないので副作用ゼロ | v1.3.0 |
-| `install.mjs` の `HOOK_EVENTS` が settings.json に書く Stop/UserPromptSubmit timeout が 15s/30s のままで、v0.13.1 の Haiku timeout 緩和 (30→45s) が既存 install ユーザーに届かず Chime 等の重い環境で hook kill による「チャット入力無反応」を誘発していた問題。`HOOK_EVENTS` の該当 timeout を 60s に統一 (Haiku 45s + IPC 往復 + 余裕) | v1.3.0 |
+| `install.mjs` の `HOOK_EVENTS` が settings.json に書く Stop/UserPromptSubmit timeout が 15s/30s のままで、v0.13.1 の Haiku timeout 緩和 (30→45s) が既存 install ユーザーに届かず Chime 等の重い環境で hook kill による「チャット入力無反応」を誘発していた問題。`HOOK_EVENTS` の該当 timeout を 60s に統一 (Haiku 45s + IPC 往復 + 余裕)。既存 project の settings は global update だけでは書き換わらないため、各 project で `spotter install` 再実行が必要 | v1.3.0 |
 | Claude Code 公式の MCP scope 3 段 (User / Project / Local) のうち User (`~/.claude.json` 直下 `mcpServers`) と Local (`~/.claude.json` `projects[<root>].mcpServers`) を読み損ねていた構造バグ。`claude mcp add -s user -e KEY=val ...` 等で登録した MCP が `claude mcp list` で発見されるが env 抜きで spawn → tools/list 空 → `resolveAll` の prune でカタログから silent に脱落していた。`readMcpServers` を 4 ソース merge (`legacy < user < project < local`) に拡張、Windows の `projects[]` キー揺れ (separator / 大小 / 末尾スラッシュ) を正規化して照合 | v1.2.1 |
 | 当該プロジェクトで使えないツールが Haiku 視野に幻として漏れる構造的バグ。`readMerged` が global DB の中身を local-wins マージで daemon の audit に流し込んでいた経路 + `resolveAll` が snapshot にもう存在しないローカルエントリを削除しなかった経路の二重バグ。daemon 入力を `readLocal` (local DB only) に切替 + `resolveAll` 末尾に prune ループ追加 (investigate 失敗時は既存値保持) | v1.2.0 |
 | Bell の isolated `CLAUDE_CONFIG_DIR` (例 bellbot) が hook → daemon → haiku の spawn 連鎖で継承され、Spotter haiku が credentials 不在の config を読みに行き auth 失敗で exit 1 → 次 turn で同じ session-id が "already in use" で stuck し user_input hook が非 0 exit 連鎖する bug。`sanitizeHaikuEnv` で haiku spawn 時のみ `CLAUDE_CONFIG_DIR` を strip + `runHaikuJudgment` で E_INTERNAL / E_HAIKU_TIMEOUT 時も session を rotate してから throw | v1.1.6 |

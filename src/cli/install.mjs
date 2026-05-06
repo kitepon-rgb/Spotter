@@ -28,7 +28,7 @@ const SPOTTER_HOME = join(homedir(), '.spotter');
 
 const MARKER_VERSION = '1';
 
-// v1.2.6: UserPromptSubmit / Stop を 60s に統一。理由:
+// v1.3.0: UserPromptSubmit / Stop を 60s に統一。理由:
 // - daemon 側 Haiku timeout は 45s (DEFAULT_HAIKU_TIMEOUT_MS @ daemon.mjs)
 // - hook → daemon IPC 往復・JSON parse・log fsync を加味すると ~50s が上限
 // - Claude Code 本体は settings.json の timeout で hook を kill するので、ここが最も狭い
@@ -164,11 +164,16 @@ function mergeHooks(current) {
     const hookEntry = { type: 'command', command, timeout };
     const groups = next.hooks[event] = next.hooks[event] ?? [];
 
-    // Dedup: skip if an identical spotter command is already present
-    const alreadyHas = groups.some((g) =>
-      Array.isArray(g.hooks) &&
-      g.hooks.some((h) => h?.type === 'command' && h?.command?.includes('spotter.mjs') && h?.command?.includes(`hook ${sub}`))
-    );
+    let alreadyHas = false;
+    for (const group of groups) {
+      if (!Array.isArray(group.hooks)) continue;
+      for (const hook of group.hooks) {
+        if (hook?.type !== 'command') continue;
+        if (!hook.command?.includes('spotter.mjs') || !hook.command?.includes(`hook ${sub}`)) continue;
+        alreadyHas = true;
+        hook.timeout = timeout;
+      }
+    }
     if (alreadyHas) continue;
 
     groups.push({ hooks: [hookEntry] });

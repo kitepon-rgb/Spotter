@@ -128,10 +128,10 @@ export function parseMcpListOutput(text) {
       // queried via `claude mcp get` (CLI returns "No MCP server found with
       // name: ..." even though `mcp list` shows them), so the list line is the
       // only authoritative source for these. Bare-name servers also work this
-      // way: tokenisation is naive (whitespace-only, matches splitArgs in
-      // getStdioConfig) and matches the existing constraint that command paths
-      // must not contain spaces.
-      const tokens = beforeStatus.split(/\s+/).filter((t) => t.length > 0);
+      // way. Tokenisation handles quoted args and the unquoted Windows absolute
+      // executable paths Claude Code prints for some stdio servers, e.g.
+      // `C:\Program Files\nodejs\node.exe --foo ...`.
+      const tokens = splitCommandLine(beforeStatus);
       // tokens.length === 0 means the CLI emitted "<name>: " followed by only
       // status text (or nothing) — a malformed entry we cannot spawn anyway.
       // We `continue` rather than throw so a single broken line cannot poison
@@ -187,11 +187,73 @@ async function getStdioConfig({ name, claudeBin, projectRoot }) {
   return { command, args };
 }
 
-// Naive argv tokenizer: splits on spaces, no quote handling. The MCP commands we see
-// (node + a single .js path + flags) don't need quoting. If a future server has spaces
-// in paths, we'd need a proper shell-like tokenizer.
+function splitCommandLine(s) {
+  const windows = extractUnquotedWindowsExecutable(s);
+  if (windows) {
+    const args = windows.rest.length > 0 ? splitArgs(windows.rest) : [];
+    return [windows.command, ...args];
+  }
+  return splitArgs(s);
+}
+
+function extractUnquotedWindowsExecutable(s) {
+  if (!/^(?:[A-Za-z]:\\|\\\\)/u.test(s)) return null;
+  const match = s.match(/^(.+?\.(?:exe|cmd|bat))(?:\s+|$)(.*)$/iu);
+  if (!match) return null;
+  return { command: match[1], rest: match[2].trim() };
+}
+
+// Minimal command-line tokenizer for Claude CLI text output. It is intentionally
+// not a shell evaluator: it only preserves quoted spans and strips the quote
+// delimiters. Backslashes outside quotes are kept verbatim so Windows paths in
+// args do not get mangled.
 function splitArgs(s) {
-  return s.split(/\s+/).filter((t) => t.length > 0);
+  const out = [];
+  let current = '';
+  let quote = null;
+  let tokenStarted = false;
+
+  const push = () => {
+    if (!tokenStarted) return;
+    out.push(current);
+    current = '';
+    tokenStarted = false;
+  };
+
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+        tokenStarted = true;
+        continue;
+      }
+      if (quote === '"' && ch === '\\' && (s[i + 1] === '"' || s[i + 1] === '\\')) {
+        current += s[i + 1];
+        tokenStarted = true;
+        i += 1;
+        continue;
+      }
+      current += ch;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (/\s/u.test(ch)) {
+      push();
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      tokenStarted = true;
+      continue;
+    }
+    current += ch;
+    tokenStarted = true;
+  }
+
+  push();
+  return out;
 }
 
 // On Windows, npm-global CLI tools (e.g. `claude-mermaid`) ship as `<name>.cmd`

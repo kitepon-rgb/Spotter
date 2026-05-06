@@ -45,19 +45,15 @@ export async function runDoctor() {
     if (!ok) warnings += 1;
   }
 
-  // tool-db (global)
+  // tool-db (global cache). Since v1.2.0 this is not part of daemon audit input;
+  // the daemon audits the project-local DB only. Empty global cache is fine.
   try {
     const global = await loadDb(globalDbPath());
     const count = Object.keys(global.tools).length;
-    if (count === 0) {
-      mark(false, `global tool-db: empty (run \`spotter db refresh\`)`);
-      warnings += 1;
-    } else {
-      mark(true, `global tool-db: ${count} tools at ${globalDbPath()}`);
-    }
+    mark(true, `global cache DB: ${count} tools at ${globalDbPath()}`);
   } catch (err) {
-    mark(false, 'global tool-db', err.message);
-    failures += 1;
+    mark(false, 'global cache DB', `${err.message} (cache only; daemon audits local DB)`);
+    warnings += 1;
   }
 
   // tool-db (local) if cwd is inside a Spotter project
@@ -66,9 +62,9 @@ export async function runDoctor() {
     try {
       const local = await loadDb(localDbPath(projectRoot));
       const count = Object.keys(local.tools).length;
-      mark(true, `local tool-db: ${count} tools at ${localDbPath(projectRoot)}`);
+      mark(true, `local audit DB: ${count} tools at ${localDbPath(projectRoot)}`);
     } catch (err) {
-      mark(false, 'local tool-db', err.message);
+      mark(false, 'local audit DB', err.message);
       failures += 1;
     }
   }

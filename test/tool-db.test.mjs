@@ -179,11 +179,18 @@ caveat: C:\\Program Files\\nodejs\\node.exe --foo /a/b/c.js mcp-server - ✓ Con
   assert.equal(out.length, 1);
   assert.equal(out[0].name, 'caveat');
   assert.equal(out[0].transport, 'stdio');
-  assert.equal(out[0].command, 'C:\\Program');
-  // Note: 'Files\\nodejs\\node.exe' splits on the embedded space, matching the
-  // pre-existing splitArgs naïveté in getStdioConfig. Paths with spaces are a
-  // known limitation, not a regression of this change.
-  assert.deepEqual(out[0].args, ['Files\\nodejs\\node.exe', '--foo', '/a/b/c.js', 'mcp-server']);
+  assert.equal(out[0].command, 'C:\\Program Files\\nodejs\\node.exe');
+  assert.deepEqual(out[0].args, ['--foo', '/a/b/c.js', 'mcp-server']);
+});
+
+test('parseMcpListOutput: handles quoted stdio args', () => {
+  const input = 'quoted: node "C:\\Users\\me\\MCP Servers\\server.js" --name "two words" - ✓ Connected\n';
+  const out = parseMcpListOutput(input);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].name, 'quoted');
+  assert.equal(out[0].transport, 'stdio');
+  assert.equal(out[0].command, 'node');
+  assert.deepEqual(out[0].args, ['C:\\Users\\me\\MCP Servers\\server.js', '--name', 'two words']);
 });
 
 test('parseMcpListOutput: parses HTTP entries', () => {
@@ -349,9 +356,57 @@ description: 'single-quoted'
   assert.equal(fm.description, 'single-quoted');
 });
 
+test('parseFrontmatter: supports folded block scalar descriptions', () => {
+  const text = `---
+name: folded
+description: >
+  Convene a four-voice council
+  for ambiguous decisions.
+
+  Preserve paragraph breaks.
+origin: ECC
+---
+
+# Body`;
+  const fm = parseFrontmatter(text);
+  assert.equal(fm.name, 'folded');
+  assert.equal(fm.description, 'Convene a four-voice council for ambiguous decisions.\nPreserve paragraph breaks.');
+  assert.equal(fm.origin, 'ECC');
+});
+
+test('parseFrontmatter: supports literal block scalar descriptions', () => {
+  const text = `---
+name: literal
+description: |
+  Line one.
+  Line two.
+origin: ECC
+---`;
+  const fm = parseFrontmatter(text);
+  assert.equal(fm.description, 'Line one.\nLine two.');
+  assert.equal(fm.origin, 'ECC');
+});
+
 test('parseFrontmatter: absent frontmatter returns empty object', () => {
   assert.deepEqual(parseFrontmatter('# Just a markdown file'), {});
   assert.deepEqual(parseFrontmatter(''), {});
+});
+
+test('listSkillsAll: reads skill with block scalar description', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-skill-block-'));
+  try {
+    const skillDir = join(projectRoot, '.claude', 'skills', 'block-skill');
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, 'SKILL.md'),
+      `---\nname: block-skill\ndescription: >\n  Does a project-specific thing\n  with multiline frontmatter.\n---\n\nBody\n`,
+      'utf8'
+    );
+    const skills = await listSkillsAll({ projectRoot });
+    assert.equal(skills.get('block-skill'), 'Does a project-specific thing with multiline frontmatter.');
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
 });
 
 test('listSkillsAll: reads user-scope skills from projectRoot if configured', async () => {

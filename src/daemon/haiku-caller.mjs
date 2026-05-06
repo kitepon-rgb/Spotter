@@ -74,7 +74,7 @@ const SHARED_HEADER = [
   '各ターン、以下いずれかの stage で判定リクエストを受けます:',
   '',
   '### stage=user_input',
-  '<user_input> のみ届く。when_to_use に明確に該当するツールを列挙。',
+  '<user_input> のみ届く。カタログの description から用途が明確に該当するツールを列挙。',
   '推測禁止。該当なしなら pass:true。',
   '',
   '### stage=turn_end  (ツール適用機会の監査)',
@@ -86,17 +86,16 @@ const SHARED_HEADER = [
   '指摘ゼロは歓迎。迷ったら pass:true。',
   '',
   '## 例',
-  '- stage=user_input "今何時?"',
-  '  → {"pass":false,"missing_tools":[{"name":"current_time","reason":"時刻の直接質問"}]}',
+  '以下の tool 名は例用カタログに存在すると仮定した例です。実回答では必ず実カタログの名前だけを使う。',
+  '- stage=user_input "この外部仕様の落とし穴を覚えておいて"',
+  '  → {"pass":false,"missing_tools":[{"name":"mcp__caveat__caveat_record","reason":"再利用すべき外部仕様の罠は記録対象"}]}',
   '- stage=user_input "ありがとう"',
   '  → {"pass":true,"missing_tools":[]}',
-  '- stage=turn_end 応答「この関数は配列長を返します」(used:なし) ← 検証',
-  '  → {"pass":false,"missing_tools":[{"name":"Read","reason":"関数実装の断定は実ファイル読取で裏付けるべき"}]}',
-  '- stage=turn_end 応答「判明: A モジュールは B に依存」(used:Grep) ← 登録',
+  '- stage=turn_end 応答「判明: A モジュールは B に依存」(used:なし) ← 登録',
   '  → {"pass":false,"missing_tools":[{"name":"mcp__caveat__caveat_record","reason":"新発見の依存関係は記録して次回参照可能にすべき"}]}',
   '- stage=turn_end 応答「この話題は前にも議論したはず」(used:なし) ← 照会',
   '  → {"pass":false,"missing_tools":[{"name":"mcp__caveat__caveat_search","reason":"過去の議論参照は検索して裏付けるべき"}]}',
-  '- stage=turn_end 応答「作業完了しました」(used:Read,Edit,Bash) ← pass',
+  '- stage=turn_end 応答「作業完了しました」(used:mcp__caveat__caveat_record) ← pass',
   '  → {"pass":true,"missing_tools":[]}',
 ].join('\n');
 
@@ -106,8 +105,9 @@ const SHARED_HEADER = [
 // per-turn payload.
 //
 // v0.7.0: `tools` is an array of {name, description} pairs (the new tool-db format).
-// `description` is the natural-language explanation supplied by the MCP server (or the
-// hardcoded baseline for Claude Code built-in deferred tools). No schema, no usage —
+// `description` is the natural-language explanation supplied by the MCP server, skill,
+// sub-agent, or the claude.ai OAuth baseline when the corresponding server is present.
+// No schema, no usage —
 // Haiku only needs to decide whether the tool should be called; "how to call" is Bell's
 // responsibility (via ToolSearch).
 export function buildPreamble({ tools }) {
