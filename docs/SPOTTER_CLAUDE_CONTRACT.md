@@ -65,7 +65,9 @@ Codex native hooks use Codex hook payloads, not Claude hook JSON. The
 current Codex adapter installs user-level `~/.codex/hooks.json` entries for `SessionStart`,
 `UserPromptSubmit`, and `Stop`, keeps `.spotter/marker.json` project gating, exits early when
 `SPOTTER_PARENT_PID` is set, and selects Codex CLI as the default primary auditor backend.
-Codex `SessionStart` does not start a daemon; it only launches a detached
+When `spotter install` sees Codex CLI and registers Codex hooks, it also synchronously seeds
+`.spotter/tool-db.codex.json` so the first Codex session has a host-local catalog. Codex
+`SessionStart` does not start a daemon; it only launches a detached
 `spotter db refresh --host-agent codex` so `.spotter/tool-db.codex.json` follows the Codex
 tool environment without overwriting Claude `.spotter/tool-db.json` or Claude's global
 description cache at `~/.spotter/tool-db.json`. Codex global cache writes go to

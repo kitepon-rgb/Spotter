@@ -211,6 +211,7 @@ Codex native `Stop` は現状 immediate block ではなく deferred delivery。`
 
 | 課題 | 解決版 |
 |---|---|
+| Codex hooks 登録後の初回 Codex セッションが、`SessionStart` の detached refresh 完了前に `UserPromptSubmit` を走らせると空 / 未作成の `.spotter/tool-db.codex.json` で監査し得た問題。Codex CLI が見える `spotter install` で Codex hooks 登録後に `refresh({hostAgent:"codex"})` も同期 seed し、SessionStart refresh は以後の drift 追従に限定 | v1.4.6 |
 | Codex native hooks が npm 未配布で、Codex host では Codex CLI primary auditor / host-local `.spotter/tool-db.codex.json` / SessionStart refresh / structured backend error / recursion guard が使えなかった問題。Codex host default を Codex CLI にし、Codex CLI がある環境では `spotter install` が Codex hooks も登録する。既存 hook command path も npm global 版へ更新する。`codex-sidecar` は explicit primary auditor と second-pass / work workflow として残した | v1.4.2 |
 | MCP initialize の `clientInfo.version` が `0.10.0` hardcode のまま package.json と drift していた cosmetic issue。`src/version.mjs` の package version を stdio / HTTP MCP investigate の `clientInfo.version` に使うよう修正 | v1.4.2 |
 | `parseMcpListOutput` の stdio tokenizer が `beforeStatus.split(/\s+/)` で、`C:\Program Files\nodejs\node.exe --foo ...` のような空白入り Windows 実行ファイルパスを `C:\Program` に壊していた問題。unquoted Windows absolute executable path (`.exe` / `.cmd` / `.bat`) の抽出と quoted arg 対応を追加し、プラグイン MCP の list-line 由来 spawn descriptor を壊しにくくした | v1.4.2 |

@@ -120,9 +120,11 @@ export async function runInstall({
     console.log(`wrote ${settingsPath}`);
   }
 
+  let codexHooksRegistered = false;
   if (target === 'project' && !skipCodexHooks) {
     if (codexCliPresentFn()) {
       const result = await installCodexHooksFn();
+      codexHooksRegistered = true;
       console.log('  Codex hooks registered');
       console.log(`  Codex hooks: ${result.hooksPath}`);
     } else {
@@ -140,23 +142,33 @@ export async function runInstall({
     console.log('\ndiscovering MCP servers, skills, and sub-agents...');
     const log = (msg) => process.stderr.write(`  ${msg}\n`);
     try {
-      const resolved = await refreshFn({ projectRoot: cwd, hostAgent: 'claude', logFn: log });
-      console.log(`  ${resolved.size} tool(s) resolved`);
-      console.log(`  local DB:  ${localDbPath(cwd, 'claude')}`);
-      console.log(`  global DB: ${globalDbPath('claude')}`);
+      const claudeResolved = await refreshFn({ projectRoot: cwd, hostAgent: 'claude', logFn: log });
+      console.log(`  ${claudeResolved.size} Claude tool(s) resolved`);
+      console.log(`  Claude local DB:  ${localDbPath(cwd, 'claude')}`);
+      console.log(`  Claude global DB: ${globalDbPath('claude')}`);
+      if (codexHooksRegistered) {
+        const codexResolved = await refreshFn({ projectRoot: cwd, hostAgent: 'codex', logFn: log });
+        console.log(`  ${codexResolved.size} Codex tool(s) resolved`);
+        console.log(`  Codex local DB:  ${localDbPath(cwd, 'codex')}`);
+        console.log(`  Codex global DB: ${globalDbPath('codex')}`);
+      }
     } catch (err) {
       // §0: throw (fallback 禁止). But surface the recovery path so the user isn't
       // left with "hooks registered, tool-db missing" and no clue what to run.
       process.stderr.write(`\nspotter install: tool-db seeding failed.\n`);
       process.stderr.write(`  hooks are registered but tool-db is not ready.\n`);
-      process.stderr.write(`  recover with: spotter db refresh\n`);
+      process.stderr.write(`  recover with: spotter db refresh and, for Codex, spotter db refresh --host-agent codex\n`);
       throw err;
     }
   }
 
   console.log('\nnext steps:');
   console.log('  reload Claude Code (or open a new session) to activate Spotter');
-  console.log('  open a new Codex session to activate Codex hooks when Codex CLI is installed');
+  if (codexHooksRegistered) {
+    console.log('  open a new Codex session to activate Codex hooks');
+  } else if (target === 'project' && !skipCodexHooks) {
+    console.log('  Codex hooks are not active: rerun `spotter install` where `codex --version` succeeds');
+  }
 }
 
 async function exists(path) {

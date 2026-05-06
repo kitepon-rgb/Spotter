@@ -10,6 +10,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.6** (2026-05-07): **Codex 初回セッション用 tool-db を install 時に同期 seed**。
+Codex CLI が見える `spotter install` は Codex hooks 登録後に
+`refresh({hostAgent:"codex"})` も同期実行し、`.spotter/tool-db.codex.json` を初回 Codex
+セッション前に作る。Codex `SessionStart` の detached refresh は以後の drift 追従用として残す。
+初回 `UserPromptSubmit` が空 / 未作成 Codex DB を読む race を塞いだ。
+
 **v1.4.5** (2026-05-06): **Codex global tool-db を Claude global tool-db から分離**。Claude は
 local `<project>/.spotter/tool-db.json` + global `~/.spotter/tool-db.json`、Codex は
 local `<project>/.spotter/tool-db.codex.json` + global `~/.spotter/tool-db.codex.json` を使う。

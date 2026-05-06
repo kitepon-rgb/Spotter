@@ -195,6 +195,57 @@ test('install: registers Codex hooks when Codex CLI is present', async () => {
   }
 });
 
+test('install: seeds Codex tool-db when Codex hooks are registered', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-codex-seed-'));
+  const refreshHosts = [];
+  try {
+    const mockRefresh = async ({ hostAgent }) => {
+      refreshHosts.push(hostAgent);
+      return new Map();
+    };
+    await runInstall({
+      target: 'project',
+      autoYes: true,
+      cwd: dir,
+      refreshFn: mockRefresh,
+      skipCodexHooks: false,
+      codexCliPresentFn: () => true,
+      installCodexHooksFn: async () => ({
+        hooksPath: '/home/test/.codex/hooks.json',
+        hooks: { sessionStart: 'installed', userPromptSubmit: 'installed', stop: 'installed' },
+      }),
+    });
+    assert.deepEqual(refreshHosts, ['claude', 'codex']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install: skips Codex tool-db seed when Codex CLI is unavailable', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-codex-unavailable-'));
+  const refreshHosts = [];
+  try {
+    const mockRefresh = async ({ hostAgent }) => {
+      refreshHosts.push(hostAgent);
+      return new Map();
+    };
+    await runInstall({
+      target: 'project',
+      autoYes: true,
+      cwd: dir,
+      refreshFn: mockRefresh,
+      skipCodexHooks: false,
+      codexCliPresentFn: () => false,
+      installCodexHooksFn: async () => {
+        throw new Error('should not install Codex hooks');
+      },
+    });
+    assert.deepEqual(refreshHosts, ['claude']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('install: refresh failure surfaces recovery hint on stderr', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-install-refresh-fail-'));
   const origWrite = process.stderr.write.bind(process.stderr);

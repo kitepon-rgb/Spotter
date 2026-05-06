@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4.6
+
+**Codex 初回セッションが空 catalog に依存し得る穴を修正**。v1.4.5 までは
+`spotter install` が Codex hooks を登録しても Codex host-local DB は seed せず、
+初回 Codex セッションの `SessionStart` が detached `spotter db refresh --host-agent codex`
+を起動するだけだった。そのため最初の `UserPromptSubmit` が refresh 完了前に走ると
+`.spotter/tool-db.codex.json` が空 / 未作成のまま Codex auditor が動き得た。
+
+### 変更点
+
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**:
+  Codex CLI が見つかり Codex hooks を登録した project install では、Claude DB seed に続いて
+  `refresh({hostAgent:"codex"})` も同期実行し、`.spotter/tool-db.codex.json` と
+  `~/.spotter/tool-db.codex.json` を作るようにした。以降の Codex `SessionStart` bg refresh は
+  drift 追従用として残す。Codex CLI が見つからなかった場合の next steps も、Codex hooks が
+  active ではないことと `codex --version` が通る環境で再実行すべきことを明示する。
+- **編集 [test/install.test.mjs](test/install.test.mjs)**:
+  Codex hooks 登録時に Claude / Codex の両 host DB refresh が順に走ること、Codex CLI
+  unavailable 時は Codex seed へ進まないことを固定。
+- **編集 README / README.ja / docs**:
+  Codex DB は install 時に初回 seed され、SessionStart refresh は以後の drift 追従であることを明記。
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.6`
+2. Codex を使う各プロジェクトで `spotter install` を再実行
+
 ## 1.4.5
 
 **Codex global tool-db を Claude global tool-db から分離**。v1.4.4 までは local DB は
