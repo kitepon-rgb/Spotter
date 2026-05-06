@@ -47,6 +47,13 @@ second-pass workflow であり、primary backend 置換ではない。
 - `spotter auditor judge --stage user_input|turn_end --input FILE` は、Codex 側 event source
   未確定の間に primary auditor backend を単発 smoke するための internal / experimental entrypoint
   として追加済み。ただし、これは Codex native integration 完了の証明ではない。
+- `spotter auditor matrix --stage user_input|turn_end --input FILE` は、同じ fixture で
+  `Claude + Codex CLI`, `Claude + codex-sidecar`, `Codex + Codex CLI`,
+  `Codex + codex-sidecar` の primary auditor row を比較するための internal / experimental entrypoint
+  として追加済み。`codex-sidecar` primary auditor は未実装なので、現時点では
+  `E_BACKEND_NOT_IMPLEMENTED` row として測定不能を明示する。matrix 出力は比較用なので、
+  backend stdout / stderr は raw text ではなく byte count に圧縮する。row 実行時は
+  host marker env (`CLAUDE_CODE` / `CODEX_SANDBOX`) を row ごとに明示する。
 
 ## Opinion
 
@@ -326,12 +333,22 @@ Gate:
   `codex-sidecar` 側の auditor preset / workflow を追加または利用可能にする。
   既存 risk / review ではなく、`user_input` / `turn_end` 判定専用 workflow が必要。
 - [ ] `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義する。
-- [ ] 4 象限を同じ fixture で測る:
-  `Claude + Codex CLI`, `Claude + codex-sidecar`,
-  `Codex + Codex CLI`, `Codex + codex-sidecar`。
-- [ ] primary auditor と second-pass / work の評価を分ける。
-- [ ] primary auditor では latency / schema success / process count / recursion safety を測る。
+- [x] 4 象限を同じ fixture で評価する harness を追加する:
+  `spotter auditor matrix --stage user_input|turn_end --input FILE [--project DIR]`。
+  row は `Claude + Codex CLI`, `Claude + codex-sidecar`, `Codex + Codex CLI`,
+  `Codex + codex-sidecar`。backend が未実装なら hidden fallback せず row-level error として残す。
+  row 実行時は host marker env (`CLAUDE_CODE` / `CODEX_SANDBOX`) を row ごとに明示し、
+  現在の親プロセス環境に引きずられて host 判定が混ざらないようにする。
+- [x] primary auditor と second-pass / work の評価を分ける。
+  `spotter auditor matrix` は `role:"primary_auditor"` のみを扱い、既存
+  `spotter codex risk-check|review|explore|opinion|work` の second-pass / work とは混ぜない。
+- [x] primary auditor matrix に latency / schema success / recursion safety の出力枠を追加する。
+- [ ] primary auditor の process count は実測方法を固定する。
+  現在の matrix output は `processCount` と `processCountMethod` を持つが、Codex CLI 実行時は
+  backend diagnostics が process count を出すまで `not_instrumented`。
 - [ ] second-pass / work では durable result / worktree / diagnostics / review quality を測る。
+- [ ] `codex-sidecar` primary auditor workflow が追加された後、同じ matrix fixture で
+  4 row すべてを実測し、`codex-sidecar` row が error でないことを確認する。
 - [ ] Claude host の primary default を `codex-sidecar` にするか `codex-cli` にするかは、
   この matrix evaluation で決める。
 - [ ] Codex host の primary default は Codex CLI 優先。ただし sidecar の方が
@@ -339,7 +356,10 @@ Gate:
 
 Gate:
 
-- [ ] `codex-sidecar` の存在意義を primary auditor 以外の workflow boundary として説明できる。
+- [x] `codex-sidecar` の存在意義を primary auditor 以外の workflow boundary として説明できる。
+  現時点の `codex-sidecar` は primary auditor ではなく、durable result / worktree / review quality を
+  伴う second-pass / work boundary。primary auditor で比較するには auditor 専用 workflow を
+  追加してから測る。
 - [ ] Claude host に移植する backend policy が、Codex native 実測に基づいている。
 
 ### Phase 5. Claude Host Port
@@ -486,6 +506,18 @@ Gate:
   `SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS` で上書き可能。短い `Stop` final response かつ
   used tools 0 件は backend を呼ばず skip する。`SPOTTER_CODEX_STOP_SHORT_FINAL_MAX_CHARS`
   で閾値変更または 0 以下による無効化が可能。
+- Phase 4 の測定入口として `spotter auditor matrix --stage user_input|turn_end --input FILE`
+  を追加した。同じ fixture から 4 row (`claude.codex-cli`, `claude.codex-sidecar`,
+  `codex.codex-cli`, `codex.codex-sidecar`) を評価し、success / error、latency、
+  schema success、process count field、recursion safety label を JSON で出す。
+  比較表として読めるよう、Codex CLI の raw stdout / stderr は matrix output では byte count に
+  圧縮する。row 実行時は host marker env を row ごとに明示する。
+  2026-05-06 の実 matrix smoke では、`GeForce 5000` fixture に対して
+  `claude.codex-cli durationMs=8233`, `codex.codex-cli durationMs=7318` で
+  `mcp__caveat__caveat_search` を検出し、両 row とも schema success / exit code 0。
+  `claude.codex-sidecar` / `codex.codex-sidecar` は `E_BACKEND_NOT_IMPLEMENTED`。
+  `codex-sidecar` primary auditor はまだ `E_BACKEND_NOT_IMPLEMENTED` row になるため、
+  sidecar row の実測は auditor workflow / diagnostics preset 追加後に行う。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に

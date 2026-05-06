@@ -23,6 +23,7 @@ test('cli: --help prints public and internal command contract', async () => {
   assert.ok(stdout.includes('spotter codex work --findings FILE --approve-work --allowed-path PATH'));
   assert.ok(stdout.includes('spotter codex-hook install|diagnostics'));
   assert.ok(stdout.includes('spotter auditor judge --stage STAGE --input FILE'));
+  assert.ok(stdout.includes('spotter auditor matrix --stage STAGE --input FILE'));
   assert.ok(stdout.includes('spotter daemon start --session-id ID'));
   assert.ok(stdout.includes('spotter hook <event>'));
   assert.ok(stdout.includes('session-start | user-prompt |'));
@@ -49,6 +50,7 @@ test('cli: auditor subcommand help exits successfully', async () => {
   assert.equal(stderr, '');
   assert.ok(stdout.includes('spotter auditor — experimental primary auditor smoke commands'));
   assert.ok(stdout.includes('spotter auditor judge --stage user_input|turn_end --input FILE'));
+  assert.ok(stdout.includes('spotter auditor matrix --stage user_input|turn_end --input FILE'));
   assert.ok(stdout.includes('not proof that Codex native integration is complete'));
 });
 

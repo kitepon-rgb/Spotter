@@ -46,6 +46,8 @@ Usage:
                                         (experimental) manage Codex native hooks
   spotter auditor judge --stage STAGE --input FILE
                                         (experimental) run primary auditor backend once
+  spotter auditor matrix --stage STAGE --input FILE
+                                        (experimental) compare primary auditor backend matrix
   spotter daemon start --session-id ID  (internal) run session daemon
   spotter hook <event>                  (internal) hook dispatch
                                         events: session-start | user-prompt |
