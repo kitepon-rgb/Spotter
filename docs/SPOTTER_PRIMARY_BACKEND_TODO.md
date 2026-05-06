@@ -297,9 +297,16 @@ Gate:
 
 Gate:
 
-- [ ] Codex 環境で実セッション smoke が通る。
-- [ ] Codex host で recursive Codex-on-Codex が起きない。
-- [ ] Codex host で Spotter が使えない場合、silent pass ではなく明示 error になる。
+- [x] Codex 環境で実セッション smoke が通る。
+  `codex exec` で `UserPromptSubmit Completed` / `Stop Completed` / exit code 0 を確認済み。
+  `codex exec resume <session_id>` で same-session pending context が
+  `UserPromptSubmit` の `additionalContext` として model-visible になることも確認済み。
+- [x] Codex host で recursive Codex-on-Codex が起きない。
+  Unit test で `SPOTTER_PARENT_PID` 時の early return を固定し、実 smoke でも parent hook
+  group だけが完了して nested backend 側 hook 増殖は観測されなかった。
+- [x] Codex host で Spotter が使えない場合、silent pass ではなく明示 error になる。
+  Codex usage limit は `E_CODEX_CLI_EXIT` と backend stdout/stderr diagnostics として
+  `additionalContext` / Stop stderr + pending に出る。Haiku fallback は使わない。
 - [ ] Codex native で latency の改善・悪化を数値で説明できる。
 
 ### Phase 4. Backend Matrix Evaluation
@@ -458,8 +465,10 @@ Gate:
   初回の `Stop decision:block` 実装は final answer 後に `Stop Blocked` となり exit code 1
   を返したため、Caveat と同じ pending queue 方式へ変更した。変更後の再 smoke では
   final answer 生成後も `Stop Completed` で exit code 0。
-  残る actual interactive session gate は、同一 Codex セッションで Stop pending が次の
-  `UserPromptSubmit` に表示されることの目視確認。
+- `codex exec resume 019dfc56-282e-71a1-afcf-81f261425e1f` に一時 pending marker
+  `SPOTTER_PENDING_SMOKE_20260506` を入れた実 smoke では、次 `UserPromptSubmit` で
+  model が `SPOTTER_PENDING_VISIBLE` と応答した。same-session pending context は
+  model-visible と確認済み。smoke 用 pending file は削除済み。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に
