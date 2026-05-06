@@ -469,8 +469,11 @@ Gate:
 
 ### Phase 7. Rollout
 
-- [ ] 初期 rollout は env opt-in にする:
-  `SPOTTER_AUDITOR_BACKEND_POLICY=next` など。
+- [x] 初期 rollout は opt-in にする。
+  Claude daemon の default policy は `current=haiku` のまま維持し、Codex native 側も
+  `spotter codex-hook install` で明示導入された環境だけで動く。backend override は
+  `SPOTTER_AUDITOR_BACKEND=codex-cli|codex-sidecar|haiku`、
+  policy preset は `SPOTTER_AUDITOR_BACKEND_POLICY=next` で明示できる。
 - [x] Codex host smoke を行う。
   2026-05-06 Codex native hooks: `codex-hook diagnostics` は `availability=available`、
   `SessionStart` manual smoke は `refresh_spawned`、`UserPromptSubmit` / `Stop` 実 smoke は
