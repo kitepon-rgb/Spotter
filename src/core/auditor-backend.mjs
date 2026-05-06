@@ -10,6 +10,7 @@ import { toSpotterJudgment } from './judgment.mjs';
 import { filterCatalogMisses } from './auditor-response.mjs';
 import { AuditorBackendError } from './auditor-error.mjs';
 import { detectHostAgent } from './host-agent.mjs';
+import { createCodexCliAuditorBackend } from './codex-cli-backend.mjs';
 
 export { AuditorBackendError } from './auditor-error.mjs';
 export {
@@ -44,9 +45,11 @@ export function createAuditorBackend({
     });
   }
   if (selected.backend === 'codex-cli') {
-    throw new AuditorBackendError('E_BACKEND_NOT_IMPLEMENTED', 'codex-cli primary auditor backend is not implemented yet', {
-      backend: 'codex-cli',
-      diagnostics: { reason: selected.reason },
+    return createCodexCliAuditorBackend({
+      catalog,
+      projectRoot,
+      env,
+      timeoutMs,
     });
   }
   throw new AuditorBackendError('E_BACKEND_UNKNOWN', `unknown auditor backend: ${selected.backend}`, {

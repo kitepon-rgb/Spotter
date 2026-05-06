@@ -208,44 +208,44 @@ Gate:
 
 ### Phase 2. Codex CLI Backend Spike
 
-- [ ] `codex exec --output-schema` 用の JSON schema を追加する。
+- [x] `codex exec --output-schema` 用の JSON schema を追加する。
   schema は現行 Haiku response と同じ `{pass, missing_tools:[{name,reason}]}` をまず要求する。
-- [ ] Codex CLI backend は schema-valid final JSON を backend-neutral parser に通してから
+- [x] Codex CLI backend は schema-valid final JSON を backend-neutral parser に通してから
   `SpotterJudgment` に変換する。Haiku と Codex で missing tool filtering / anomaly shape を分岐させない。
-- [ ] `codex exec --json --output-schema <schema> --output-last-message <tmpfile> --ephemeral --sandbox read-only --cd <project>`
+- [x] `codex exec --json --output-schema <schema> --output-last-message <tmpfile> --ephemeral --sandbox read-only --cd <project>`
   の最小 smoke を作る。
-- [ ] Codex CLI final response は `--output-last-message` の JSON を正本として読む。
+- [x] Codex CLI final response は `--output-last-message` の JSON を正本として読む。
   stdout JSONL parser は diagnostics / timing / raw transcript 保存の補助にし、final response 取得を
   event shape に依存させすぎない。
-- [ ] invalid JSON / schema mismatch / non-zero exit / timeout を structured error にする。
-- [ ] Codex CLI spawn は stdin を明示的に `ignore` する。hook stdin や daemon stdin を継承すると
+- [x] invalid JSON / schema mismatch / non-zero exit / timeout を structured error にする。
+- [x] Codex CLI spawn は stdin を明示的に `ignore` する。hook stdin や daemon stdin を継承すると
   Codex CLI が追加 prompt として読む可能性がある。
-- [ ] Codex CLI stderr は bounded diagnostics として capture する。
+- [x] Codex CLI stderr は bounded diagnostics として capture する。
   analytics 403 HTML や plugin / skill manifest warning が出ても、それだけでは backend failure にしない。
   ただし non-zero exit / schema invalid / no final JSON は structured error にする。
-- [ ] `--ignore-user-config` / `--ignore-rules` でも plugin / skill manifest scan が完全には止まらない
+- [x] `--ignore-user-config` / `--ignore-rules` でも plugin / skill manifest scan が完全には止まらない
   可能性を前提に、cold latency と stderr volume を測る。必要なら `CODEX_HOME` / feature disable /
   minimal profile の選択肢を別 spike に切る。ただし `CODEX_HOME` 変更は auth 断絶を起こし得るので、
   認証済みの最小 profile を作れることを確認してから採用する。
-- [ ] last-message file / schema file / raw JSONL capture の temp path と cleanup policy を決める。
+- [x] last-message file / schema file / raw JSONL capture の temp path と cleanup policy を決める。
   timeout / abort 時も tempfile を漏らさず、diagnostics に必要な場合だけ approved log dir へ保存する。
 - [ ] timeout は process close だけで判定しない。もし last-message file に schema-valid final JSON が
   書かれているなら、その時点で success として扱えるかを検証する。これは `claude -p` の
   `type:result` 後も process が残る既知罠と同型の timeout 誤判定を避けるため。
-- [ ] Codex CLI spawn env に recursion marker を入れる:
+- [x] Codex CLI spawn env に recursion marker を入れる:
   `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND=codex-cli`, `SPOTTER_CHILD_BACKEND=codex-cli`。
 - [ ] 将来の Codex plugin / wrapper 側も `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` を見て
   再入しない gate を持つ。Claude hook の `SPOTTER_PARENT_PID` だけに依存しない。
 - [ ] Codex CLI backend が Spotter hooks / daemon を増殖させないことを unit / smoke で確認する。
-- [ ] Codex CLI spawn option の unit test で `stdio[0] === 'ignore'`、read-only sandbox、
+- [x] Codex CLI spawn option の unit test で `stdio[0] === 'ignore'`、read-only sandbox、
   recursion marker env、tempfile cleanup、stderr cap を固定する。
 - [ ] Haiku backend と Codex CLI backend の latency / process count / output validity を同じ fixture で比較する。
 
 Gate:
 
-- [ ] `codex exec` が stable schema output を返す。
-- [ ] `--output-last-message` と `--output-schema` の組み合わせで final JSON を安定取得できる。
-- [ ] Codex CLI が stdin を読まず、stderr noise を bounded diagnostics に閉じ込められる。
+- [x] `codex exec` が stable schema output を返す。
+- [x] `--output-last-message` と `--output-schema` の組み合わせで final JSON を安定取得できる。
+- [x] Codex CLI が stdin を読まず、stderr noise を bounded diagnostics に閉じ込められる。
 - [ ] `codex exec` が Haiku より十分に遅い場合、Codex host primary 採用を再検討する。
 - [ ] Codex CLI unavailable は Codex host で structured error。Haiku fallback しない。
 - [ ] `SPOTTER_AUDITOR_BACKEND=codex-sidecar` は Phase 4 の auditor workflow 実装前なら
@@ -407,6 +407,11 @@ Gate:
   `src/core/auditor-error.mjs`, `src/core/host-agent.mjs` を追加し、daemon は Haiku を
   backend adapter 経由で呼ぶように変更済み。Haiku の preamble-once / reset semantics は
   Caveat の既知罠に従い維持済み。
+- Phase 2 実装で `src/core/codex-cli-backend.mjs` を追加し、
+  `codex exec --json --output-schema --output-last-message --ephemeral --ignore-user-config
+  --ignore-rules --sandbox read-only --cd <repo>` を使う primary auditor backend を追加済み。
+  2026-05-06 の実 smoke では `durationMs=8941`, `stderrBytes=26479`, `stdoutBytes=537`,
+  `stderrTruncated=false`, schema-valid `SpotterJudgment` を確認済み。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に

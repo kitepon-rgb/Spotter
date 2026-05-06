@@ -23,6 +23,13 @@ export {
   selectAuditorBackend,
   validateAuditorResponse,
 } from './core/auditor-backend.mjs';
+export {
+  buildCodexCliAuditorPrompt,
+  buildCodexCliSpawnOptions,
+  buildCodexExecArgs,
+  CODEX_AUDITOR_SCHEMA,
+  createCodexCliAuditorBackend,
+} from './core/codex-cli-backend.mjs';
 export { assertHostAgent, detectHostAgent as detectNeutralHostAgent } from './core/host-agent.mjs';
 export {
   createSidecarResultRecord,
