@@ -8,6 +8,7 @@ import { runDoctor } from '../src/cli/doctor.mjs';
 import { runStatus } from '../src/cli/status.mjs';
 import { runDbList, runDbRefresh, runDbRebuild } from '../src/cli/db-cmd.mjs';
 import { runCodexCommand } from '../src/cli/codex-cmd.mjs';
+import { runAuditorCommand } from '../src/cli/auditor-cmd.mjs';
 import { runDiagnosticsCommand } from '../src/cli/diagnostics-cmd.mjs';
 import { runDaemonStart } from '../src/cli/daemon-cmd.mjs';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
@@ -40,6 +41,8 @@ Usage:
                                         run read-only codex-sidecar second-pass workflows
   spotter codex work --findings FILE --approve-work --allowed-path PATH
                                         run approved codex-sidecar worktree workflow
+  spotter auditor judge --stage STAGE --input FILE
+                                        (experimental) run primary auditor backend once
   spotter daemon start --session-id ID  (internal) run session daemon
   spotter hook <event>                  (internal) hook dispatch
                                         events: session-start | user-prompt |
@@ -91,6 +94,9 @@ async function main() {
       return;
     case 'codex':
       await runCodexCommand({ argv: rest });
+      return;
+    case 'auditor':
+      await runAuditorCommand({ argv: rest });
       return;
     case 'diagnostics':
       await runDiagnosticsCommand({ argv: rest });

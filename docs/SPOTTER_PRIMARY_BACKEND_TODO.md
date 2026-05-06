@@ -44,6 +44,9 @@ second-pass workflow であり、primary backend 置換ではない。
   `--output-last-message <FILE>`, `--ignore-user-config`, `--ignore-rules`,
   `--sandbox read-only`, `--cd <DIR>` がある。
   したがって、Codex CLI は primary auditor backend 候補として検証できる。
+- `spotter auditor judge --stage user_input|turn_end --input FILE` は、Codex 側 event source
+  未確定の間に primary auditor backend を単発 smoke するための internal / experimental entrypoint
+  として追加済み。ただし、これは Codex native integration 完了の証明ではない。
 
 ## Opinion
 
@@ -79,7 +82,9 @@ last-message file に寄せ、JSONL は duration / event diagnostics の補助�
 --ignore-user-config --ignore-rules --sandbox read-only --cd <repo>` が schema-valid
 `{"pass":true,"missing_tools":[]}` を last-message file に書くことを確認した。一方で、
 stdin が pipe と見なされると `Reading additional input from stdin...` が出るため、backend spawn は
-stdin を明示的に `ignore` する必要がある。また `--ignore-user-config` 指定時でも plugin / skill
+hook / daemon stdin を継承せず、stdin を明示的に `ignore` する必要がある。`ignore` 後も Codex CLI
+の informational stderr として同文言が出る場合があるため、追加 prompt の入力有無は final JSON と
+spawn option で判定する。また `--ignore-user-config` 指定時でも plugin / skill
 manifest warning と analytics 403 が stderr に出たので、stderr は失敗判定の正本にせず、bounded
 diagnostics として扱う。
 config / auth 隔離を検討する場合も、`CODEX_HOME` を安易に差し替えると認証情報まで見えなくなる
@@ -203,7 +208,7 @@ Gate:
 - [ ] Claude hook 実セッション smoke が現行と同じ挙動。
 - [x] Haiku backend adapter は既存 prompt snapshot と response schema を変えない。
 - [x] `createHaikuCaller` の preamble-once / reset semantics が adapter 経由でも維持される。
-- [ ] Codex CLI 用 prompt builder を追加しても、Haiku prompt snapshot は変わらない。
+- [x] Codex CLI 用 prompt builder を追加しても、Haiku prompt snapshot は変わらない。
 - [x] primary backend module が `codex-sidecar-policy.mjs` に直接依存しない。
 
 ### Phase 2. Codex CLI Backend Spike
@@ -245,10 +250,10 @@ Gate:
 
 - [x] `codex exec` が stable schema output を返す。
 - [x] `--output-last-message` と `--output-schema` の組み合わせで final JSON を安定取得できる。
-- [x] Codex CLI が stdin を読まず、stderr noise を bounded diagnostics に閉じ込められる。
+- [x] Codex CLI backend が hook / daemon stdin を継承せず、stderr noise を bounded diagnostics に閉じ込められる。
 - [ ] `codex exec` が Haiku より十分に遅い場合、Codex host primary 採用を再検討する。
-- [ ] Codex CLI unavailable は Codex host で structured error。Haiku fallback しない。
-- [ ] `SPOTTER_AUDITOR_BACKEND=codex-sidecar` は Phase 4 の auditor workflow 実装前なら
+- [x] Codex CLI unavailable は Codex host で structured error。Haiku fallback しない。
+- [x] `SPOTTER_AUDITOR_BACKEND=codex-sidecar` は Phase 4 の auditor workflow 実装前なら
   `E_BACKEND_NOT_IMPLEMENTED` を返す。`codex-sidecar` second-pass workflow の存在をもって
   primary auditor 実装済みとは判定しない。
 
@@ -261,11 +266,11 @@ Gate:
   plugin, MCP, wrapper, app-server, exec-server のどれで Spotter を呼ぶか。
 - [ ] Codex 用の input contract を定義する。
   Claude hook JSON をそのまま要求しない。Codex 側で自然に渡せる形にする。
-- [ ] Codex 側 event source が未確定でも実装を進められるように、明示 CLI の
+- [x] Codex 側 event source が未確定でも実装を進められるように、明示 CLI の
   `spotter auditor judge --stage user_input|turn_end --input FILE --host-agent codex --backend codex-cli`
-  相当の smoke entrypoint を先に用意するか判断する。追加する場合は user-facing command にする前に
+  相当の smoke entrypoint を先に用意する。安定公開機能ではなく
   internal / experimental と明記する。
-- [ ] Codex event source が未確定の間は、この smoke entrypoint だけで
+- [x] Codex event source が未確定の間は、この smoke entrypoint だけで
   「Codex native integration 完了」とは呼ばない。Phase 3 gate の実セッション smoke は、
   実際の Codex 側入口から Spotter が呼ばれたことを条件にする。
 - [ ] Codex host では primary backend default を Codex CLI にする。
@@ -412,6 +417,12 @@ Gate:
   --ignore-rules --sandbox read-only --cd <repo>` を使う primary auditor backend を追加済み。
   2026-05-06 の実 smoke では `durationMs=8941`, `stderrBytes=26479`, `stdoutBytes=537`,
   `stderrTruncated=false`, schema-valid `SpotterJudgment` を確認済み。
+- Phase 3 の準備実装として `spotter auditor judge` を追加し、JSON input contract
+  (`user_input` / `turn_end`) を backend-neutral `SpotterJudgment` に正規化する経路を作った。
+  2026-05-06 の CLI smoke では `--host-agent codex --backend codex-cli` で
+  `mcp__caveat__caveat_search` の missing tool を検出し、finding `source=codex-cli`、
+  `durationMs=11670`, schema-valid `SpotterJudgment` を確認済み。これは internal smoke であり、
+  Codex native event source から Spotter が呼ばれた証明ではない。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に

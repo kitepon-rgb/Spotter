@@ -17,7 +17,8 @@ export function toSpotterJudgment({ stage, parsed, meta = {} }) {
     throw new TypeError('toSpotterJudgment: parsed.missing_tools must be an array');
   }
 
-  const findings = parsed.missing_tools.map((tool, index) => toSpotterFinding({ stage, tool, index }));
+  const findingSource = typeof meta.backend === 'string' && meta.backend.length > 0 ? meta.backend : 'haiku';
+  const findings = parsed.missing_tools.map((tool, index) => toSpotterFinding({ stage, tool, index, source: findingSource }));
   const anomalies = [];
   if (typeof parsed.reason === 'string' && KNOWN_ANOMALY_REASONS.has(parsed.reason)) {
     anomalies.push({
@@ -39,7 +40,7 @@ export function toSpotterJudgment({ stage, parsed, meta = {} }) {
   };
 }
 
-export function toSpotterFinding({ stage, tool, index }) {
+export function toSpotterFinding({ stage, tool, index, source = 'haiku' }) {
   if (!tool || typeof tool !== 'object') {
     throw new TypeError('toSpotterFinding: tool must be an object');
   }
@@ -59,7 +60,7 @@ export function toSpotterFinding({ stage, tool, index }) {
     severity: 'unknown',
     confidence: 'unknown',
     references: [],
-    source: 'haiku',
+    source,
     raw: { ...tool },
   };
 }

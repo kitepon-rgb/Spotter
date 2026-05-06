@@ -44,6 +44,21 @@ test('toSpotterJudgment: maps pass=false parsed result to findings', () => {
   assert.deepEqual(judgment.meta, { stage: 'turn_end', mode: 'resumed', durationMs: 123 });
 });
 
+test('toSpotterJudgment: uses backend meta as finding source when present', () => {
+  const judgment = toSpotterJudgment({
+    stage: 'user_input',
+    parsed: {
+      pass: false,
+      missing_tools: [
+        { name: 'mcp__caveat__caveat_search', reason: '検索すべき' },
+      ],
+    },
+    meta: { backend: 'codex-cli' },
+  });
+
+  assert.equal(judgment.findings[0].source, 'codex-cli');
+});
+
 test('toSpotterJudgment: preserves known anomalies without turning them into findings', () => {
   const judgment = toSpotterJudgment({
     stage: 'user_input',

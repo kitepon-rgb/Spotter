@@ -27,13 +27,14 @@ export function createAuditorBackend({
   backend = 'haiku',
   catalog = [],
   projectRoot = null,
+  hostAgent = null,
   env = process.env,
   logger = () => {},
   haikuCaller = null,
   timeoutMs = DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS,
 } = {}) {
   const selected = backend === 'auto'
-    ? selectAuditorBackend({ env, projectConfig: projectRoot ? { projectRoot } : null })
+    ? selectAuditorBackend({ hostAgent, env, projectConfig: projectRoot ? { projectRoot } : null })
     : { backend, mode: backend, compatibility: backend === 'haiku' ? 'current_haiku' : 'none', reason: 'explicit_backend' };
   if (selected.backend === 'haiku') {
     return createHaikuAuditorBackend({ catalog, logger, haikuCaller, timeoutMs });
