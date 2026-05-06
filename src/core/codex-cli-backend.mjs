@@ -69,6 +69,7 @@ export function createCodexCliAuditorBackend({
           projectRoot,
           schemaPath,
           lastMessagePath,
+          stage,
           env,
           spawnFn,
           timeoutMs,
@@ -199,6 +200,7 @@ async function runCodexExec({
   projectRoot,
   schemaPath,
   lastMessagePath,
+  stage,
   env,
   spawnFn,
   timeoutMs,
@@ -240,11 +242,28 @@ async function runCodexExec({
       fn();
     };
     const timer = setTimeout(() => {
-      if (typeof child.kill === 'function') child.kill();
-      settle(() => reject(new AuditorBackendError('E_CODEX_CLI_TIMEOUT', `codex-cli did not respond within ${timeoutMs}ms`, {
-        backend: 'codex-cli',
-        diagnostics: diagnostics(),
-      })));
+      settle(async () => {
+        const completed = await readSchemaValidLastMessage({ lastMessagePath, stage });
+        if (completed.ok) {
+          if (typeof child.kill === 'function') child.kill();
+          resolve({
+            diagnostics: {
+              ...diagnostics(),
+              exitCode: null,
+              completionReason: 'last_message_before_process_close',
+            },
+          });
+          return;
+        }
+        if (typeof child.kill === 'function') child.kill();
+        reject(new AuditorBackendError('E_CODEX_CLI_TIMEOUT', `codex-cli did not respond within ${timeoutMs}ms`, {
+          backend: 'codex-cli',
+          diagnostics: {
+            ...diagnostics(),
+            lastMessageCheck: completed.reason,
+          },
+        }));
+      });
     }, timeoutMs);
 
     child.stdout?.on('data', (chunk) => {
@@ -298,6 +317,20 @@ async function runCodexExec({
     };
     if (Number.isInteger(child?.pid)) out.childPid = child.pid;
     return out;
+  }
+}
+
+async function readSchemaValidLastMessage({ lastMessagePath, stage }) {
+  try {
+    const rawFinal = await readFile(lastMessagePath, 'utf8');
+    parseAuditorResponse(rawFinal, {
+      backend: 'codex-cli',
+      stage,
+      errorCode: 'E_CODEX_CLI_SCHEMA',
+    });
+    return { ok: true, reason: 'schema_valid' };
+  } catch (err) {
+    return { ok: false, reason: err?.code === 'ENOENT' ? 'missing_last_message' : 'schema_invalid_last_message' };
   }
 }
 

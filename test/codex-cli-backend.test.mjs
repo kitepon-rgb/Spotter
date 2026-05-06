@@ -226,6 +226,40 @@ test('createCodexCliAuditorBackend: timeout kills child and returns structured e
   assert.equal(killed, true);
 });
 
+test('createCodexCliAuditorBackend: timeout accepts schema-valid last-message before process close', async () => {
+  let killed = false;
+  const spawnFn = (_cmd, args, _opts) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {
+      killed = true;
+    };
+    const lastPath = args[args.indexOf('--output-last-message') + 1];
+    queueMicrotask(async () => {
+      await import('node:fs/promises').then(({ writeFile }) => writeFile(lastPath, JSON.stringify({
+        pass: false,
+        missing_tools: [
+          { name: 'mcp__caveat__caveat_search', reason: 'known caveat should be searched' },
+        ],
+      }), 'utf8'));
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({
+    catalog,
+    projectRoot: '/repo',
+    spawnFn,
+    timeoutMs: 10,
+  });
+  const judgment = await backend.judge({ stage: 'user_input', userInput: '罠を確認して' });
+  assert.equal(killed, true);
+  assert.equal(judgment.pass, false);
+  assert.equal(judgment.findings[0].toolName, 'mcp__caveat__caveat_search');
+  assert.equal(judgment.meta.diagnostics.completionReason, 'last_message_before_process_close');
+  assert.equal(judgment.meta.diagnostics.exitCode, null);
+});
+
 test('createAuditorBackend: codex-cli now returns the Codex CLI backend', () => {
   const backend = createAuditorBackend({
     backend: 'codex-cli',

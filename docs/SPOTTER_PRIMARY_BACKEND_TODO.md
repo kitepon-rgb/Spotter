@@ -267,9 +267,13 @@ Gate:
   認証済みの最小 profile を作れることを確認してから採用する。
 - [x] last-message file / schema file / raw JSONL capture の temp path と cleanup policy を決める。
   timeout / abort 時も tempfile を漏らさず、diagnostics に必要な場合だけ approved log dir へ保存する。
-- [ ] timeout は process close だけで判定しない。もし last-message file に schema-valid final JSON が
+- [x] timeout は process close だけで判定しない。もし last-message file に schema-valid final JSON が
   書かれているなら、その時点で success として扱えるかを検証する。これは `claude -p` の
   `type:result` 後も process が残る既知罠と同型の timeout 誤判定を避けるため。
+  実装: Codex CLI timeout 時に `--output-last-message` を読み、`parseAuditorResponse` で
+  schema-valid なら child を kill して `completionReason=last_message_before_process_close` の
+  success とする。last-message が無い / schema invalid の場合だけ `E_CODEX_CLI_TIMEOUT` を返す。
+  `test/codex-cli-backend.test.mjs` で固定済み。
 - [x] Codex CLI spawn env に recursion marker を入れる:
   `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND=codex-cli`, `SPOTTER_CHILD_BACKEND=codex-cli`。
 - [ ] 将来の Codex plugin / wrapper 側も `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` を見て
@@ -284,7 +288,10 @@ Gate:
 - [x] `codex exec` が stable schema output を返す。
 - [x] `--output-last-message` と `--output-schema` の組み合わせで final JSON を安定取得できる。
 - [x] Codex CLI backend が hook / daemon stdin を継承せず、stderr noise を bounded diagnostics に閉じ込められる。
-- [ ] `codex exec` が Haiku より十分に遅い場合、Codex host primary 採用を再検討する。
+- [x] `codex exec` が Haiku より十分に遅い場合、Codex host primary 採用を再検討する。
+  2026-05-06 実測では Codex CLI primary auditor は約 7.4s (hook smoke) / 約 10.4s
+  (matrix) で、Claude daemon の直近 Haiku diagnostics 平均 user_input 約 14.3s /
+  turn_end 約 16.6s より悪くない。Codex host primary default は Codex CLI のまま維持する。
 - [x] Codex CLI unavailable は Codex host で structured error。Haiku fallback しない。
 - [x] `SPOTTER_AUDITOR_BACKEND=codex-sidecar` は auditor workflow / preset がある
   `codex-sidecar` を primary auditor として呼ぶ。古い sidecar や preset 不在は hidden fallback
