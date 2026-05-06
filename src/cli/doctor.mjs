@@ -78,15 +78,18 @@ export async function runDoctor() {
     if (!sidecar.ok) warnings += 1;
   }
 
-  // tool-db (global cache). Since v1.2.0 this is not part of daemon audit input;
-  // the daemon audits the project-local DB only. Empty global cache is fine.
-  try {
-    const global = await loadDb(globalDbPath());
-    const count = Object.keys(global.tools).length;
-    mark(true, `global cache DB: ${count} tools at ${globalDbPath()}`);
-  } catch (err) {
-    mark(false, 'global cache DB', `${err.message} (cache only; daemon audits local DB)`);
-    warnings += 1;
+  // tool-db (host-specific global caches). Since v1.2.0 these are not part of
+  // audit input; each host audits its project-local DB only. Empty caches are fine.
+  for (const hostAgent of ['claude', 'codex']) {
+    try {
+      const path = globalDbPath(hostAgent);
+      const global = await loadDb(path);
+      const count = Object.keys(global.tools).length;
+      mark(true, `${hostAgent} global cache DB: ${count} tools at ${path}`);
+    } catch (err) {
+      mark(false, `${hostAgent} global cache DB`, `${err.message} (cache only; audit uses local DB)`);
+      warnings += 1;
+    }
   }
 
   // tool-db (local) if cwd is inside a Spotter project. Claude and Codex use

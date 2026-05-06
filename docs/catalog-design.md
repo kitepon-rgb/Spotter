@@ -100,7 +100,9 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 1. **プロジェクト host-local DB**
    - Claude: `<project>/.spotter/tool-db.json`
    - Codex: `<project>/.spotter/tool-db.codex.json`
-2. **グローバル DB** (`~/.spotter/tool-db.json`)
+2. **host-global DB**
+   - Claude: `~/.spotter/tool-db.json`
+   - Codex: `~/.spotter/tool-db.codex.json`
 3. **どちらにも無ければ「調べる」** — 各提供者から description を取得。**取得結果はグローバルとローカルの両方に追記する**
 
 ```
@@ -111,7 +113,7 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 各ツールについて:
    ┌─ host-local DB に有る? ─→ Yes: 採用
    │           ↓ No
-   ├─ グローバル DB に有る? ─→ Yes: 採用 + host-local にも書き写す (write-through)
+   ├─ host-global DB に有る? ─→ Yes: 採用 + host-local にも書き写す (write-through)
    │           ↓ No
    └─ 調べる (MCP tools/list / SKILL.md / agent .md 読取) ─→ host-local & グローバル 両方に追記
 ```
@@ -121,12 +123,12 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 - **作業負荷の軽減**: 毎セッション全部問い合わせると遅い・無駄。一度引いた description はキャッシュして使い回す
 - **二重書き込みの理由 (v1.2.0 以降の役割再定義)**:
   - **host-local**: **各 host の監査が使う唯一の入力源**。Claude daemon は `.spotter/tool-db.json`、Codex hooks は `.spotter/tool-db.codex.json` を読み、その host / project の現時点の discovery 結果と一致する
-  - **グローバル**: **他プロジェクトでの description 再利用キャッシュ**。daemon の audit には混ぜない (混ぜると過去の別プロジェクトで discover したツールが現プロジェクトの Haiku 視野に幻として漏れる)
+  - **host-global**: **同じ host の他プロジェクトでの description 再利用キャッシュ**。Claude と Codex でも分離する。daemon / Codex hook の audit には混ぜない (混ぜると過去の別プロジェクトや別 host で discover したツールが現プロジェクトの監査視野に幻として漏れる)
 - **グローバル → host-local の write-through**: 次セッションで host-local 単独ヒットになり余計な参照が走らない
-- **drift 補正**: ローカルとグローバルで同一ツールの description が異なるとき、再調査して両方を上書きする。提供者の description が単一の真実源として優先される
+- **drift 補正**: host-local と host-global で同一ツールの description が異なるとき、再調査して両方を上書きする。提供者の description が単一の真実源として優先される
 - **明示的な無効化機構は持たない**: TTL や version tracking のような仕組みは入れない。drift 補正が間接的な無効化として機能する
 - **host-local DB は prune される (v1.2.0 以降、host 分離は 2026-05-06 以降)**: refresh 時に「その host / project の discovery 結果に含まれない既存 host-local エントリ」は削除される。Claude refresh は Claude DB だけ、Codex refresh は Codex DB だけを prune するため、片方の環境が片方のツールリストを喪失させる経路を持たない。MCP サーバーをアンインストールした / スキルを消した / サブエージェントを別プロジェクトに移したケースで、過去のエントリが居座って監査視野に残る経路を塞ぐ。investigate が transient failure (auth / network / quota) で null を返した場合は、toolNames に含まれている限り既存値を保持して prune しない (audit 範囲を縮めない防御)
-- **グローバル DB は prune されない (v1.2.0 以降)**: 他プロジェクト用キャッシュとしての性格上、append-only で蓄積する。古いエントリは `spotter db rebuild` でしか消えない
+- **host-global DB は prune されない (v1.2.0 以降、host 分離は v1.4.5 以降)**: 同じ host の他プロジェクト用キャッシュとしての性格上、append-only で蓄積する。古いエントリは `spotter db rebuild --host-agent <host>` でしか消えない
 
 ## 収集経路 (v1.0.0)
 
@@ -146,7 +148,7 @@ Codex host の refresh は [investigate-codex.mjs](../src/tool-db/investigate-co
 - **`spotter install` 時**: `refresh({projectRoot, hostAgent:"claude"})` を同期実行。初回 setup で Claude 用 tool-db.json を seed、install 完了時点で次セッションの daemon が audit に使える状態にする。refresh throw 時は hook 登録も含めて install 自体を失敗扱い (§0 準拠)。Codex 用 DB は Codex hook の SessionStart が更新するため、Codex hook install 時には seed しない
 - **SessionStart hook 発火時**: Claude SessionStart は `spotter db refresh --host-agent claude` を detached child として bg 起動 ([session-start.mjs](../src/hooks/session-start.mjs) の `spawnRefreshDetached`)。Codex native SessionStart は `spotter db refresh --host-agent codex` を detached child として bg 起動 ([codex-hook-cmd.mjs](../src/cli/codex-hook-cmd.mjs) の `runCodexSessionStartHook`)。hook 自体は即 return、drift 追従 (新規 MCP / スキル / サブエージェントの追加、削除) は**次セッション以降**に反映される。Claude daemon は起動時の Claude DB を固定保持し、Codex hooks は次 hook 実行時に Codex DB を読み直す
 - **`spotter db refresh` CLI**: 明示的に叩いた場合も同じ refresh ロジック。`--host-agent codex` を付けると `.spotter/tool-db.codex.json` を更新し、Claude DB には触れない。Claude / Codex とも SessionStart の自動化が通常経路なので、手動実行は smoke / 修復 / 即時反映用
-- **`spotter db rebuild` CLI**: host-local + global DB を wipe してから refresh。既定は Claude local、`--host-agent codex` なら Codex local。カタログ設計変更時 (v1.0.0 の切り替え等) のクリーンスレート用、通常運用では不使用
+- **`spotter db rebuild` CLI**: host-local + host-global DB を wipe してから refresh。既定は Claude local + Claude global、`--host-agent codex` なら Codex local + Codex global。カタログ設計変更時 (v1.0.0 の切り替え等) のクリーンスレート用、通常運用では不使用
 
 ## 歴史
 
@@ -154,5 +156,6 @@ Codex host の refresh は [investigate-codex.mjs](../src/tool-db/investigate-co
 - v1.0.0: 実測で「Claude Code 組込みツールは Bell が使いこなしており、呼び忘れ率は低い」と確認。遅延 / 即時の境界も Claude Code バージョンで動的に変わることが判明。**本体側は全面除外**、ユーザー追加分 (MCP + スキル + サブエージェント) のみに監査範囲を絞る設計転換
 - v1.1.x: Claude 収集タイミングの自動化。install 時同期 seed + SessionStart bg refresh で手動 `spotter db refresh` を不要化、drift 自動追従を実現
 - 2026-05-06 Codex native work: Codex host-local DB を `.spotter/tool-db.codex.json` に分離し、Codex native SessionStart で `spotter db refresh --host-agent codex` を bg 起動。Claude / Codex 間で tool list を上書きしない構造にした
+- v1.4.5: host-global DB も分離。Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使い、refresh の local → global → investigate cache path でも Claude / Codex の description が混ざらないようにした
 - v1.1.4: MCP 投資経路の 2 件の silent mismatch を修正。(1) `listMcpServers` / `getStdioConfig` の `claude mcp list / get` spawn 時に `cwd: projectRoot` を付与、名乗っている project scope と claude CLI が walk-up で見つける project scope の乖離を解消。(2) claude.ai baseline を server 単位構造に再編、`filterClaudeAiBaseline` で `claude mcp list` に該当サーバーが実在する環境のみ注入。隔離 `CLAUDE_CONFIG_DIR` / 未連携 / 部分連携環境で最大 25 件の幻ツールが catalog に残る問題を解消 (Bell 側実環境で 25 件消失を実測確認済み)
 - v1.2.0: daemon の audit 入力をローカル DB のみに変更し、グローバル DB は他プロジェクトでの description 再利用キャッシュに役割を限定 (`readMerged` → `readLocal`)。同時に `resolveAll` 末尾に prune ループ追加で「現プロジェクトの discovery 結果に含まれない既存ローカルエントリ」を削除。過去の別プロジェクトで discover した MCP / スキル / サブエージェントが Haiku 視野に幻として漏れる構造的バグを解消

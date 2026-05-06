@@ -10,6 +10,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.5** (2026-05-06): **Codex global tool-db を Claude global tool-db から分離**。Claude は
+local `<project>/.spotter/tool-db.json` + global `~/.spotter/tool-db.json`、Codex は
+local `<project>/.spotter/tool-db.codex.json` + global `~/.spotter/tool-db.codex.json` を使う。
+refresh の local → global → investigate cache path でも Claude / Codex の description を混ぜない。
+`spotter db rebuild --host-agent codex` は Codex local + Codex global だけを wipe する。
+
 **v1.4.4** (2026-05-06): Codex CLI auditor child は Codex CLI の暗黙 default model に依存せず、
 `--model gpt-5.4-mini` と `model_reasoning_effort="low"` を明示指定する。Spotter の hook 判定は
 高頻度・低遅延・低コストの構造化 JSON 監査なので、frontier model を暗黙に使わない。
@@ -108,7 +114,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **並走デーモン型**: SessionStart で 1 プロセス起動、SessionEnd で shutdown。Bell から呼ぶのではなく、hook 経由で **Bell の意思と独立に** user_input / tool_used / turn_end を受け取る。「Bell が自覚して呼ぶ」設計は **本プロダクトの存在意義を破壊する**ので却下されている。
 - **Claude 呼び出しは session-scoped + preamble-once + 事後回復** (v0.6.0 で更新): `claude -p --session-id <uuid>` で初回セッション確立、以降 `--resume` で再接続。**初回のみ preamble (role + schema + few-shot + catalog) を送り、以降は per-turn delta のみ**送ることで session を肥大化させない (v0.5.x は毎回 full 送信していて resumed が first より遅いという逆の結果が出ていた)。role collapse は `parseHaikuResponse` が `E_HAIKU_SCHEMA` を返した瞬間に `callHaiku.reset()` で session-id を rotate、次回呼び出しで preamble が新 session に自動で再送される。当該ターンは silent pass。**これは §0 の silent fallback 禁止違反ではなく、「想定済み異常 = 記録 + 正常リターン」の適用**。
 - **隔離実行**: Spotter の workdir (`~/.spotter/workdir/`) には **CLAUDE.md を置かない**。プロジェクト文脈に引きずられないことが品質保証の要件。
-- **ツールカタログは host-local tool-db**: Claude daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。Codex native hooks は `<project>/.spotter/tool-db.codex.json` だけを読む。グローバル DB は description 再利用キャッシュで、audit 入力には混ぜない。Claude refresh は `claude mcp list` と Claude skills / sub-agents、Codex refresh は `codex mcp list/get` と Codex skills を discovery し、片方の refresh がもう片方の local DB を prune / overwrite してはいけない。
+- **ツールカタログは host-local tool-db**: Claude daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。Codex native hooks は `<project>/.spotter/tool-db.codex.json` だけを読む。グローバル DB も host 別の description 再利用キャッシュで、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使う。global は audit 入力には混ぜない。Claude refresh は `claude mcp list` と Claude skills / sub-agents、Codex refresh は `codex mcp list/get` と Codex skills を discovery し、片方の refresh がもう片方の local / global DB を prune / overwrite してはいけない。
 - **Stop hook の介入**: Claude host では `decision: "block"` + `reason` で Bell に継続応答を生成させる。`stop_hook_active: true` を見たら即 pass することで max 1 回ループを担保 (Claude Code 側の機構で自動)。Codex native `Stop` は immediate block ではなく deferred delivery: 指摘を `.spotter/codex-pending/` に保存し、次の same-session `UserPromptSubmit` の `additionalContext` で提示する。`decision:"block"` は実測で final answer 後の `Stop Blocked` / exit code 1 になったため使わない。
 
 ## §0 実装規範 (最重要)

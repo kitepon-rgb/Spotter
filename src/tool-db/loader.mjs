@@ -3,7 +3,8 @@
 // Two layers:
 //   - local:  <project>/.spotter/tool-db.json          (Claude host)
 //             <project>/.spotter/tool-db.codex.json    (Codex host)
-//   - global: ~/.spotter/tool-db.json
+//   - global: ~/.spotter/tool-db.json                  (Claude host)
+//             ~/.spotter/tool-db.codex.json            (Codex host)
 //
 // Both have the same shape:
 //   { "version": 1, "tools": { "<name>": "<description>", ... } }
@@ -22,8 +23,10 @@ export class ToolDbSchemaError extends Error {
   }
 }
 
-export function globalDbPath() {
-  return join(homedir(), '.spotter', 'tool-db.json');
+export function globalDbPath(hostAgent = 'claude') {
+  const host = normalizeToolDbHostAgent(hostAgent);
+  const file = host === 'claude' ? 'tool-db.json' : `tool-db.${host}.json`;
+  return join(homedir(), '.spotter', file);
 }
 
 export function localDbPath(projectRoot, hostAgent = 'claude') {

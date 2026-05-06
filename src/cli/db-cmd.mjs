@@ -2,7 +2,7 @@
 //
 //   spotter db list             — print the LOCAL tool-db (what the daemon actually audits)
 //   spotter db refresh          — discover available tools and update DB (3-tier resolve)
-//   spotter db rebuild          — wipe local + global DBs then refresh (forces re-investigation)
+//   spotter db rebuild          — wipe host-local + host-global DBs then refresh
 //
 // Run inside a project that has been `spotter install`-ed.
 
@@ -52,20 +52,19 @@ export async function runDbRefresh({ argv = [] } = {}) {
   process.stdout.write(
     `${resolved.size} tool(s) resolved (local=${counts.local}, global=${counts.global}, investigated=${counts.investigated})\n`
       + `local DB:  ${localDbPath(projectRoot, opts.hostAgent)}\n`
-      + `global DB: ${globalDbPath()}\n`
+      + `global DB: ${globalDbPath(opts.hostAgent)}\n`
   );
 }
 
 export async function runDbRebuild({ argv = [] } = {}) {
   const projectRoot = requireProjectRoot();
   const opts = parseDbArgs(argv);
-  // v1.0.0: wipe BOTH local and global DB. Rationale: the catalog scope changed in
-  // v1.0.0 (Claude Code built-ins removed; skills + sub-agents added). Stale entries
-  // from older versions would otherwise linger in the global DB since `refresh` only
-  // touches names currently produced by investigation. Users need a clean slate.
+  // Wipe BOTH host-local and host-global DB. Rationale: catalog scope changes and
+  // description drift must not leak between Claude and Codex; each host cache is a
+  // separate clean-slate unit.
   await saveDb(localDbPath(projectRoot, opts.hostAgent), emptyDb());
-  await saveDb(globalDbPath(), emptyDb());
-  process.stderr.write(`spotter db rebuild: cleared ${opts.hostAgent} local + global DB, refreshing...\n`);
+  await saveDb(globalDbPath(opts.hostAgent), emptyDb());
+  process.stderr.write(`spotter db rebuild: cleared ${opts.hostAgent} local + ${opts.hostAgent} global DB, refreshing...\n`);
   await runDbRefresh({ argv });
 }
 

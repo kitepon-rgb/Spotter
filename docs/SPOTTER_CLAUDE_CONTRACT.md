@@ -67,7 +67,9 @@ current Codex adapter installs user-level `~/.codex/hooks.json` entries for `Ses
 `SPOTTER_PARENT_PID` is set, and selects Codex CLI as the default primary auditor backend.
 Codex `SessionStart` does not start a daemon; it only launches a detached
 `spotter db refresh --host-agent codex` so `.spotter/tool-db.codex.json` follows the Codex
-tool environment without overwriting Claude `.spotter/tool-db.json`. Codex `Stop` does not
+tool environment without overwriting Claude `.spotter/tool-db.json` or Claude's global
+description cache at `~/.spotter/tool-db.json`. Codex global cache writes go to
+`~/.spotter/tool-db.codex.json`. Codex `Stop` does not
 block the just-finished answer. It uses deferred delivery: Spotter context is queued under
 `.spotter/codex-pending/` and surfaced on the next same-session `UserPromptSubmit`.
 This is intentional. Real Codex hook smoke showed that `decision:"block"` after final
@@ -224,7 +226,7 @@ Second-pass workflow は、主判定で得た `SpotterFinding[]` を別の観点
 を呼ぶ場合でも hook の主判定そのものを置き換えません。daemon からの `risk-check`
 dispatch も opt-in かつ detached であり、hook response は Codex を待ちません。
 
-Codex host の primary auditor backend は v1.4.4 時点で Codex CLI (`codex exec`) が既定です。
+Codex host の primary auditor backend は v1.4.5 時点で Codex CLI (`codex exec`) が既定です。
 Claude host は現行 Haiku-compatible path を既定として維持します。完了済みの migration
 計画と smoke 結果は [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
 に保管しています。

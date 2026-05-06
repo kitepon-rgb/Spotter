@@ -105,7 +105,7 @@ flowchart LR
     DB --> H[Haiku audit<br/>session-scoped, preamble-once]
 ```
 
-The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`, while Codex uses `<project>/.spotter/tool-db.codex.json`. **The daemon audits against the Claude local DB only**, and Codex native hooks read the Codex local DB. The global DB at `~/.spotter/tool-db.json` is a description-reuse cache shared across projects, not an audit source. Each host-local DB matches that host's **current** discovery snapshot for the project (stale entries are pruned on refresh), so tools from another project or another host cannot overwrite this session's audit catalog.
+The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`, while Codex uses `<project>/.spotter/tool-db.codex.json`. **The daemon audits against the Claude local DB only**, and Codex native hooks read the Codex local DB. Global description caches are host-specific too: Claude uses `~/.spotter/tool-db.json`, while Codex uses `~/.spotter/tool-db.codex.json`. They are shared only across projects for the same host and are never audit sources. Each host-local DB matches that host's **current** discovery snapshot for the project (stale entries are pruned on refresh), so tools from another project or another host cannot overwrite this session's audit catalog.
 
 **`spotter install` seeds the Claude catalog automatically, and the SessionStart hook runs a background `spotter db refresh` on every Claude Code session start** — so you don't need to invoke Claude catalog commands by hand. When Codex CLI is available, the same `spotter install` registers Codex native hooks; their `SessionStart` hook starts `spotter db refresh --host-agent codex` in the background, updating `.spotter/tool-db.codex.json` without touching the Claude catalog. Claude discovery reads `claude mcp list` plus Claude skills / sub-agents; Codex discovery reads `codex mcp list/get` plus Codex skills. Each MCP server's `tools/list` is fetched via JSON-RPC (HTTP / SSE / stdio transports supported); skill and sub-agent metadata comes straight from frontmatter; the claude.ai baseline (25 hand-curated entries for Gmail / Calendar / Drive over OAuth proxy) is injected only for Claude when `claude mcp list` confirms the server is present. **You never have to maintain the tool list by hand.**
 
@@ -132,7 +132,7 @@ spotter db refresh --host-agent codex
                          # rediscover Codex MCP / skills and update .spotter/tool-db.codex.json
                          #   (Claude refresh is automatic on install + Claude SessionStart;
                          #    Codex refresh is automatic on Codex SessionStart after spotter install)
-spotter db rebuild       # wipe Claude local + global DBs and refresh from scratch
+spotter db rebuild       # wipe Claude local + Claude global DBs and refresh from scratch
                          #   (use after catalog-shape changes)
 spotter status           # list running daemons
 spotter doctor           # environment check (Node / claude CLI / Codex readiness / tool-db integrity)
@@ -189,7 +189,7 @@ those values for smoke tests or controlled experiments.
 <summary><strong>📋 Recent highlights</strong></summary>
 
 - **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Bell's audit
-- **Per-project audit isolation** — the daemon audits against the local DB only; the global DB has been demoted to a description-reuse cache. Tools discovered in *other* projects can never bleed into this project's audit set
+- **Per-project / per-host audit isolation** — the daemon audits against the local DB only; global DBs are host-specific description caches. Tools discovered in *other* projects or another host can never bleed into this project's audit set
 - **Zero-touch catalog** — `spotter install` seeds the Claude DB automatically; Claude and Codex SessionStart hooks keep their host-local DBs fresh in the background. You never have to maintain the tool list by hand
 - **Codex native hooks** — Codex host uses Codex CLI as the primary auditor backend, keeps a separate `.spotter/tool-db.codex.json`, and surfaces backend failures explicitly instead of falling back to Haiku
 - **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Bell already uses those reliably

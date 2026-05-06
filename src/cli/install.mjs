@@ -143,7 +143,7 @@ export async function runInstall({
       const resolved = await refreshFn({ projectRoot: cwd, hostAgent: 'claude', logFn: log });
       console.log(`  ${resolved.size} tool(s) resolved`);
       console.log(`  local DB:  ${localDbPath(cwd, 'claude')}`);
-      console.log(`  global DB: ${globalDbPath()}`);
+      console.log(`  global DB: ${globalDbPath('claude')}`);
     } catch (err) {
       // §0: throw (fallback 禁止). But surface the recovery path so the user isn't
       // left with "hooks registered, tool-db missing" and no clue what to run.

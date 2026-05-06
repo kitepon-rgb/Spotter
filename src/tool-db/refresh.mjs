@@ -101,14 +101,14 @@ export async function refresh({
   return resolveAll({
     toolNames,
     localPath: localDbPath(projectRoot, toolDbHostAgent),
-    globalPath: globalDbPath(),
+    globalPath: globalDbPath(toolDbHostAgent),
     investigate,
     logFn,
   });
 }
 
 // Read-only: load the LOCAL tool-db only — the daemon's audit must reflect what this
-// specific project can actually use. The global DB is a knowledge store written by
+// specific project can actually use. The host-specific global DB is a cache written by
 // `refresh` (so other projects can pick up descriptions cheaply) but is NEVER mixed
 // into the daemon's audit catalog. Mixing global in caused phantom-tool suggestions
 // from previously-visited projects bleeding into unrelated ones.

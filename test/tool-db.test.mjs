@@ -8,6 +8,7 @@ import {
   saveDb,
   emptyDb,
   ToolDbSchemaError,
+  globalDbPath,
   localDbPath,
   normalizeToolDbHostAgent,
 } from '../src/tool-db/loader.mjs';
@@ -91,6 +92,14 @@ test('localDbPath: separates Claude and Codex host-local DBs', () => {
   assert.throws(() => localDbPath(projectRoot, 'other'), /hostAgent/);
 });
 
+test('globalDbPath: separates Claude and Codex host-global caches', () => {
+  assert.ok(globalDbPath().endsWith(join('.spotter', 'tool-db.json')));
+  assert.ok(globalDbPath('claude').endsWith(join('.spotter', 'tool-db.json')));
+  assert.ok(globalDbPath('codex').endsWith(join('.spotter', 'tool-db.codex.json')));
+  assert.ok(globalDbPath('automation').endsWith(join('.spotter', 'tool-db.automation.json')));
+  assert.throws(() => globalDbPath('other'), /hostAgent/);
+});
+
 test('resolveAll: local hit only — no investigation, no writes', async () => {
   const { dir, localPath, globalPath } = await setupPaths();
   await saveDb(localPath, { version: 1, tools: { foo: 'local desc' } });
@@ -124,6 +133,33 @@ test('resolveAll: global hit, local empty → write-through to local', async () 
   const localAfter = await loadDb(localPath);
   assert.equal(localAfter.tools.foo, 'global desc');
   await rm(dir, { recursive: true, force: true });
+});
+
+test('resolveAll: host-specific global cache prevents cross-host description reuse', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-tooldb-host-global-'));
+  const codexLocalPath = join(dir, 'tool-db.codex.local.json');
+  const claudeGlobalPath = join(dir, 'tool-db.json');
+  const codexGlobalPath = join(dir, 'tool-db.codex.json');
+  try {
+    await saveDb(claudeGlobalPath, { version: 1, tools: { same_name: 'claude desc' } });
+    await saveDb(codexGlobalPath, emptyDb());
+    let investigated = 0;
+    const resolved = await resolveAll({
+      toolNames: ['same_name'],
+      localPath: codexLocalPath,
+      globalPath: codexGlobalPath,
+      investigate: async () => {
+        investigated += 1;
+        return 'codex desc';
+      },
+    });
+    assert.equal(investigated, 1);
+    assert.equal(resolved.get('same_name').description, 'codex desc');
+    assert.equal((await loadDb(claudeGlobalPath)).tools.same_name, 'claude desc');
+    assert.equal((await loadDb(codexGlobalPath)).tools.same_name, 'codex desc');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('resolveAll: both empty → investigate, write to both', async () => {

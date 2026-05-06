@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.4.5
+
+**Codex global tool-db を Claude global tool-db から分離**。v1.4.4 までは local DB は
+`.spotter/tool-db.json` と `.spotter/tool-db.codex.json` に分かれていたが、refresh 時の
+description 再利用 cache は Claude / Codex とも `~/.spotter/tool-db.json` を共有していた。
+Claude 側で苦労して塞いだ「別環境の DB が監査視野に混ざる」設計事故を Codex 側で再発させないため、
+host-global DB も分離した。
+
+### 変更点
+
+- **編集 [src/tool-db/loader.mjs](src/tool-db/loader.mjs)**:
+  `globalDbPath(hostAgent)` を host-aware にし、Claude は既存互換の
+  `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使うようにした。
+- **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**:
+  `refresh({hostAgent})` の local → global → investigate lookup が同じ host の
+  global cache だけを見るようにした。
+- **編集 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs) / [src/cli/doctor.mjs](src/cli/doctor.mjs)**:
+  `spotter db refresh/rebuild --host-agent codex` と `spotter doctor` の表示・消去対象を
+  host-global DB に追従。
+- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**:
+  Claude global cache の同名 entry が Codex refresh に write-through されず、
+  Codex 側では Codex global cache / investigate を使う回帰テストを追加。
+- **編集 README / README.ja / CLAUDE.md / docs**:
+  local だけでなく global description cache も Claude / Codex で分離する設計に更新。
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.5`
+2. 既存の shared global cache を掃除するため、各プロジェクトで
+   `spotter db rebuild` と `spotter db rebuild --host-agent codex` を 1 回ずつ実行
+3. 各プロジェクトで `spotter install`
+
 ## 1.4.4
 
 **Codex CLI auditor の default model を明示固定**。Spotter の hook 判定は高頻度・低遅延・低コストの

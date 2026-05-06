@@ -105,7 +105,7 @@ flowchart LR
     DB --> H[Haiku 監査<br/>session-scoped, preamble-once]
 ```
 
-監査対象のツール (name + description) は host-local に分離されます。Claude は `<project>/.spotter/tool-db.json`、Codex は `<project>/.spotter/tool-db.codex.json` を使います。**daemon が監査に使うのは Claude local DB のみ**で、Codex native hooks は Codex local DB を読みます。グローバル DB `~/.spotter/tool-db.json` は他プロジェクトでの description 再利用キャッシュとしてのみ機能し、監査入力には混ぜません。各 host-local DB は **その host の現時点の discovery 結果と一致** (refresh 時に prune される) するため、別プロジェクトや別 host のツールリストで上書きされることはありません。
+監査対象のツール (name + description) は host-local に分離されます。Claude は `<project>/.spotter/tool-db.json`、Codex は `<project>/.spotter/tool-db.codex.json` を使います。**daemon が監査に使うのは Claude local DB のみ**で、Codex native hooks は Codex local DB を読みます。グローバル description cache も host ごとに分離され、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使います。これらは同じ host の他プロジェクト間でだけ再利用され、監査入力には混ぜません。各 host-local DB は **その host の現時点の discovery 結果と一致** (refresh 時に prune される) するため、別プロジェクトや別 host のツールリストで上書きされることはありません。
 
 **`spotter install` が Claude catalog の初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、Claude 通常運用で手動コマンドを叩く必要はありません。Codex CLI が使える環境では、同じ `spotter install` が Codex native hooks も登録します。Codex `SessionStart` hook は `spotter db refresh --host-agent codex` を bg 起動して `.spotter/tool-db.codex.json` を更新します。Claude catalog には書き込みません。Claude discovery は `claude mcp list` と Claude skills / sub-agents、Codex discovery は `codex mcp list/get` と Codex skills を読むため、両 host の利用可能ツール差分を別 DB として保持できます。各 MCP サーバーの `tools/list` は JSON-RPC で取得 (HTTP / SSE / stdio transport 対応)、スキルとサブエージェントは frontmatter から直接抽出、claude.ai baseline (OAuth proxy 経由の Gmail / Calendar / Drive 25 件) は Claude 側でのみ `claude mcp list` に該当サーバーが存在する環境で注入されます。**手書きでツールリストを管理する必要はありません**。
 
@@ -132,7 +132,7 @@ spotter db refresh --host-agent codex
                          # Codex MCP / スキルから description を収集して .spotter/tool-db.codex.json を更新
                          # (Claude は install + Claude SessionStart、Codex は spotter install 後の
                          #  Codex SessionStart で自動実行されるので通常は不要)
-spotter db rebuild       # Claude local + global DB を両方消してから refresh (カタログ設計変更時のクリーン用)
+spotter db rebuild       # Claude local + Claude global DB を両方消してから refresh (カタログ設計変更時のクリーン用)
 spotter status           # 稼働中の daemon 一覧
 spotter doctor           # 環境診断 (Node / claude CLI / Codex readiness / tool-db 整合性)
 spotter diagnostics logs # daemon log から pass=false / backend latency / anomaly signal を集計
