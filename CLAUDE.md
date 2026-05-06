@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**Unreleased**: Codex CLI auditor child は Codex CLI の暗黙 default model に依存せず、
+**v1.4.4** (2026-05-06): Codex CLI auditor child は Codex CLI の暗黙 default model に依存せず、
 `--model gpt-5.4-mini` と `model_reasoning_effort="low"` を明示指定する。Spotter の hook 判定は
 高頻度・低遅延・低コストの構造化 JSON 監査なので、frontier model を暗黙に使わない。
 `SPOTTER_CODEX_CLI_MODEL` / `SPOTTER_CODEX_CLI_REASONING_EFFORT` は実測用 override として維持する。

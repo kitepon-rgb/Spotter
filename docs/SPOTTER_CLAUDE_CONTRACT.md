@@ -224,7 +224,7 @@ Second-pass workflow は、主判定で得た `SpotterFinding[]` を別の観点
 を呼ぶ場合でも hook の主判定そのものを置き換えません。daemon からの `risk-check`
 dispatch も opt-in かつ detached であり、hook response は Codex を待ちません。
 
-Codex host の primary auditor backend は v1.4.3 時点で Codex CLI (`codex exec`) が既定です。
+Codex host の primary auditor backend は v1.4.4 時点で Codex CLI (`codex exec`) が既定です。
 Claude host は現行 Haiku-compatible path を既定として維持します。完了済みの migration
 計画と smoke 結果は [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
 に保管しています。

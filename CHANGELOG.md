@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.4
 
 **Codex CLI auditor の default model を明示固定**。Spotter の hook 判定は高頻度・低遅延・低コストの
 構造化 JSON 監査であり、Codex CLI の暗黙 default model に依存すると、`--ignore-user-config` 環境で
@@ -16,6 +16,11 @@
   `--model` を省略できることを固定。
 - **編集 README / README.ja / CLAUDE.md / docs**: Codex CLI auditor child の既定を
   `gpt-5.4-mini` + `model_reasoning_effort="low"` と明記。
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.4`
+2. 各プロジェクトで `spotter install`
 
 ## 1.4.3
 
