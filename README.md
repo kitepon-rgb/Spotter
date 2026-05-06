@@ -55,7 +55,7 @@ spotter uninstall        # remove hooks from this project
 
 - **Node.js 22.5+**
 - **Claude Code 2.0+**
-- **Claude Max plan** (Spotter spawns Haiku via `claude -p`)
+- **Claude Max plan** for the current Claude-backed auditor path (Spotter spawns Haiku via `claude -p`)
 
 ## Architecture
 

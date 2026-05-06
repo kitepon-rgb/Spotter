@@ -28,7 +28,12 @@ Claude-oriented workflow での既存動作は維持しつつ、Spotter findings
 
 最初の task は、自然に独立している background agent role が実際に存在するかを特定することです。現行 Spotter では Haiku auditor を置換対象にせず、audit 結果の risk-check、second-pass review、scoped verification などを Codex sidecar に渡す設計から始めます。
 
-runtime environment で Codex が使えない場合は、現在の Claude-backed Haiku auditor behavior をそのまま維持します。Codex adapter が存在するからといって、既存の Claude path を削ったり劣化させたりしないでください。
+この文書の範囲で runtime environment の `codex-sidecar` が使えない場合は、second-pass
+workflow を `status:"skipped"` として記録し、現在の Claude-backed Haiku auditor behavior を
+そのまま維持します。これは primary auditor backend の fallback policy ではありません。
+primary auditor backend の Codex host fallback 禁止は
+[`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) を正とします。
+Codex adapter が存在するからといって、既存の Claude path を削ったり劣化させたりしないでください。
 
 ## Architecture 方針
 
@@ -103,8 +108,9 @@ spotter codex opinion --findings findings.json --host-agent claude
 `spotter.sidecar_result.v1` として stdout に出し、既定では
 `<project>/.spotter/sidecar-results/` に保存します。
 
-`codex-sidecar` が unavailable の場合は hidden fallback せず、`status:"skipped"` の
-structured result を返します。既存 Claude-backed Haiku auditor path は変更しません。
+`codex-sidecar` が unavailable の場合は hidden fallback せず、second-pass workflow の
+`status:"skipped"` structured result を返します。既存 Claude-backed Haiku auditor path は変更しません。
+これは `UserPromptSubmit` / `Stop` の primary backend unavailable 時に Haiku へ落とす、という意味ではありません。
 
 daemon からの自動 dispatch は opt-in です。`SPOTTER_CODEX_RISK_CHECK=1` を設定した
 daemon だけが `pass:false` finding を detached process の `spotter codex risk-check` に渡します。
@@ -212,13 +218,15 @@ Availability policy:
 
 | Codex availability | Behavior |
 |---|---|
-| `unavailable` | `codex-sidecar` が存在しない、実行不能、この repo 向けに未設定、または diagnostics 失敗。既存の Claude-backed Haiku auditor path を維持 |
+| `unavailable` | `codex-sidecar` が存在しない、実行不能、この repo 向けに未設定、または diagnostics 失敗。second-pass workflow は `status:"skipped"` とし、既存の Claude-backed Haiku auditor path は変更しない |
 | `configured` | `codex-sidecar diagnostics --project <repo>` が成功。request shaping、dry-run、docs、planned read-only integration は使ってよい |
 | `operational` | `codex_explore` など read-only smoke が成功。approved review、explore、opinion、risk-check sidecar task に使ってよい |
 | `work-capable` | `codex_work` smoke が成功し、allowed paths が設定済み。worktree-backed scoped edit に使ってよい |
-| explicitly disabled | 既存の Claude-backed Haiku auditor path を維持 |
+| explicitly disabled | second-pass workflow は実行しない。既存の Claude-backed Haiku auditor path は変更しない |
 
-これは hidden fallback ではありません。互換モードです。Codex が使えない環境では、現在の Claude-backed Haiku auditor behavior を baseline とします。
+これは hidden fallback ではありません。second-pass sidecar workflow の明示的な skip / compatibility mode です。
+Codex sidecar が使えない環境では、現在の Claude-backed Haiku auditor behavior を baseline とします。
+Codex host の primary auditor backend が unavailable の場合に Haiku fallback してよい、という意味ではありません。
 
 Phase 4 ではこの判断を pure policy として固定します。`claude` host では availability が十分なら
 independent read-only workflow に sidecar を使えます。`codex` host では isolated worktree、
@@ -230,7 +238,11 @@ sidecar 子プロセスには `SPOTTER_PARENT_PID` と `SPOTTER_SIDECAR=1` を�
 sidecar 配下で Claude hook が発火しても `SessionStart` は daemon を spawn せず即 return します。
 これは marker gate だけに頼らない再帰遮断です。
 
-「Codex が使える」の最小実用定義は、単に `codex` binary があることではありません。`codex-sidecar` が存在し、対象 repository で diagnostics を成功させられることです。`codex-sidecar` がない場合、Spotter は Codex unavailable と扱ってください。
+この文書でいう「Codex sidecar が使える」の最小実用定義は、単に `codex` binary があることではありません。
+`codex-sidecar` が存在し、対象 repository で diagnostics を成功させられることです。
+`codex-sidecar` がない場合、Spotter は second-pass sidecar unavailable と扱ってください。
+Codex CLI を primary auditor backend として使えるかどうかは別判定であり、
+[`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) で扱います。
 
 Preferred health check:
 
@@ -255,7 +267,8 @@ node /home/kite/projects/codex-sidecar/packages/cli/dist/index.js diagnostics \
 - Codex context block と `SidecarResult` consumption の fixture snapshot を追加する。
 - Claude primary、Codex primary、automation mode の docs を追加する。
 - 不要な Codex-on-Codex recursion を防ぐ execution policy を追加する。
-- background Claude subagent task が実在する場合は、移す前に Codex availability check を入れる。sidecar absent または diagnostics failure なら Claude-backed Haiku auditor compatibility mode。
+- background Claude subagent task が実在する場合は、移す前に Codex sidecar availability check を入れる。
+  sidecar absent または diagnostics failure なら second-pass workflow を skip し、Claude-backed Haiku auditor は現状維持。
 - `codex-sidecar` read-only smoke を追加する。理想は `codex_risk_check`。
 
 ## Done Definition
@@ -266,5 +279,6 @@ Spotter が dual-supported になったと言える条件:
 - Spotter findings を Codex が structured context として consume できる。
 - Codex risk / review result を prose scraping なしで保存できる。
 - Codex primary mode が意味のない recursive Codex delegation を避ける。
-- Codex-unavailable environment では既存の Claude-backed Haiku auditor behavior を維持する。
+- `codex-sidecar` unavailable environment では second-pass workflow を skip し、
+  既存の Claude-backed Haiku auditor behavior は変更しない。
 - いつ Codex sidecar が有用で、いつ current-agent direct handling がよいか docs に説明されている。

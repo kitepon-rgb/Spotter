@@ -287,6 +287,14 @@ Gate:
   `codex-sidecar` / Codex CLI の実測結果で決める表現に統一済み。
 - Codex CLI backend の再帰 marker は `SPOTTER_SIDECAR=1` と混同せず、
   `SPOTTER_BACKEND=codex-cli` / `SPOTTER_CHILD_BACKEND=codex-cli` として扱う方針に修正済み。
+- 追加の横断監査で、`codex-sidecar unavailable` は second-pass workflow の
+  `status:"skipped"` / compatibility result であり、Codex host primary backend の Haiku fallback
+  ではない、と dual-support docs / AGENTS / Claude contract に明記済み。
+- `CLAUDE.md` の Current Commands を README / Claude contract と合わせ、
+  `spotter diagnostics logs` と `spotter codex *` を現行 command surface に追記済み。
+- `open-issues.md` の `Read` 過検出記述を、現行カタログ対象外の hallucination として整理済み。
+- README / README.ja / CLAUDE.md の Claude Max 要件は、現行 Claude-backed auditor path の要件として
+  scope を明記済み。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。

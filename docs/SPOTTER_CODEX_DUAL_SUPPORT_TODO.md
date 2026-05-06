@@ -243,8 +243,8 @@ Gate:
 
 ### Phase 4. Execution Policy And Availability
 
-目的: sidecar を呼んでよい条件を明確化し、hidden fallback ではなく explicit compatibility
-mode にする。
+目的: sidecar を呼んでよい条件を明確化し、sidecar unavailable を hidden fallback ではなく
+explicit skipped / compatibility result にする。
 
 - [x] host agent を `claude`, `codex`, `automation`, `unknown` として判定または明示設定できるようにする。
 - [x] `codex-sidecar diagnostics --project <repo> --preset review` を availability check の正本にする。
@@ -259,7 +259,8 @@ mode にする。
 - [x] Codex host では isolation / durable structured result / explicit second-pass がある場合だけ
   Codex sidecar を使い、通常は current Codex session に findings を渡す。
 - [x] Codex sidecar 起動時に Spotter hook が再帰発火しない env / cwd / marker policy を決める。
-- [x] Codex unavailable 時は「既存 Claude-backed Haiku auditor behavior 維持」を compatibility mode として明示 result 化する。
+- [x] `codex-sidecar` unavailable 時は second-pass workflow を `status:"skipped"` として明示 result 化し、
+  既存 Claude-backed Haiku auditor behavior は変更しない。
 - [x] Unknown / automation mode は explicit config なしに recursive delegation を推測しない。
 - [x] read-only sidecar 起動でも Spotter hook が再帰発火しない regression test / smoke を追加する。
   test oracle は diagnostics 成功だけにしない。unit test では hook 関数を harness から呼び、
@@ -304,8 +305,9 @@ Gate:
 - [x] read-only workflows が structured result を保存し、prose scraping に依存しない。
   `codex_risk_check` / `codex_review` / `codex_explore` / `codex_opinion` は共通 runner で
   `spotter.sidecar_result.v1` として保存 / stdout 出力する。
-- [x] Codex unavailable で Claude-backed Haiku auditor behavior が維持される。
-  `codex-sidecar` unavailable は hidden fallback せず `status:"skipped"` の structured result として返す。
+- [x] `codex-sidecar` unavailable で Claude-backed Haiku auditor behavior が維持される。
+  second-pass workflow は hidden fallback せず `status:"skipped"` の structured result として返す。
+  Codex host の primary auditor backend unavailable 時に Haiku fallback する、という意味ではない。
 
 ### Phase 6. Work-Capable Codex Workflow
 
@@ -385,8 +387,10 @@ Gate:
   `spotter.sidecar_result.v1` に `changedFiles` / `tests` / `diagnostics` を保持する。
 - [x] Codex primary mode が意味のない recursive Codex delegation を避ける。
   policy test で Codex-on-Codex guard を固定済み。明示 second-pass / structured boundary がある場合だけ許可。
-- [x] Codex unavailable environment では既存 Claude-backed Haiku auditor behavior が維持される。
-  unavailable は hidden fallback せず `status:"skipped"` structured result として残す。
+- [x] `codex-sidecar` unavailable environment では既存 Claude-backed Haiku auditor behavior が維持される。
+  これは second-pass `codex-sidecar` workflow の unavailable を指す。unavailable は hidden fallback せず
+  `status:"skipped"` structured result として残し、Claude-backed Haiku auditor は現状維持する。
+  Codex host の primary auditor backend unavailable 時に Haiku fallback する、という意味ではない。
 - [x] いつ Codex sidecar が有用で、いつ current-agent direct handling がよいか docs に説明されている。
   `docs/SPOTTER_CODEX_DUAL_SUPPORT.md` の host / availability policy に反映済み。
 - [x] daemon proliferation と daemon lifecycle の安全保証が、docs と regression tests の両方で守られている。

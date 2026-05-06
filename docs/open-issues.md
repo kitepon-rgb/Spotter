@@ -54,11 +54,11 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 ### v0.13.0 新軸 (ツール適用機会の監査) の過検出率 / pass 率
 
 **背景**: v0.13.0 で stage=turn_end が user_input 非依存の「応答内容に対する適用機会監査」に転換した。判定面が広がったため、過検出が増える方向のリスクあり (監査で指摘済み)。想定シナリオ:
-- 応答中の事実断定全部に `Read` 推奨が乱発される
-- `mcp__caveat__*` や `mcp__claude_ai_Gmail__*` 系が「登録/照会」カテゴリで誤爆する
+- 応答中の事実断定全部に `Read` 推奨が乱発されるような catalog-external hallucination
+- `mcp__caveat__*` や `mcp__claude_ai_Gmail__*` 系が「登録/照会」カテゴリで誤爆する catalog-internal over-detection
 - 「迷ったら pass」の指示が効かず Haiku が過提案に倒れる (前バージョンで AskUserQuestion 過提案傾向を実測済み)
 
-**v0.13.3 で部分対処**: カタログ**外**のハルシネーション (例: `Skill(tl)`、training 記憶由来の架空ツール名) は prompt 明示 + `filterCatalogMisses` の二重防御で遮断済み。**カタログ内の過検出** (Read 乱発 / caveat 誤爆等) はそのまま残っているためこの項目は継続。
+**v0.13.3 / v1.0.0 で部分対処**: カタログ**外**のハルシネーション (例: `Skill(tl)`、training 記憶由来の架空ツール名、現行カタログ対象外の `Read`) は prompt 明示 + `filterCatalogMisses` の二重防御で遮断済み。v1.0.0 以降、Claude Code 本体側ツールは監査対象外。**カタログ内の過検出** (caveat / claude.ai baseline 等の誤爆) はそのまま残っているためこの項目は継続。
 
 **2026-05-06 実セッション smoke**: Claude Code 新セッションで「過去のナレッジが知りたい」という入力に対し、Spotter は `mcp__caveat__caveat_search` を推奨。Claude は追加 context を受け入れて caveat search を 2 回実行し、続けて memory search も実行した。daemon log では `user_input: pass=false, missing=mcp__caveat__caveat_search` → `tool_used: mcp__caveat__caveat_search` → `turn_end: pass=true`。少なくともこのケースでは過検出ではなく、期待どおりの介入として機能。
 

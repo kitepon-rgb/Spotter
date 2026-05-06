@@ -120,7 +120,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Node.js 22.5+** (組み込み fetch, test runner 使用)
 - **Claude Code 2.0+** (Stop hook block 挙動)
-- **Claude Max plan** (`claude -p` で Haiku 起動)
+- **Claude Max plan** (現行 Claude-backed auditor path が `claude -p` で Haiku を起動するため)
 - **ゼロ依存志向**. 依存追加時は理由をコミットログに記録。
 - パッケージング: npm package は `claude-spotter`、global install は `npm install -g claude-spotter`、CLI 名は `spotter`、MIT ライセンス。
 
@@ -131,12 +131,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 spotter install / uninstall
 spotter db list / refresh / rebuild
+spotter status / doctor
+spotter diagnostics logs [--json]
+spotter codex risk-check --findings <file> [--host-agent <agent>]
+spotter codex review / explore / opinion --findings <file> [--host-agent <agent>]
+spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path> (--preserve-worktree | --remove-worktree)
 spotter daemon start              # 内部用 (hook から呼ばれる)
 spotter hook <event>              # 内部用 (Claude Code hook から呼ばれる)
-spotter status / doctor
 ```
 
 `spotter catalog *` は v0.1 設計時の YAML catalog 時代のコマンドで、現行実装には存在しない。現行の catalog は project-local `.spotter/tool-db.json` を中心に `spotter db *` で扱う。
+`spotter codex *` は `SpotterFinding[]` を `codex-sidecar` に渡す explicit second-pass workflow であり、
+`UserPromptSubmit` / `Stop` の primary auditor backend 置換ではない。primary backend migration は
+[docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) を参照する。
 
 テストランナーは Node 組み込み (`node --test`)。現行 CI は `.github/workflows/ci.yml` で Node 22.5 / 22.x の Linux / Windows / macOS matrix を `node --test` で走らせる。
 

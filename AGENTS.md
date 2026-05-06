@@ -57,8 +57,10 @@ which failure path it covers, and adds regression coverage.
 
 - Follow `CLAUDE.md` section 0: no hidden fallback, no silent failure, no
   provisional implementation in the mainline.
-- Treat Codex-unavailable behavior as an explicit compatibility mode only when
-  the design says so. Surface diagnostics clearly.
+- Treat `codex-sidecar` unavailable behavior as an explicit second-pass skip /
+  compatibility mode only when the design says so. Primary auditor backend
+  unavailability follows `docs/SPOTTER_PRIMARY_BACKEND_TODO.md`; do not invent a
+  hidden Haiku fallback.
 - Avoid recursive Codex-on-Codex delegation unless there is a concrete boundary:
   isolated worktree execution, durable structured result, raw diagnostics, a
   distinct critic / risk role, or an explicit second-pass request.

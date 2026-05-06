@@ -1,5 +1,9 @@
 # カタログ設計思想 — ユーザー追加ツールだけを Haiku に渡す
 
+この文書は現行 Claude-backed Haiku auditor path のカタログ設計を説明する。
+`UserPromptSubmit` / `Stop` の primary auditor backend を Codex CLI / `codex-sidecar` に
+移す将来計画は [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) を参照。
+
 ## 背景: Bell の視野にあるツールの分類
 
 Claude Code (Bell) が利用可能なツールは、**誰が追加したものか**で 2 つに分かれる。

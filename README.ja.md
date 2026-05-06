@@ -55,7 +55,7 @@ spotter uninstall        # このプロジェクトの hook 登録を解除
 
 - **Node.js 22.5 以上**
 - **Claude Code 2.0 以上**
-- **Claude Max プラン** (`claude -p` で Haiku を起動するため)
+- **現行 Claude-backed auditor path では Claude Max プラン** (`claude -p` で Haiku を起動するため)
 
 ## アーキテクチャ
 

@@ -158,10 +158,11 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   as thrown daemon errors after session reset.
 - Codex context projection uses local JSON compatibility only in Phase 3:
   `kind:"manual_note"`, `source:"spotter"`, `trust:"local"`.
-- Codex sidecar policy is explicit: `unavailable` and `explicitly disabled` return
-  compatibility mode, Codex host does not call Codex sidecar without an independent
-  boundary, and sidecar children are spawned with `SPOTTER_PARENT_PID` so Claude hooks do
-  not start nested Spotter daemons.
+- Codex sidecar policy for second-pass workflows is explicit: `unavailable` and
+  `explicitly disabled` return a skipped / compatibility result for the sidecar workflow,
+  Codex host does not call Codex sidecar without an independent boundary, and sidecar
+  children are spawned with `SPOTTER_PARENT_PID` so Claude hooks do not start nested
+  Spotter daemons. This does not define primary auditor backend fallback behavior.
 - `spotter codex risk-check|review|explore|opinion` are explicit read-only sidecar
   workflows. They read `SpotterFinding[]`, build a temporary context-file, invoke the
   matching `codex-sidecar` workflow, and store `spotter.sidecar_result.v1`.
