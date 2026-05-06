@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +23,7 @@ const PACKAGE_ROOT = resolve(HERE, '..', '..');
 const SPOTTER_BIN = join(PACKAGE_ROOT, 'bin', 'spotter.mjs');
 const CODEX_HOOK_TIMEOUT_SEC = 60;
 const SHORT_PROMPT_MAX_CHARS = 10;
+const CODEX_PENDING_DIR = 'codex-pending';
 
 const CODEX_HOOK_USAGE = `spotter codex-hook — experimental Codex native hook adapter
 
@@ -78,20 +79,29 @@ export async function runCodexUserPromptSubmitHook({
   if (!projectRoot) return;
 
   const prompt = requireString(input, 'prompt');
-  if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) return;
+  const contexts = await drainCodexPendingContexts({ projectRoot, sessionId: codexSessionId(input) });
+  if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
+    writeCodexUserPromptContexts({ contexts, writeOutput });
+    return;
+  }
 
   const catalog = await readLocalFn({ projectRoot });
   const backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
-  const judgment = await backend.judge({ stage: 'user_input', userInput: prompt });
-  if (judgment.pass === true) return;
+  let judgment;
+  try {
+    judgment = await backend.judge({ stage: 'user_input', userInput: prompt });
+  } catch (err) {
+    contexts.push(formatCodexHookBackendError(err));
+    writeCodexUserPromptContexts({ contexts, writeOutput });
+    return;
+  }
+  if (judgment.pass === true) {
+    writeCodexUserPromptContexts({ contexts, writeOutput });
+    return;
+  }
 
-  const additionalContext = formatTransparentContext(legacyResultFromJudgment(judgment).missing_tools);
-  writeOutput(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
-      additionalContext,
-    },
-  }));
+  contexts.push(formatTransparentContext(legacyResultFromJudgment(judgment).missing_tools));
+  writeCodexUserPromptContexts({ contexts, writeOutput });
 }
 
 export async function runCodexStopHook({
@@ -100,6 +110,7 @@ export async function runCodexStopHook({
   createAuditorBackendFn = createAuditorBackend,
   readCodexUsedToolsFn = readCodexUsedTools,
   writeOutput = (text) => process.stdout.write(text),
+  writeError = (text) => process.stderr.write(text),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -112,13 +123,26 @@ export async function runCodexStopHook({
   const usedTools = await readCodexUsedToolsFn(transcriptPath);
   const catalog = await readLocalFn({ projectRoot });
   const backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
-  const judgment = await backend.judge({ stage: 'turn_end', finalResponse, usedTools });
+  let judgment;
+  try {
+    judgment = await backend.judge({ stage: 'turn_end', finalResponse, usedTools });
+  } catch (err) {
+    const errorText = formatCodexHookBackendError(err);
+    writeError(`${errorText}\n`);
+    await appendCodexPendingContext({
+      projectRoot,
+      sessionId: codexSessionId(input),
+      text: errorText,
+    });
+    return;
+  }
   if (judgment.pass === true) return;
 
-  writeOutput(JSON.stringify({
-    decision: 'block',
-    reason: formatTransparentBlockReason(legacyResultFromJudgment(judgment).missing_tools),
-  }));
+  await appendCodexPendingContext({
+    projectRoot,
+    sessionId: codexSessionId(input),
+    text: formatTransparentBlockReason(legacyResultFromJudgment(judgment).missing_tools),
+  });
 }
 
 export async function runCodexHookInstallCommand({
@@ -237,6 +261,90 @@ function createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBack
     hostAgent: 'codex',
     env: process.env,
   });
+}
+
+function writeCodexUserPromptContexts({ contexts, writeOutput }) {
+  const text = contexts.map((context) => String(context).trim()).filter(Boolean).join('\n\n');
+  if (!text) return;
+  writeOutput(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: text,
+    },
+  }));
+}
+
+function formatCodexHookBackendError(err) {
+  const code = typeof err?.code === 'string' && err.code ? ` ${err.code}` : '';
+  const backend = typeof err?.backend === 'string' && err.backend ? ` ${err.backend}` : '';
+  const message = err?.message ? String(err.message) : String(err);
+  const diagnostics = formatBackendDiagnostics(err?.diagnostics);
+  return [
+    `Spotter auditor backend error${code}${backend}: ${message}`,
+    'No fallback auditor was used.',
+    diagnostics,
+  ].filter(Boolean).join('\n');
+}
+
+function formatBackendDiagnostics(diagnostics) {
+  if (!diagnostics || typeof diagnostics !== 'object') return '';
+  const stderr = typeof diagnostics.stderr === 'string' ? diagnostics.stderr.trim() : '';
+  const stdout = typeof diagnostics.stdout === 'string' ? diagnostics.stdout.trim() : '';
+  const parts = [];
+  if (stdout) parts.push(`stdout:\n${stdout.split('\n').slice(-4).join('\n')}`);
+  if (stderr) parts.push(`stderr:\n${stderr.split('\n').slice(-4).join('\n')}`);
+  if (parts.length === 0) return '';
+  return `backend output:\n${parts.join('\n')}`;
+}
+
+function codexSessionId(payload) {
+  const value = payload?.session_id ?? payload?.sessionId;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function codexPendingPath({ projectRoot, sessionId }) {
+  if (!sessionId) return null;
+  const clean = sessionId.replace(/[^A-Za-z0-9_-]/g, '');
+  if (!clean) return null;
+  return join(projectRoot, '.spotter', CODEX_PENDING_DIR, `${clean}.json`);
+}
+
+async function appendCodexPendingContext({ projectRoot, sessionId, text }) {
+  const path = codexPendingPath({ projectRoot, sessionId });
+  const value = String(text ?? '').trim();
+  if (!path || !value) return false;
+  const contexts = await readCodexPendingContexts(path);
+  if (!contexts.includes(value)) contexts.push(value);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(contexts, null, 2) + '\n', 'utf8');
+  return true;
+}
+
+async function drainCodexPendingContexts({ projectRoot, sessionId }) {
+  const path = codexPendingPath({ projectRoot, sessionId });
+  if (!path) return [];
+  const contexts = await readCodexPendingContexts(path);
+  if (contexts.length > 0) {
+    try {
+      await unlink(path);
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+  }
+  return contexts;
+}
+
+async function readCodexPendingContexts(path) {
+  try {
+    const raw = await readFile(path, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.map((item) => typeof item === 'string' ? item.trim() : '').filter(Boolean)
+      : [];
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  }
 }
 
 function defaultCodexHome() {

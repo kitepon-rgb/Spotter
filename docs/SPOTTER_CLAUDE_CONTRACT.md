@@ -56,7 +56,10 @@ empty stdin is an unexpected hook failure.
 Codex native hooks are experimental and use Codex hook payloads, not Claude hook JSON. The
 current Codex adapter installs user-level `~/.codex/hooks.json` entries for `UserPromptSubmit`
 and `Stop`, keeps `.spotter/marker.json` project gating, exits early when `SPOTTER_PARENT_PID`
-is set, and selects Codex CLI as the default primary auditor backend.
+is set, and selects Codex CLI as the default primary auditor backend. Codex `Stop` does not
+block the just-finished answer. It queues Spotter context under `.spotter/codex-pending/` and
+surfaces it on the next same-session `UserPromptSubmit`; backend errors are also written to
+stderr so one-shot `codex exec` runs do not hide the failure.
 
 - `SessionStart`
   - returns without spawning when `SPOTTER_PARENT_PID` is set.

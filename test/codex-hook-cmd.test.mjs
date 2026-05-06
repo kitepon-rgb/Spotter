@@ -10,6 +10,7 @@ import {
   runCodexUserPromptSubmitHook,
   uninstallCodexHooks,
 } from '../src/cli/codex-hook-cmd.mjs';
+import { AuditorBackendError } from '../src/core/auditor-error.mjs';
 
 async function makeProject() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-codex-hook-project-'));
@@ -135,6 +136,37 @@ test('runCodexUserPromptSubmitHook: child Codex backend env exits before reading
   }
 });
 
+test('runCodexUserPromptSubmitHook: backend error is surfaced as Codex context, not hook process failure', async () => {
+  const project = await makeProject();
+  const out = [];
+  try {
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        prompt: 'GeForce 5000 番台について既知の罠を調べて',
+      }),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+      createAuditorBackendFn: () => ({
+        judge: async () => {
+          throw new AuditorBackendError('E_CODEX_CLI_EXIT', 'codex-cli exited with code 1', {
+            backend: 'codex-cli',
+            diagnostics: { stderr: "You've hit your usage limit." },
+          });
+        },
+      }),
+      writeOutput: (text) => out.push(text),
+    });
+
+    const parsed = JSON.parse(out.join(''));
+    assert.equal(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_EXIT/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /usage limit/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test('runCodexUserPromptSubmitHook: exits outside installed Spotter project', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-codex-hook-outside-'));
   const out = [];
@@ -155,14 +187,16 @@ test('runCodexUserPromptSubmitHook: exits outside installed Spotter project', as
   }
 });
 
-test('runCodexStopHook: blocks with transparent Spotter reason on turn_end miss', async () => {
+test('runCodexStopHook: queues turn_end miss for next UserPromptSubmit context', async () => {
   const project = await makeProject();
-  const out = [];
+  const stopOut = [];
+  const userOut = [];
   try {
     await runCodexStopHook({
       readInput: async () => ({
         cwd: project,
         hook_event_name: 'Stop',
+        session_id: 'sess-spotter-stop',
         transcript_path: '/tmp/transcript.jsonl',
         last_assistant_message: 'GPU について断定しました',
       }),
@@ -186,13 +220,78 @@ test('runCodexStopHook: blocks with transparent Spotter reason on turn_end miss'
           }),
         };
       },
-      writeOutput: (text) => out.push(text),
+      writeOutput: (text) => stopOut.push(text),
     });
 
-    const parsed = JSON.parse(out.join(''));
-    assert.equal(parsed.decision, 'block');
-    assert.match(parsed.reason, /Spotter からの指摘/);
-    assert.match(parsed.reason, /mcp__caveat__caveat_search/);
+    assert.deepEqual(stopOut, []);
+
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        hook_event_name: 'UserPromptSubmit',
+        session_id: 'sess-spotter-stop',
+        prompt: 'ok',
+      }),
+      createAuditorBackendFn: () => {
+        throw new Error('short prompt with pending context should not invoke backend');
+      },
+      writeOutput: (text) => userOut.push(text),
+    });
+
+    const parsed = JSON.parse(userOut.join(''));
+    assert.equal(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    assert.match(parsed.hookSpecificOutput.additionalContext, /Spotter からの指摘/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /mcp__caveat__caveat_search/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: backend error is queued for next UserPromptSubmit context', async () => {
+  const project = await makeProject();
+  const stopOut = [];
+  const stopErr = [];
+  const userOut = [];
+  try {
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-spotter-stop-error',
+        transcript_path: '/tmp/transcript.jsonl',
+        last_assistant_message: 'GPU について断定しました',
+      }),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+      readCodexUsedToolsFn: async () => [],
+      createAuditorBackendFn: () => ({
+        judge: async () => {
+          throw new AuditorBackendError('E_CODEX_CLI_TIMEOUT', 'codex-cli did not respond', {
+            backend: 'codex-cli',
+          });
+        },
+      }),
+      writeOutput: (text) => stopOut.push(text),
+      writeError: (text) => stopErr.push(text),
+    });
+
+    assert.deepEqual(stopOut, []);
+    assert.match(stopErr.join(''), /E_CODEX_CLI_TIMEOUT/);
+    assert.match(stopErr.join(''), /No fallback auditor was used/);
+
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-spotter-stop-error',
+        prompt: 'ok',
+      }),
+      createAuditorBackendFn: () => {
+        throw new Error('short prompt with pending context should not invoke backend');
+      },
+      writeOutput: (text) => userOut.push(text),
+    });
+
+    const parsed = JSON.parse(userOut.join(''));
+    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_TIMEOUT/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
   } finally {
     await rm(project, { recursive: true, force: true });
   }

@@ -273,6 +273,8 @@ Gate:
   `UserPromptSubmit` は `payload.prompt`, `cwd`, `session_id` を使う。
   `Stop` は `payload.last_assistant_message` / `lastAssistantMessage` と
   `payload.transcript_path` から final response と used tool names を作る。
+  `Stop` の結果はその場で block せず、`.spotter/codex-pending/` に積んで次の
+  same-session `UserPromptSubmit` の `additionalContext` で表示する。
   Claude hook JSON は要求しない。
 - [x] Codex 側 event source が未確定でも実装を進められるように、明示 CLI の
   `spotter auditor judge --stage user_input|turn_end --input FILE --host-agent codex --backend codex-cli`
@@ -384,10 +386,11 @@ Gate:
 
 ## Open Questions
 
-- Codex `Stop` hook で `decision:"block"` を返した場合の UI grouping が許容可能か。
-  Caveat 実運用では Stop reminder を次 `UserPromptSubmit` に送る方が UI 上は自然と観測されている。
-  Spotter は補正応答を促す性質が強いため、まず Claude と同じ block semantics を実装し、
-  Codex 実セッション smoke で判断する。
+- Codex `Stop` hook の context-capable output surface は、現状 `UserPromptSubmit` より弱い。
+  実セッション smoke で `decision:"block"` が final answer 後の `codex exec` exit code を
+  1 にし、UX grouping も悪いことを確認したため、Spotter は Caveat と同じ pending queue
+  方式へ変更した。未解決なのは、Codex native hook が将来 `Stop` で non-blocking
+  additional context を正式提供した場合に、pending queue を置き換えるかどうか。
 - `codex exec --output-schema` の final response 取り出しは、version drift にどこまで耐えるか。
 - `codex exec --ephemeral` が本当に session file / project state を汚さないか。
 - Claude host で選択 backend が hook timeout 内に安定して収まるか。
@@ -443,15 +446,20 @@ Gate:
   project gating し、`SPOTTER_PARENT_PID` で子 Codex CLI backend の再入を遮断し、
   primary auditor backend は既定で `codex-cli` を使う。unit tests では install merge、
   uninstall、diagnostics、outside-project exit、child env exit、UserPromptSubmit context output、
-  Stop block output、Codex transcript tool-name extraction を確認済み。
+  Stop pending queue output、Codex transcript tool-name extraction を確認済み。
 - Local diagnostics smoke では `codexBinary=present`, `codexHooksFeature=enabled` を確認した。
   実ユーザーの `~/.codex/hooks.json` には Caveat hooks だけがあり、Spotter hooks は
   `not-installed` と正しく判定される。一時 `--codex-home /tmp/spotter-codex-hook-smoke`
   への install / diagnostics smoke は `availability=available`。
 - `spotter codex-hook user-prompt-submit` の stdin smoke は、Codex CLI backend まで到達して
-  `hookSpecificOutput.additionalContext` を返した。後続 re-smoke は Codex usage limit により
-  `E_CODEX_CLI_EXIT` で停止したが、Haiku fallback や silent pass にはならなかった。
-  このため actual Codex interactive session smoke はまだ Gate 未達。
+  `hookSpecificOutput.additionalContext` を返した。Codex usage limit 時も `E_CODEX_CLI_EXIT`
+  を `additionalContext` として返し、Haiku fallback や silent pass にはならなかった。
+- 実 `codex exec` smoke では `UserPromptSubmit Completed` / `Stop Completed` を確認した。
+  初回の `Stop decision:block` 実装は final answer 後に `Stop Blocked` となり exit code 1
+  を返したため、Caveat と同じ pending queue 方式へ変更した。変更後の再 smoke では
+  final answer 生成後も `Stop Completed` で exit code 0。
+  残る actual interactive session gate は、同一 Codex セッションで Stop pending が次の
+  `UserPromptSubmit` に表示されることの目視確認。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に
