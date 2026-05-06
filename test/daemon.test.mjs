@@ -387,6 +387,7 @@ test('startDaemon: user_input log records duration_ms and mode=first', async () 
     });
     const line = logs.find((l) => l.startsWith('user_input:'));
     assert.ok(line, 'user_input log line must exist');
+    assert.match(line, /backend=haiku/);
     assert.match(line, /mode=first/);
     assert.match(line, /duration_ms=\d+/);
   } finally {
@@ -426,6 +427,7 @@ test('startDaemon: turn_end log records mode=resumed when caller is past its fir
     });
     const line = logs.find((l) => l.startsWith('turn_end: pass='));
     assert.ok(line, 'turn_end log line must exist');
+    assert.match(line, /backend=haiku/);
     assert.match(line, /mode=resumed/);
     assert.match(line, /duration_ms=\d+/);
   } finally {

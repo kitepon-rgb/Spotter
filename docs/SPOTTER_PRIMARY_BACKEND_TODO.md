@@ -143,68 +143,68 @@ Gate:
 
 ### Phase 1. Backend Interface
 
-- [ ] `src/core/auditor-backend.mjs` を追加し、backend-neutral interface を定義する。
+- [x] `src/core/auditor-backend.mjs` を追加し、backend-neutral interface を定義する。
   入力は `stage`, `catalog`, `userInput`, `usedTools`, `finalResponse`, `meta`。
   出力は `SpotterJudgment`。ただし Haiku は preamble-once / session reset を持つ stateful backend
   なので、単純な stateless function にはしない。
-- [ ] backend interface は `createAuditorBackend({backend, catalog, projectRoot, env, logger})`
+- [x] backend interface は `createAuditorBackend({backend, catalog, projectRoot, env, logger})`
   のような factory にし、戻り値は `judge(input)`, `reset()`, `dispose?()`, `name` を持つ。
   Haiku は factory 時に `buildPreamble({tools:catalog})` と `createHaikuCaller` を初期化する。
-- [ ] `catalog` は daemon startup 時点の project-local `readLocal` 結果を正本にし、
+- [x] `catalog` は daemon startup 時点の project-local `readLocal` 結果を正本にし、
   per-turn で再読込しない。これは現行 preamble-once behavior と一致させるため。
-- [ ] auditor response parser を backend-neutral にする。
+- [x] auditor response parser を backend-neutral にする。
   現行 `parseHaikuResponse` の JSON schema check は `parseAuditorResponse` /
   `validateAuditorResponse` として切り出し、Codex CLI backend でも同じ schema check を使う。
   既存 export 名は compatibility wrapper として残してよい。
-- [ ] catalog-external filtering は parser から独立した backend-neutral post-parse step として残す。
+- [x] catalog-external filtering は parser から独立した backend-neutral post-parse step として残す。
   現行 `filterCatalogMisses(parsed, catalogNames)` の pass-flip semantics と observability を維持し、
   Haiku adapter / Codex CLI adapter の両方から同じ関数を通す。
 - [ ] prompt / catalog formatting の共有境界を決める。
   `SpotterJudgment` schema、catalog `{name,description}` の列挙、stage 入力タグは共有してよいが、
   Haiku の preamble-once prompt を Codex CLI にそのまま流用しない。Codex CLI 用には
   stateless / small prompt を別 builder にし、snapshot で固定する。
-- [ ] 現行 Haiku 呼び出しを `haiku` backend adapter として包む。
+- [x] 現行 Haiku 呼び出しを `haiku` backend adapter として包む。
   `E_HAIKU_SCHEMA` の role-collapse recovery、`E_HAIKU_TIMEOUT` / `E_INTERNAL` の throw 前 reset、
   catalog-external filtering、duration meta を既存挙動と同じにする。
-- [ ] `AuditorBackendError` の structured error shape を定義する。
+- [x] `AuditorBackendError` の structured error shape を定義する。
   最低限 `code`, `backend`, `stage`, `message`, `diagnostics?`, `cause?` を持たせ、
   hook / daemon transport へ投影するときに hidden fallback や silent pass に潰さない。
-- [ ] daemon は backend adapter 経由で判定し、既存 Haiku behavior は完全一致させる。
+- [x] daemon は backend adapter 経由で判定し、既存 Haiku behavior は完全一致させる。
   ただし short prompt skip、`turn_end` の `no_user_input` pass、`PreToolUse` の記録専用処理は
   backend の外側に残し、現行 hook latency と挙動を変えない。
-- [ ] host detection は `codex-sidecar-policy.mjs` から独立した neutral module に移すか、
+- [x] host detection は `codex-sidecar-policy.mjs` から独立した neutral module に移すか、
   primary backend 側から sidecar policy を import しない wrapper を用意する。
   `detectHostAgent` は sidecar 固有 policy ではなく auditor backend selection の基礎情報として扱う。
-- [ ] backend selection は pure function にする。
+- [x] backend selection は pure function にする。
   入力は `hostAgent`, `env`, `projectConfig?`, `stage`、出力は
   `{backend, mode, compatibility, reason}`。ここでは spawn / diagnostics を実行しない。
-- [ ] `SPOTTER_AUDITOR_BACKEND` で明示 override できるようにする。
+- [x] `SPOTTER_AUDITOR_BACKEND` で明示 override できるようにする。
   値は `haiku`, `codex-cli`, `codex-sidecar`, `auto` に限定し、未知値は structured error。
   ただし `codex-sidecar` primary auditor adapter は Phase 4 の auditor workflow が存在するまで
   `E_BACKEND_NOT_IMPLEMENTED` として扱い、Haiku へ hidden fallback しない。
-- [ ] `auto` は policy / host default へ委譲するだけの値とし、backend availability check や
+- [x] `auto` は policy / host default へ委譲するだけの値とし、backend availability check や
   fallback 実行はしない。`hostAgent=unknown|automation` で明示 backend が無い場合は
   `E_BACKEND_HOST_UNKNOWN` を返す。
-- [ ] `SPOTTER_AUDITOR_BACKEND_POLICY` は rollout preset (`current`, `next`) として扱い、
+- [x] `SPOTTER_AUDITOR_BACKEND_POLICY` は rollout preset (`current`, `next`) として扱い、
   `SPOTTER_AUDITOR_BACKEND` の明示 override と混同しない。優先順位を
   explicit backend > policy preset > host default として test で固定する。
-- [ ] Phase 1 時点の preset は `current=現行 Haiku behavior`、
+- [x] Phase 1 時点の preset は `current=現行 Haiku behavior`、
   `next=Codex host だけ codex-cli opt-in / Claude host は現行 Haiku` として固定する。
   Claude host の `next` を Codex 系 backend に切り替えるのは Phase 5 以降に限定する。
-- [ ] daemon log には Phase 1 から `backend=<name>` を出す。
+- [x] daemon log には Phase 1 から `backend=<name>` を出す。
   既存 diagnostics parser の backend 集計拡張は Phase 6 でよいが、Phase 2-4 の実測に使う
   raw signal は最初に入れる。
-- [ ] unit test は少なくとも backend selector、unknown env の structured error、
+- [x] unit test は少なくとも backend selector、unknown env の structured error、
   Haiku adapter compatibility、parser / catalog filtering の分離を固定する。
 
 Gate:
 
-- [ ] 既存 `npm test` が通る。
+- [x] 既存 `npm test` が通る。
 - [ ] Claude hook 実セッション smoke が現行と同じ挙動。
-- [ ] Haiku backend adapter は既存 prompt snapshot と response schema を変えない。
-- [ ] `createHaikuCaller` の preamble-once / reset semantics が adapter 経由でも維持される。
+- [x] Haiku backend adapter は既存 prompt snapshot と response schema を変えない。
+- [x] `createHaikuCaller` の preamble-once / reset semantics が adapter 経由でも維持される。
 - [ ] Codex CLI 用 prompt builder を追加しても、Haiku prompt snapshot は変わらない。
-- [ ] primary backend module が `codex-sidecar-policy.mjs` に直接依存しない。
+- [x] primary backend module が `codex-sidecar-policy.mjs` に直接依存しない。
 
 ### Phase 2. Codex CLI Backend Spike
 
@@ -403,6 +403,10 @@ Gate:
   `E_BACKEND_NOT_IMPLEMENTED` とし、second-pass workflow の存在と混同しない方針に固定済み。
 - `SPOTTER_AUDITOR_BACKEND=auto` と `SPOTTER_AUDITOR_BACKEND_POLICY=current|next` の初期挙動を
   testable な selector contract として固定済み。
+- Phase 1 実装で `src/core/auditor-backend.mjs`, `src/core/auditor-response.mjs`,
+  `src/core/auditor-error.mjs`, `src/core/host-agent.mjs` を追加し、daemon は Haiku を
+  backend adapter 経由で呼ぶように変更済み。Haiku の preamble-once / reset semantics は
+  Caveat の既知罠に従い維持済み。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に

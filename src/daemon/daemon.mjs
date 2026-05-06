@@ -33,17 +33,12 @@
 
 import { readFile } from 'node:fs/promises';
 import { createServer, ensureRuntimeDir, secureSocketFile, socketPath } from './transport.mjs';
-import {
-  buildFirstStagePrompt,
-  buildFinalStagePrompt,
-  buildPreamble,
-  parseHaikuResponse,
-  filterCatalogMisses,
-  createHaikuCaller,
-  HaikuError,
-} from './haiku-caller.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
-import { legacyResultFromJudgment, toSpotterJudgment } from '../core/judgment.mjs';
+import { legacyResultFromJudgment } from '../core/judgment.mjs';
+import {
+  createAuditorBackend,
+  DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS,
+} from '../core/auditor-backend.mjs';
 import {
   dispatchCodexRiskCheck,
   isCodexRiskDispatchDryRun,
@@ -58,7 +53,7 @@ const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
 // observed Haiku CLI latency spikes (2026-04-20 log shows 20.9s resumed calls and 30s
 // timeouts in the wild). Role-collapse recovery (reset → next call is effectively a
 // cold start again) stays within budget.
-const DEFAULT_HAIKU_TIMEOUT_MS = 45_000;
+const DEFAULT_HAIKU_TIMEOUT_MS = DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS;
 // v0.12.0: heartbeat-based orphan cleanup. Every envelope resets a setTimeout; if no
 // hook event arrives within this window, the daemon self-shuts. 30 min is the longest
 // silence we expect from a live Claude Code session. UserPromptSubmit auto-resurrects
@@ -85,6 +80,8 @@ export async function startDaemon({
   codexRiskCheckEnabled = isCodexRiskDispatchEnabled(),
   codexRiskCheckDryRun = isCodexRiskDispatchDryRun(),
   dispatchCodexRiskCheckFn = dispatchCodexRiskCheck,
+  auditorBackendName = process.env.SPOTTER_AUDITOR_BACKEND || (process.env.SPOTTER_AUDITOR_BACKEND_POLICY ? 'auto' : 'haiku'),
+  auditorEnv = process.env,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -115,16 +112,17 @@ export async function startDaemon({
   }
   logFn(`tool-db loaded: ${toolList.length} tools` + (projectRoot ? ` (project=${projectRoot})` : ''));
 
-  // v0.13.3: Haiku occasionally hallucinates tool names outside the catalog (training-memory
-  // leakage / few-shot cargo-cult). We filter these post-parse; entries not in this set are
-  // dropped. See filterCatalogMisses for the pass-flip semantics.
-  const catalogNames = new Set(toolList.map((t) => t.name));
-
-  // v0.6.0: preamble (role + schema + catalog) is built once and threaded into the Haiku
-  // caller. The caller prepends it on the first call only; --resume keeps it in session
-  // history for all subsequent calls.
-  const preamble = buildPreamble({ tools: toolList });
-  const callHaiku = haikuCaller ?? createHaikuCaller({ preamble, timeoutMs: DEFAULT_HAIKU_TIMEOUT_MS });
+  // Phase 1 primary backend interface: default remains Haiku, but daemon now calls through
+  // an auditor adapter so future Codex CLI / sidecar backends share one judgment surface.
+  const auditorBackend = createAuditorBackend({
+    backend: auditorBackendName,
+    catalog: toolList,
+    projectRoot,
+    env: auditorEnv,
+    logger: logFn,
+    haikuCaller,
+    timeoutMs: DEFAULT_HAIKU_TIMEOUT_MS,
+  });
 
   // Per-turn state, reset on turn_end.
   const state = {
@@ -132,60 +130,14 @@ export async function startDaemon({
     lastUserInput: null,
   };
 
-  // 10-second recursion-guard bookkeeping. Every Haiku spawn updates this; incoming
-  // Haiku-invoking events within the window are treated as recursive noise and passed.
+  // 10-second recursion-guard bookkeeping. Every auditor spawn updates this; incoming
+  // auditor-invoking events within the window are treated as recursive noise and passed.
   // Tests may pass haikuCallWindowMs: 0 to disable this guard.
-  let lastHaikuCallAt = 0;
+  let lastAuditorCallAt = 0;
 
-  const callHaikuTracked = async (prompt) => {
-    lastHaikuCallAt = Date.now();
-    const mode = callHaiku.isFirstCall === false ? 'resumed' : 'first';
-    const start = Date.now();
-    const raw = await callHaiku(prompt);
-    return { raw, meta: { durationMs: Date.now() - start, mode } };
-  };
-
-  // v0.5.0: shared Haiku-invocation + parse helper. On E_HAIKU_SCHEMA (role collapse),
-  // rotates the Haiku session-id and silent-passes the turn (reason: role_collapse_reset).
-  //
-  // v1.1.6: E_HAIKU_TIMEOUT / E_INTERNAL (spawn failure, auth failure, exit != 0) は
-  // §14 unexpected として throw するが、throw の前に必ず callHaiku.reset() で session を
-  // 回転する。haiku-caller は成功時のみ isFirstCall=false を倒す設計なので、失敗が続くと
-  // 同じ UUID を `--session-id` 再送 → claude CLI 側で "Session ID ... is already in use"
-  // に化けて失敗連鎖が固定化していた。reset で次 turn が fresh id + preamble 再送から
-  // やり直せるようにする (真因 — 例えば CLAUDE_CONFIG_DIR 誤継承による auth 失敗 — が
-  // 解消されたら即回復可能な状態を保つ)。silent fallback 新規導入ではない、§0 「想定済み
-  // 異常 = 記録 + 正常リターン」とは別軸の「unexpected でも内部 state は clean に保つ」
-  // 防御。
-  const runHaikuJudgment = async (stage, prompt) => {
-    let raw, meta;
-    try {
-      ({ raw, meta } = await callHaikuTracked(prompt));
-    } catch (err) {
-      if (err instanceof HaikuError && typeof callHaiku.reset === 'function') {
-        logFn(`${stage}: haiku invocation failed (${err.code}), rotating session before rethrow: ${err.message}`);
-        callHaiku.reset();
-      }
-      throw err;
-    }
-    let parsed;
-    try {
-      parsed = parseHaikuResponse(raw);
-    } catch (err) {
-      if (err instanceof HaikuError && err.code === 'E_HAIKU_SCHEMA') {
-        logFn(`${stage}: role collapse detected, session reset: ${err.message}`);
-        if (typeof callHaiku.reset === 'function') {
-          callHaiku.reset();
-        }
-        return { parsed: { pass: true, missing_tools: [], reason: 'role_collapse_reset' }, meta };
-      }
-      throw err;
-    }
-    const { parsed: filtered, dropped } = filterCatalogMisses(parsed, catalogNames);
-    if (dropped.length > 0) {
-      logFn(`${stage}: dropped catalog-external names: ${dropped.join(',')}`);
-    }
-    return { parsed: filtered, meta };
+  const runAuditorJudgment = async (input) => {
+    lastAuditorCallAt = Date.now();
+    return auditorBackend.judge(input);
   };
 
   // v0.12.0: heartbeat. Reset on every envelope; if no event arrives within
@@ -217,14 +169,14 @@ export async function startDaemon({
       throw err;
     }
 
-    // 10-second window safety net: events that would invoke Haiku within 10s of our own
-    // claude -p spawn are likely recursive noise; pass them quietly.
+    // 10-second window safety net: events that would invoke the auditor within 10s of
+    // our own child spawn are likely recursive noise; pass them quietly.
     const needsHaiku = envelope.event === 'user_input' || envelope.event === 'turn_end';
-    const sinceLast = Date.now() - lastHaikuCallAt;
+    const sinceLast = Date.now() - lastAuditorCallAt;
     if (
       needsHaiku &&
       haikuCallWindowMs > 0 &&
-      lastHaikuCallAt > 0 &&
+      lastAuditorCallAt > 0 &&
       sinceLast < haikuCallWindowMs
     ) {
       logFn(`${envelope.event} skipped: within ${sinceLast}ms of own haiku call`);
@@ -261,11 +213,11 @@ export async function startDaemon({
     state.lastUserInput = userInput;
     state.usedTools = []; // reset tools for this turn
 
-    const { parsed, meta } = await runHaikuJudgment('user_input', buildFirstStagePrompt({ userInput }));
-    const judgment = toSpotterJudgment({ stage: 'user_input', parsed, meta });
+    const judgment = await runAuditorJudgment({ stage: 'user_input', userInput });
     const result = legacyResultFromJudgment(judgment);
+    const meta = judgment.meta ?? {};
     logFn(
-      `user_input: pass=${result.pass}, missing=${result.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
+      `user_input: pass=${result.pass}, missing=${result.missing_tools.map((m) => m.name).join(',')}, backend=${meta.backend ?? auditorBackend.name}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
         result.reason ? `, reason=${result.reason}` : ''
       }`
     );
@@ -307,17 +259,15 @@ export async function startDaemon({
     // final_response + used_tools のみで判定)。ただし「挨拶ターン (user_input が来て
     // いない) は早期 pass」の分岐は上で使うので保存は引き続き必要。
     const savedUsedTools = state.usedTools.slice();
-    const { parsed, meta } = await runHaikuJudgment(
-      'turn_end',
-      buildFinalStagePrompt({
-        usedTools: savedUsedTools,
-        finalResponse,
-      })
-    );
-    const judgment = toSpotterJudgment({ stage: 'turn_end', parsed, meta });
+    const judgment = await runAuditorJudgment({
+      stage: 'turn_end',
+      usedTools: savedUsedTools,
+      finalResponse,
+    });
     const result = legacyResultFromJudgment(judgment);
+    const meta = judgment.meta ?? {};
     logFn(
-      `turn_end: pass=${result.pass}, missing=${result.missing_tools.map((m) => m.name).join(',')}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
+      `turn_end: pass=${result.pass}, missing=${result.missing_tools.map((m) => m.name).join(',')}, backend=${meta.backend ?? auditorBackend.name}, mode=${meta.mode}, duration_ms=${meta.durationMs}${
         result.reason ? `, reason=${result.reason}` : ''
       }`
     );

@@ -15,6 +15,16 @@ export {
 } from './daemon/haiku-caller.mjs';
 export { legacyResultFromJudgment, toSpotterFinding, toSpotterJudgment } from './core/judgment.mjs';
 export {
+  AuditorBackendError,
+  createAuditorBackend,
+  createHaikuAuditorBackend,
+  filterCatalogMisses as filterAuditorCatalogMisses,
+  parseAuditorResponse,
+  selectAuditorBackend,
+  validateAuditorResponse,
+} from './core/auditor-backend.mjs';
+export { assertHostAgent, detectHostAgent as detectNeutralHostAgent } from './core/host-agent.mjs';
+export {
   createSidecarResultRecord,
   spotterFindingsToSidecarContextBlocks,
   spotterFindingToSidecarContextBlock,

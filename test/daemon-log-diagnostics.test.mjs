@@ -69,6 +69,17 @@ test('summarizeDaemonLogs: reads daemon log files from a directory', async () =>
   }
 });
 
+test('summarizeDaemonLogText: parses Phase 1 backend-tagged stage lines', () => {
+  const summary = summarizeDaemonLogText({
+    text: '[2026-05-06T00:00:03.000Z] user_input: pass=true, missing=, backend=haiku, mode=first, duration_ms=42\n',
+    filePath: '/logs/daemon-session-b.log',
+  });
+
+  assert.equal(summary.stages.user_input.calls, 1);
+  assert.equal(summary.stages.user_input.passTrue, 1);
+  assert.equal(summary.stages.user_input.modes.first.averageDurationMs, 42);
+});
+
 test('formatDaemonLogSummary: produces compact human-readable output', () => {
   const summary = summarizeDaemonLogText({
     text: SAMPLE_LOG,

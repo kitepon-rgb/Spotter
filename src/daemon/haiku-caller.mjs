@@ -18,6 +18,11 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdir, writeFile, unlink, open } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import {
+  filterCatalogMisses,
+  parseAuditorResponse,
+} from '../core/auditor-response.mjs';
+import { AuditorBackendError } from '../core/auditor-error.mjs';
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const WORKDIR = join(homedir(), '.spotter', 'workdir');
@@ -152,49 +157,17 @@ export function buildFinalStagePrompt({ usedTools, finalResponse }) {
 
 // Parse Haiku's response. Throws HaikuError on schema violation.
 export function parseHaikuResponse(raw) {
-  const trimmed = raw.trim();
-  // Be tolerant of a surrounding code fence, which Haiku sometimes adds despite the prompt.
-  const unfenced = stripFence(trimmed);
-  let parsed;
   try {
-    parsed = JSON.parse(unfenced);
+    return parseAuditorResponse(raw, {
+      backend: 'haiku',
+      errorCode: 'E_HAIKU_SCHEMA',
+    });
   } catch (err) {
-    throw new HaikuError('E_HAIKU_SCHEMA', `haiku output is not valid JSON: ${err.message} :: raw=${truncate(raw)}`);
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new HaikuError('E_HAIKU_SCHEMA', `haiku output root is not an object :: ${truncate(raw)}`);
-  }
-  if (typeof parsed.pass !== 'boolean') {
-    throw new HaikuError('E_HAIKU_SCHEMA', `haiku "pass" must be boolean :: ${truncate(raw)}`);
-  }
-  if (!Array.isArray(parsed.missing_tools)) {
-    throw new HaikuError('E_HAIKU_SCHEMA', `haiku "missing_tools" must be array :: ${truncate(raw)}`);
-  }
-  parsed.missing_tools.forEach((m, i) => {
-    if (m === null || typeof m !== 'object' || Array.isArray(m)) {
-      throw new HaikuError('E_HAIKU_SCHEMA', `missing_tools[${i}] not an object`);
+    if (err instanceof AuditorBackendError) {
+      throw new HaikuError('E_HAIKU_SCHEMA', err.message);
     }
-    if (typeof m.name !== 'string' || m.name.length === 0) {
-      throw new HaikuError('E_HAIKU_SCHEMA', `missing_tools[${i}].name must be non-empty string`);
-    }
-    if (typeof m.reason !== 'string' || m.reason.length === 0) {
-      throw new HaikuError('E_HAIKU_SCHEMA', `missing_tools[${i}].reason must be non-empty string`);
-    }
-  });
-  // Cross-field: pass: true implies missing_tools empty.
-  if (parsed.pass === true && parsed.missing_tools.length > 0) {
-    throw new HaikuError(
-      'E_HAIKU_SCHEMA',
-      `pass: true with non-empty missing_tools is inconsistent :: ${truncate(raw)}`
-    );
+    throw err;
   }
-  if (parsed.pass === false && parsed.missing_tools.length === 0) {
-    throw new HaikuError(
-      'E_HAIKU_SCHEMA',
-      `pass: false with empty missing_tools is inconsistent :: ${truncate(raw)}`
-    );
-  }
-  return parsed;
 }
 
 // v0.13.3: post-parse defence against catalog-external hallucinations. Haiku occasionally
@@ -205,29 +178,8 @@ export function parseHaikuResponse(raw) {
 // the valid entries and stay pass=false.
 //
 // Returns { parsed, dropped } where `dropped` is the list of filtered-out names (for
-// observability / logging).
-export function filterCatalogMisses(parsed, catalogNames) {
-  const names = catalogNames instanceof Set ? catalogNames : new Set(catalogNames);
-  const kept = [];
-  const dropped = [];
-  for (const m of parsed.missing_tools) {
-    if (names.has(m.name)) kept.push(m);
-    else dropped.push(m.name);
-  }
-  if (dropped.length === 0) return { parsed, dropped };
-  if (kept.length === 0) {
-    return {
-      parsed: { pass: true, missing_tools: [], reason: 'hallucination_filtered' },
-      dropped,
-    };
-  }
-  return { parsed: { ...parsed, missing_tools: kept }, dropped };
-}
-
-function stripFence(text) {
-  const fenceMatch = text.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/);
-  return fenceMatch ? fenceMatch[1] : text;
-}
+// observability / logging). Re-exported for compatibility; implementation is backend-neutral.
+export { filterCatalogMisses };
 
 function truncate(s, n = 300) {
   if (s.length <= n) return s;

@@ -139,16 +139,16 @@ function parseMessage(summary, message) {
     return;
   }
 
-  const stageLine = message.match(/^(user_input|turn_end): pass=(true|false), missing=(.*?), mode=([^,]+), duration_ms=(\d+)(?:, reason=([^,]+))?$/);
+  const stageLine = message.match(/^(user_input|turn_end): pass=(true|false), missing=(.*?), (?:backend=([^,]+), )?mode=([^,]+), duration_ms=(\d+)(?:, reason=([^,]+))?$/);
   if (stageLine) {
     recordStageCall(summary.stages[stageLine[1]], {
       pass: stageLine[2] === 'true',
       missing: parseMissingList(stageLine[3]),
-      mode: stageLine[4],
-      durationMs: Number(stageLine[5]),
-      reason: stageLine[6] ?? null,
+      mode: stageLine[5],
+      durationMs: Number(stageLine[6]),
+      reason: stageLine[7] ?? null,
     });
-    if (stageLine[6] === 'hallucination_filtered') {
+    if (stageLine[7] === 'hallucination_filtered') {
       summary.anomalies.hallucinationFiltered += 1;
     }
     return;
