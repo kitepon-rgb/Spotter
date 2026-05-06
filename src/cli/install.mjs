@@ -204,6 +204,7 @@ function mergeHooks(current) {
         if (hook?.type !== 'command') continue;
         if (!hook.command?.includes('spotter.mjs') || !hook.command?.includes(`hook ${sub}`)) continue;
         alreadyHas = true;
+        hook.command = command;
         hook.timeout = timeout;
       }
     }

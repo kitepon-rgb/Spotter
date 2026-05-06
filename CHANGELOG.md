@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.2
+
+**既存 project の hook command path を npm global 版へ更新する patch release**。v1.4.1 の `spotter install` は Codex hooks を自動登録するようになったが、既存 `.claude/settings.json` に `spotter.mjs` hook がある場合、登録済み判定で timeout だけ更新し、command path を現在の package root へ差し替えていなかった。local checkout 由来の hook が残ると、global npm update 後も古い checkout を呼び続け得るため修正。
+
+### 変更点
+
+- **編集 [src/cli/install.mjs](src/cli/install.mjs)**: 既存 Spotter hook を見つけた場合も `hook.command` を現在の `SPOTTER_BIN` に更新する。これにより `npm install -g claude-spotter` 後、各プロジェクトで `spotter install` を再実行すれば hook は global npm 版へ揃う
+- **編集 [test/install.test.mjs](test/install.test.mjs)**: 古い `/old/bin/spotter.mjs` hook が `spotter install` で現在の package path に差し替わる回帰テストを追加
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.2`
+2. 各プロジェクトで `spotter install`
+
 ## 1.4.1
 
 **Codex native hooks の有効化手順を `spotter install` に集約する patch release**。v1.4.0 は npm publish まで成功したが、Codex hooks を使うには `spotter codex-hook install` が別手順として残っていた。完成条件を「global npm install 後、各プロジェクトで `spotter install` する以外の手作業を不要にする」と再定義し、Codex CLI がある環境では `spotter install` が Codex hooks も idempotent に登録するようにした。

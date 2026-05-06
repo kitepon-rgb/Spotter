@@ -71,6 +71,31 @@ test('install: re-run updates existing spotter hook timeouts', async () => {
   }
 });
 
+test('install: re-run rewrites existing spotter hook commands to this package path', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-command-path-'));
+  try {
+    await mkdir(join(dir, '.claude'), { recursive: true });
+    await writeFile(
+      join(dir, '.claude', 'settings.json'),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [{ hooks: [{ type: 'command', command: 'node "/old/bin/spotter.mjs" hook session-start', timeout: 5 }] }],
+        },
+      }),
+      'utf8'
+    );
+
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
+    const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
+    const hook = settings.hooks.SessionStart[0].hooks[0];
+
+    assert.ok(hook.command.includes('/bin/spotter.mjs'));
+    assert.ok(!hook.command.includes('/old/bin/spotter.mjs'));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('install: preserves pre-existing unrelated hooks', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-install-'));
   try {
