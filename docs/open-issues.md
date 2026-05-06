@@ -84,6 +84,18 @@ Codex native に Spotter を適用して先に最適化し、実測できた改�
 `stages.*.backends`) を持つようになった。Haiku first/resumed だけでなく、Codex CLI /
 codex-sidecar primary auditor の duration / pass=false / missing 件数を同じ summary で比較できる。
 
+**2026-05-06 v1.4.3 Codex native hook 実機 smoke**: Spotter repo の新 Codex thread で
+`spotter --version` が `spotter 1.4.3`、`spotter codex-hook diagnostics --project
+/home/kite/projects/Spotter` が `availability=available` / `codexHooksFeature=enabled` /
+`SessionStart`・`UserPromptSubmit`・`Stop` installed を返すことを確認。`~/.codex/hooks.json` と
+`.claude/settings.json` の Spotter hook command はどちらも global npm 版
+`/home/kite/.npm-global/lib/node_modules/claude-spotter/bin/spotter.mjs` を参照していた。
+`.spotter/codex-hook-events.jsonl` は同 thread の `UserPromptSubmit` で
+`2026-05-06T13:17:19.799Z` / `2026-05-06T13:17:20.154Z` に更新され、Codex CLI backend の
+`pass=false` → `pass=true` を記録。daemon log 側の同時刻更新はなかったが、Codex native hook
+event path としては新規記録が増えている。Claude DB `.spotter/tool-db.json` は 366 tools、
+Codex DB `.spotter/tool-db.codex.json` は 25 tools で別ファイルのまま維持され、相互上書きの形跡なし。
+
 **次アクション**: v1.3.0 以降の daemon ログを `spotter diagnostics logs --json` で集計し、
 `backends.haiku`, `backends.codex-cli`, `backends.codex-sidecar` と
 `stages.user_input.backends.*` / `stages.turn_end.backends.*` の duration を見る。
