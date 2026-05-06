@@ -276,8 +276,11 @@ Gate:
   `test/codex-cli-backend.test.mjs` で固定済み。
 - [x] Codex CLI spawn env に recursion marker を入れる:
   `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND=codex-cli`, `SPOTTER_CHILD_BACKEND=codex-cli`。
-- [ ] 将来の Codex plugin / wrapper 側も `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` を見て
+- [x] 将来の Codex plugin / wrapper 側も `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` を見て
   再入しない gate を持つ。Claude hook の `SPOTTER_PARENT_PID` だけに依存しない。
+  Spotter 側 hook 共通入口の `isChildCall()` が `SPOTTER_PARENT_PID` に加えて
+  `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` を child marker として扱うよう固定した。
+  wrapper / plugin 側がこの marker を継承した場合も hook は stdin 読み取り前に return する。
 - [x] Codex CLI backend が Spotter hooks / daemon を増殖させないことを unit / smoke で確認する。
 - [x] Codex CLI spawn option の unit test で `stdio[0] === 'ignore'`、read-only sandbox、
   recursion marker env、tempfile cleanup、stderr cap を固定する。

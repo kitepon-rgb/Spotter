@@ -53,19 +53,39 @@ test('formatTransparentContext: handles multiple tools', () => {
 });
 
 test('isChildCall: true when SPOTTER_PARENT_PID env is set', () => {
-  const prev = process.env.SPOTTER_PARENT_PID;
+  const prevParent = process.env.SPOTTER_PARENT_PID;
+  const prevBackend = process.env.SPOTTER_BACKEND;
+  const prevChildBackend = process.env.SPOTTER_CHILD_BACKEND;
   try {
+    delete process.env.SPOTTER_BACKEND;
+    delete process.env.SPOTTER_CHILD_BACKEND;
     process.env.SPOTTER_PARENT_PID = '12345';
     assert.equal(isChildCall(), true);
     process.env.SPOTTER_PARENT_PID = '';
     assert.equal(isChildCall(), false);
     delete process.env.SPOTTER_PARENT_PID;
     assert.equal(isChildCall(), false);
+
+    process.env.SPOTTER_BACKEND = 'codex-cli';
+    assert.equal(isChildCall(), true);
+    delete process.env.SPOTTER_BACKEND;
+    assert.equal(isChildCall(), false);
+
+    process.env.SPOTTER_CHILD_BACKEND = 'codex-sidecar';
+    assert.equal(isChildCall(), true);
+    process.env.SPOTTER_CHILD_BACKEND = '';
+    assert.equal(isChildCall(), false);
   } finally {
-    if (prev === undefined) delete process.env.SPOTTER_PARENT_PID;
-    else process.env.SPOTTER_PARENT_PID = prev;
+    restoreEnv('SPOTTER_PARENT_PID', prevParent);
+    restoreEnv('SPOTTER_BACKEND', prevBackend);
+    restoreEnv('SPOTTER_CHILD_BACKEND', prevChildBackend);
   }
 });
+
+function restoreEnv(key, value) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 test('isSubagentCall: true when input.agent_id is a non-empty string', () => {
   assert.equal(isSubagentCall({ agent_id: 'abc' }), true);

@@ -8,7 +8,7 @@
 // Silent fallback (exit 0 with missing behaviour) is forbidden. See §14.1.
 //
 // v0.2 gate helpers (plan §18 / C:\Users\kite_\.claude\plans\10-cuddly-codd.md):
-// - isChildCall(): env-var gate for Spotter's own claude -p invocations
+// - isChildCall(): env-var gate for Spotter's own child backend invocations
 // - isSubagentCall(input): agent_id gate for Bell's Task subagent hooks
 // Combined with session-start's source='startup' check, these prevent daemon
 // proliferation (v0.1 postmortem §18.2).
@@ -22,7 +22,13 @@ import { statSync } from 'node:fs';
 import { dirname, join, parse } from 'node:path';
 
 export function isChildCall() {
-  const v = process.env.SPOTTER_PARENT_PID;
+  return hasNonEmptyEnv('SPOTTER_PARENT_PID')
+      || hasNonEmptyEnv('SPOTTER_BACKEND')
+      || hasNonEmptyEnv('SPOTTER_CHILD_BACKEND');
+}
+
+function hasNonEmptyEnv(key) {
+  const v = process.env[key];
   return typeof v === 'string' && v.length > 0;
 }
 
