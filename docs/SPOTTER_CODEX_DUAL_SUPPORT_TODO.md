@@ -363,6 +363,13 @@ Gate:
 
 - [x] 既存 Claude workflow が通る。
   `npm test` は 2026-05-06 時点で `211 pass / 1 skipped / 0 fail`。
+- [x] Claude hook 実環境相当の smoke が通る。
+  2026-05-06 に project-local `spotter install -y` 後、Claude Code の新セッションで
+  `UserPromptSubmit` が `mcp__caveat__caveat_search` を推奨し、Claude が実際に
+  caveat search / memory search を実行した。daemon log
+  `daemon-a01044fe-98a3-424a-a2fd-48ea78a80faf.log` では
+  `user_input: pass=false, missing=mcp__caveat__caveat_search`,
+  `tool_used: mcp__caveat__caveat_search`, `turn_end: pass=true` を確認済み。
 - [x] Spotter findings を Codex が structured context として consume できる。
   `SpotterFinding[]` は `SidecarContextBlock` 互換 JSON として context-file に渡される。
 - [x] Codex risk / review result を prose scraping なしで保存できる。

@@ -60,6 +60,8 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **v0.13.3 で部分対処**: カタログ**外**のハルシネーション (例: `Skill(tl)`、training 記憶由来の架空ツール名) は prompt 明示 + `filterCatalogMisses` の二重防御で遮断済み。**カタログ内の過検出** (Read 乱発 / caveat 誤爆等) はそのまま残っているためこの項目は継続。
 
+**2026-05-06 実セッション smoke**: Claude Code 新セッションで「過去のナレッジが知りたい」という入力に対し、Spotter は `mcp__caveat__caveat_search` を推奨。Claude は追加 context を受け入れて caveat search を 2 回実行し、続けて memory search も実行した。daemon log では `user_input: pass=false, missing=mcp__caveat__caveat_search` → `tool_used: mcp__caveat__caveat_search` → `turn_end: pass=true`。少なくともこのケースでは過検出ではなく、期待どおりの介入として機能。
+
 **次アクション**: 数日の実運用 → `spotter diagnostics logs --json` で turn_end の `pass=false` 件数、missing 内訳、catalog-external drop を集計し、ユーザーが受け入れた指摘 / 却下した指摘の比率を観測。過検出が目立つなら (a) few-shot 増量、(b) カテゴリ別優先度付け、(c) カタログ description 側での「on-demand only」明示、のいずれかを検討。
 
 ### preamble 268 件時の Haiku 判定品質
@@ -71,6 +73,8 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 ### preamble 肥大による first call レイテンシ悪化
 
 **背景**: v0.13.1 実測で first=22-32s、45s timeout に対して 50-70% 域。v1.0.0 で preamble が 4 倍以上に膨らんだため first の悪化が懸念される。prompt caching が効けば 2 回目以降は問題ないが、cold の first は直撃する。45s timeout を超えたら daemon が `E_HAIKU_TIMEOUT` で落ちる。
+
+**2026-05-06 実セッション smoke**: Spotter repo の project-local tool-db 366 件で Claude Code 実セッションを起動。`user_input` first call は `duration_ms=11629`、その後の `turn_end` resumed call は `duration_ms=27746`。45s timeout には収まったが、first が 10 秒台に乗ることは確認済み。体感上は許容範囲だが継続観測対象。
 
 **次アクション**: v1.3.0 以降の daemon ログを `spotter diagnostics logs --json` で集計し、`stages.user_input.modes.first` / `stages.turn_end.modes.first` の duration を見る。40s 付近に張り付くようなら (a) description truncate、(b) daemon timeout 60s 緩和、(c) プラグイン単位の選別機構 のどれかを検討。timeout 突破頻発なら緊急対処。
 
