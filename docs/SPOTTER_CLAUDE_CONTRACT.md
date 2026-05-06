@@ -5,6 +5,13 @@
 
 正本は `CLAUDE.md`。ここは実装時に参照する checklist と test 対応表。
 
+関連文書:
+
+- Claude / Codex second-pass workflow: [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md)
+- 完了済み dual-support TODO: [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)
+- 主判定 backend migration: [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md)
+- 現状課題と観測タスク: [`open-issues.md`](open-issues.md)
+
 ## Command Contract
 
 Public CLI:
@@ -172,6 +179,20 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   `pass:false`, missing-tool counts, duration summaries, catalog-external drops,
   role-collapse resets, Haiku failures, handler errors, fatal exits, and Codex risk
   dispatch signals without changing daemon behavior.
+
+## Primary Backend Vs Second-Pass Workflow
+
+Primary auditor backend は `UserPromptSubmit` / `Stop` 相当の主判定を返す経路です。
+この backend は hook hot path 上で `{pass, missing_tools}` または `SpotterJudgment` を返し、
+Claude-facing projection の入力になります。現行 default は Claude Haiku です。
+
+Second-pass workflow は、主判定で得た `SpotterFinding[]` を別の観点で確認する経路です。
+`spotter codex risk-check|review|explore|opinion|work` はここに属し、`codex-sidecar`
+を呼ぶ場合でも hook の主判定そのものを置き換えません。daemon からの `risk-check`
+dispatch も opt-in かつ detached であり、hook response は Codex を待ちません。
+
+主判定 backend を Codex CLI または `codex-sidecar` に移す作業は
+[`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) の対象です。
 
 ## Regression Coverage
 

@@ -5,6 +5,8 @@
 この文書の範囲は、Claude-first を維持したまま Codex adapter / sidecar workflow を追加することです。
 `UserPromptSubmit` / `Stop` の primary auditor backend を host agent ごとに切り替える次段階の計画は
 [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) を参照してください。
+実装済み phase と完了条件は [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)、
+維持すべき Claude 側 contract は [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md) にあります。
 
 ## 目標
 

@@ -4,6 +4,18 @@
 作業計画書兼 TODO。`CLAUDE.md` を正本とし、既存の Claude hook contract と
 daemon proliferation safety を壊さない。
 
+## Document Map
+
+- 正本: [`../CLAUDE.md`](../CLAUDE.md)
+- 現状課題: [`open-issues.md`](open-issues.md)
+- Claude hook / daemon / Haiku contract: [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md)
+- 完了済みの Claude / Codex second-pass workflow 計画: [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)
+- second-pass workflow の設計ブリーフ: [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md)
+- 歴史的な daemon 増殖事故: [`spotter-plan.md`](spotter-plan.md) §18
+
+この文書は、完了済みの `codex_risk_check` / `codex_review` / `codex_work` を
+`UserPromptSubmit` / `Stop` の主判定 backend と混同しないための次段階計画です。
+
 ## Goal
 
 最終 default は Phase 4 の backend matrix evaluation で決める。
@@ -65,8 +77,10 @@ version-aware にし、unknown event shape を hidden fallback しない。
 Codex host で Spotter が Codex CLI を呼ぶと、構図は `Codex primary -> Spotter -> Codex CLI`。
 これはユーザーの希望する方向だが、無制限にやると Claude 時代の daemon 増殖事故と同じ種類の
 事故になり得る。Codex backend spawn には必ず `SPOTTER_PARENT_PID`,
-`SPOTTER_SIDECAR` 相当の marker、`SPOTTER_BACKEND=codex-cli` を付け、Spotter hook /
-Codex plugin / future Codex integration が再入しない gate を置く。
+`SPOTTER_BACKEND=codex-cli`、`SPOTTER_CHILD_BACKEND=codex-cli` 相当の marker を付け、
+Spotter hook / Codex plugin / future Codex integration が再入しない gate を置く。
+`SPOTTER_SIDECAR=1` は `codex-sidecar` 子プロセス向けの既存 marker なので、Codex CLI
+backend では名前を混同しない。
 
 ### 3. Codex host integration の入口が未確定
 
@@ -81,9 +95,9 @@ Codex 側 event model が未確定のまま、Claude hook 前提の daemon を�
 
 ### 4. Claude host の latency
 
-Claude host で primary backend を `codex-sidecar` にすると、UserPromptSubmit / Stop が
-Codex を待つ。現行 Haiku でも first 10-30s があり、Codex sidecar がそれを上回るなら
-体感悪化する。Claude host では `codex-sidecar` primary を sync hook に入れる前に、
+Claude host で primary backend を Codex 系 backend (`codex-sidecar` または Codex CLI) にすると、
+UserPromptSubmit / Stop が Codex を待つ。現行 Haiku でも first 10-30s があり、選択 backend が
+それを上回るなら体感悪化する。Claude host では選択 backend を sync hook に入れる前に、
 timeout budget と observed latency を必ず測る。
 
 この問題は最重要だが、解決順序は「Codex native で最適化 → Claude に移植」。Claude hook は
@@ -92,16 +106,16 @@ UX への影響が直撃するため、backend 実験の場にしない。Claude
 
 ### 5. Fallback の扱い
 
-ユーザー方針として hidden fallback は禁止。Claude host で `codex-sidecar` が無い場合に
-Haiku を使うのは「現状維持 compatibility mode」として明示する。Codex host では
-Codex CLI が無い場合に Haiku へ落とさない。Codex 対応を謳うなら、Codex backend の不在は
-structured error にする。
+ユーザー方針として hidden fallback は禁止。Claude host で選択された Codex backend が無い場合に
+Haiku を使うのは「現状維持 compatibility mode」として明示された policy の場合だけにする。
+Codex host では Codex CLI が無い場合に Haiku へ落とさない。Codex 対応を謳うなら、
+Codex backend の不在は structured error にする。
 
 ## TODO
 
 ### Phase 0. Terminology And Contract
 
-- [ ] `docs/SPOTTER_CLAUDE_CONTRACT.md` に "primary auditor backend" と
+- [x] `docs/SPOTTER_CLAUDE_CONTRACT.md` に "primary auditor backend" と
   "second-pass sidecar workflow" の違いを追記する。
 - [x] `docs/SPOTTER_CODEX_DUAL_SUPPORT.md` に、現状は second-pass 完了であり
   primary backend migration はこの文書の対象である、と明記する。
@@ -112,7 +126,7 @@ structured error にする。
 
 Gate:
 
-- [ ] docs 上で「TODO 完了 = codex-sidecar が主 backend」だと読める矛盾がない。
+- [x] docs 上で「TODO 完了 = codex-sidecar が主 backend」だと読める矛盾がない。
 
 ### Phase 1. Backend Interface
 
@@ -139,7 +153,7 @@ Gate:
 - [ ] Codex CLI stdout JSONL parser を実装する。final response 以外の event shape に依存しすぎない。
 - [ ] invalid JSON / schema mismatch / non-zero exit / timeout を structured error にする。
 - [ ] Codex CLI spawn env に recursion marker を入れる:
-  `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND=codex-cli`, `SPOTTER_SIDECAR=1`。
+  `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND=codex-cli`, `SPOTTER_CHILD_BACKEND=codex-cli`。
 - [ ] Codex CLI backend が Spotter hooks / daemon を増殖させないことを unit / smoke で確認する。
 - [ ] Haiku backend と Codex CLI backend の latency / process count / output validity を同じ fixture で比較する。
 
@@ -197,21 +211,25 @@ Gate:
 - [ ] Phase 4 で選んだ Claude host 向け backend policy を Claude hook に移植する。
   初期候補は `codex-sidecar` だが、`Claude + Codex CLI` が primary auditor として優位なら
   `codex-cli` を default にする。
-- [ ] `codex-sidecar` primary auditor workflow を追加する。
+- [ ] Phase 4 で `codex-sidecar` を Claude primary 候補に残す場合は、
+  `codex-sidecar` primary auditor workflow を追加する。
   既存 risk / review ではなく、`user_input` / `turn_end` 判定専用 workflow が必要。
-- [ ] `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義する。
-- [ ] `codex-sidecar` unavailable の場合のみ Haiku compatibility mode に入る。
+- [ ] Phase 4 で `codex-sidecar` を Claude primary 候補に残す場合は、
+  `codex-sidecar diagnostics --preset auditor` 相当の availability check を定義する。
+- [ ] 選択 backend unavailable の場合に Haiku compatibility mode へ入るかどうかを
+  Phase 4 の結果に基づいて policy 固定する。
+  hidden fallback は不可。互換 mode を許す場合も daemon log と diagnostics に明示する。
 - [ ] compatibility mode は daemon log と diagnostics に明示する。
 - [ ] Claude hook timeout budget 内に収まるか実測する。
-- [ ] `Stop` hook で `codex-sidecar` が遅い場合の扱いを決める。
+- [ ] `Stop` hook で選択 backend が遅い場合の扱いを決める。
   hidden fallback は不可。timeout なら timeout error または明示 compatibility mode のどちらかを
   事前 policy で固定する。
 
 Gate:
 
 - [ ] Claude 実セッション smoke が通る。
-- [ ] `codex-sidecar` available 時に Haiku が呼ばれないことを log / test で確認。
-- [ ] `codex-sidecar` unavailable 時に Haiku compatibility mode が明示される。
+- [ ] 選択 backend available 時に Haiku が呼ばれないことを log / test で確認。
+- [ ] 選択 backend unavailable 時の error / compatibility mode が明示される。
 - [ ] Claude host の体感遅延が現行 Haiku より悪化していない、または悪化が明示的に許容されている。
 
 ### Phase 6. Diagnostics And Operations
@@ -246,7 +264,7 @@ Gate:
 ## Non-Goals
 
 - Codex host で Haiku に fallback すること。
-- Claude host で `codex-sidecar` 不在時に silent pass すること。
+- Claude host で選択 backend 不在時に silent pass すること。
 - Codex CLI に write permission を与えること。primary auditor は read-only 判定専用。
 - `codex_work` を primary auditor に混ぜること。
 
@@ -255,5 +273,20 @@ Gate:
 - Codex host integration の自然な入口は plugin / MCP / wrapper / app-server / exec-server のどれか。
 - `codex exec --output-schema` の final response 取り出しは、version drift にどこまで耐えるか。
 - `codex exec --ephemeral` が本当に session file / project state を汚さないか。
-- Claude host で `codex-sidecar` primary が hook timeout 内に安定して収まるか。
+- Claude host で選択 backend が hook timeout 内に安定して収まるか。
 - `codex-sidecar` 側に auditor 専用 preset / workflow を追加する必要があるか。
+
+## Audit Snapshot
+
+2026-05-06 に計画書と関連 docs を再監査した。
+
+- README / README.ja / Claude contract / dual-support docs / open issues から、この文書への導線を確認済み。
+- `SPOTTER_CLAUDE_CONTRACT.md` に primary auditor backend と second-pass workflow の境界を追記済み。
+- local `codex-cli 0.128.0-alpha.1` で `codex exec --json --output-schema --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --cd` が存在することを確認済み。
+- Phase 4 の matrix evaluation と矛盾しないよう、Claude host の default は `codex-sidecar` 固定ではなく
+  `codex-sidecar` / Codex CLI の実測結果で決める表現に統一済み。
+- Codex CLI backend の再帰 marker は `SPOTTER_SIDECAR=1` と混同せず、
+  `SPOTTER_BACKEND=codex-cli` / `SPOTTER_CHILD_BACKEND=codex-cli` として扱う方針に修正済み。
+
+現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
+作業項目であり、試験予定として残してよい。

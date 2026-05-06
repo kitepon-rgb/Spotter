@@ -6,12 +6,17 @@ adapter を追加する。
 
 ## Source Of Truth
 
-- 正本: `CLAUDE.md`
-- Claude contract: `docs/SPOTTER_CLAUDE_CONTRACT.md`
-- 現状課題: `docs/open-issues.md`
-- Dual-support 方針: `docs/SPOTTER_CODEX_DUAL_SUPPORT.md`
+- 正本: [`../CLAUDE.md`](../CLAUDE.md)
+- Claude contract: [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md)
+- 現状課題: [`open-issues.md`](open-issues.md)
+- Dual-support 方針: [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md)
+- 次段階の primary auditor backend migration: [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md)
 - この文書: 実装順序、TODO、現時点の所見
-- Sidecar consuming repo 設定: `.codex-sidecar.yml`
+- Sidecar consuming repo 設定: [`../.codex-sidecar.yml`](../.codex-sidecar.yml)
+
+この文書の実装対象は完了済みの second-pass `codex-sidecar` workflow です。
+`UserPromptSubmit` / `Stop` の主判定 backend を Codex CLI / `codex-sidecar` に移す作業は
+[`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) を参照してください。
 
 ## 現在の Spotter 機能整理
 

@@ -76,6 +76,10 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **2026-05-06 実セッション smoke**: Spotter repo の project-local tool-db 366 件で Claude Code 実セッションを起動。`user_input` first call は `duration_ms=11629`、その後の `turn_end` resumed call は `duration_ms=27746`。45s timeout には収まったが、first が 10 秒台に乗ることは確認済み。体感上は許容範囲だが継続観測対象。
 
+**関連計画**: Claude 環境での Spotter 遅延は UX に影響しているため、backend / latency tuning は
+[`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) で扱う。順序は
+Codex native に Spotter を適用して先に最適化し、実測できた改善だけを Claude host に移植する。
+
 **次アクション**: v1.3.0 以降の daemon ログを `spotter diagnostics logs --json` で集計し、`stages.user_input.modes.first` / `stages.turn_end.modes.first` の duration を見る。40s 付近に張り付くようなら (a) description truncate、(b) daemon timeout 60s 緩和、(c) プラグイン単位の選別機構 のどれかを検討。timeout 突破頻発なら緊急対処。
 
 ### claude.ai MCP (Gmail/Calendar/Drive) の過検出率 — 連携環境でのみ残存
