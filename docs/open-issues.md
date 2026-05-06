@@ -91,6 +91,15 @@ codex-sidecar primary auditor の duration / pass=false / missing 件数を同�
 高頻度・低遅延・低コストの構造化 JSON 監査なので、frontier model を暗黙に使うより
 mini model を固定し、必要な smoke / 実験だけ `SPOTTER_CODEX_CLI_MODEL` で上書きする。
 
+**2026-05-07 方針メモ**: Codex native hook の timeout は `UserPromptSubmit` と `Stop` を同一に
+扱わない。`UserPromptSubmit` はユーザー入力直後の体感 UX に直撃するため短く保つ。一方 Codex
+`Stop` は回答後監査で、現行実装では immediate block ではなく `.spotter/codex-pending/` への
+deferred delivery なので、多少長くても UX 影響は相対的に小さい。`Stop` で有用な指摘を timeout
+で落とす損失のほうが大きい可能性があるため、実運用で `E_CODEX_CLI_TIMEOUT` が再発する場合は
+`UserPromptSubmit` は 10-20s 程度、`Stop` は 30-45s 程度の非対称 timeout を検討する。無制限には
+しない。長い `Stop` が次 turn の pending context 配送に間に合わないケースと、プロセス滞留は
+別途 diagnostics で観測する。
+
 **2026-05-06 v1.4.3 Codex native hook 実機 smoke**: Spotter repo の新 Codex thread で
 `spotter --version` が `spotter 1.4.3`、`spotter codex-hook diagnostics --project
 /home/kite/projects/Spotter` が `availability=available` / `codexHooksFeature=enabled` /
