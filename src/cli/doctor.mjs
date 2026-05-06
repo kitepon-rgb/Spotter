@@ -85,16 +85,16 @@ export async function runDoctor() {
     warnings += 1;
   }
 
-  // tool-db (local) if cwd is inside a Spotter project
+  // tool-db (local) if cwd is inside a Spotter project. Claude and Codex use
+  // separate host-local files so one host cannot prune the other's tool list.
   if (projectRoot) {
-    try {
-      const local = await loadDb(localDbPath(projectRoot));
-      const count = Object.keys(local.tools).length;
-      mark(true, `local audit DB: ${count} tools at ${localDbPath(projectRoot)}`);
-    } catch (err) {
-      mark(false, 'local audit DB', err.message);
-      failures += 1;
-    }
+    const claudeDb = await checkLocalAuditDb({ projectRoot, hostAgent: 'claude' });
+    mark(claudeDb.ok, `claude local audit DB: ${claudeDb.count} tools at ${claudeDb.path}`, claudeDb.detail);
+    if (!claudeDb.ok) warnings += 1;
+
+    const codexDb = await checkLocalAuditDb({ projectRoot, hostAgent: 'codex' });
+    mark(codexDb.ok, `codex local audit DB: ${codexDb.count} tools at ${codexDb.path}`, codexDb.detail);
+    if (!codexDb.ok) warnings += 1;
   }
 
   console.log('');
@@ -103,6 +103,23 @@ export async function runDoctor() {
     process.exit(1);
   }
   console.log(`result: OK (${warnings} warnings)`);
+}
+
+async function checkLocalAuditDb({ projectRoot, hostAgent }) {
+  const path = localDbPath(projectRoot, hostAgent);
+  const present = await exists(path);
+  try {
+    const db = await loadDb(path);
+    const count = Object.keys(db.tools).length;
+    return {
+      ok: present,
+      count,
+      path,
+      detail: present ? null : `missing; run spotter db refresh --host-agent ${hostAgent}`,
+    };
+  } catch (err) {
+    return { ok: false, count: 0, path, detail: err.message };
+  }
 }
 
 async function codexSidecarAuditorReadiness(projectRoot) {

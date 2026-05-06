@@ -100,7 +100,8 @@ export async function startDaemon({
   // this specific project can use — mixing in the global DB caused phantom suggestions
   // from previously-visited projects (Gmail tools popping up in projects with no Gmail
   // MCP, etc.). For tests, the caller can pass `tools` directly. For production,
-  // projectRoot drives the load from <projectRoot>/.spotter/tool-db.json.
+  // projectRoot drives the load from the Claude-local audit DB:
+  // <projectRoot>/.spotter/tool-db.json. Codex hooks use their own host DB.
   let toolList;
   if (Array.isArray(tools)) {
     toolList = tools;
@@ -108,7 +109,7 @@ export async function startDaemon({
     if (!projectRoot) {
       throw new TypeError('startDaemon: either `tools` or `projectRoot` must be provided');
     }
-    toolList = await readLocal({ projectRoot });
+    toolList = await readLocal({ projectRoot, hostAgent: 'claude' });
   }
   logFn(`tool-db loaded: ${toolList.length} tools` + (projectRoot ? ` (project=${projectRoot})` : ''));
 

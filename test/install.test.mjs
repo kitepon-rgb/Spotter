@@ -129,7 +129,8 @@ test('install: re-run seeds tool-db even when hooks are unchanged (v1.1.1 regres
   const dir = await mkdtemp(join(tmpdir(), 'spotter-install-refresh-'));
   try {
     let callCount = 0;
-    const mockRefresh = async () => {
+    const mockRefresh = async ({ hostAgent }) => {
+      assert.equal(hostAgent, 'claude');
       callCount++;
       return new Map();
     };

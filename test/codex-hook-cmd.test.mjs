@@ -90,8 +90,9 @@ test('runCodexUserPromptSubmitHook: invokes Codex CLI auditor and emits Codex ad
         hook_event_name: 'UserPromptSubmit',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
-      readLocalFn: async ({ projectRoot }) => {
+      readLocalFn: async ({ projectRoot, hostAgent }) => {
         assert.equal(projectRoot, project);
+        assert.equal(hostAgent, 'codex');
         return [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }];
       },
       createAuditorBackendFn: ({ backend, projectRoot, hostAgent }) => {
@@ -145,7 +146,10 @@ test('runCodexUserPromptSubmitHook: backend error is surfaced as Codex context, 
         cwd: project,
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
-      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+      readLocalFn: async ({ hostAgent }) => {
+        assert.equal(hostAgent, 'codex');
+        return [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }];
+      },
       createAuditorBackendFn: () => ({
         judge: async () => {
           throw new AuditorBackendError('E_CODEX_CLI_EXIT', 'codex-cli exited with code 1', {

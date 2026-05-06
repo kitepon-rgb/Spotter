@@ -73,9 +73,18 @@ export {
   summarizeDaemonLogText,
   summarizeDaemonLogs,
 } from './core/daemon-log-diagnostics.mjs';
-export { loadDb, saveDb, emptyDb, ToolDbSchemaError, globalDbPath, localDbPath } from './tool-db/loader.mjs';
+export { loadDb, saveDb, emptyDb, ToolDbSchemaError, globalDbPath, localDbPath, normalizeToolDbHostAgent } from './tool-db/loader.mjs';
 export { resolveAll } from './tool-db/lookup.mjs';
 export { refresh, readLocal, buildInvestigationSnapshot } from './tool-db/refresh.mjs';
+export {
+  buildCodexInvestigationSnapshot,
+  listCodexMcpServers,
+  listCodexMcpToolsAll,
+  listCodexSkillsAll,
+  parseCodexMcpGetOutput,
+  parseCodexMcpListOutput,
+  parseEnabledCodexPluginIds,
+} from './tool-db/investigate-codex.mjs';
 export { listMcpServers, listMcpToolsAll, bellVisibleName, McpInvestigationError } from './tool-db/investigate-mcp.mjs';
 export { listSkillsAll, listActivePlugins } from './tool-db/investigate-skills.mjs';
 export { listAgentsAll } from './tool-db/investigate-agents.mjs';

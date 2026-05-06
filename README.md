@@ -92,16 +92,16 @@ flowchart LR
       LG["Legacy — ~/.claude/.mcp.json"]
     end
     SCOPES -. merged into .-> MCP
-    MCP --> DB[(Local tool-db.json<br/>name + description<br/>per project)]
+    MCP --> DB[(Host-local tool-db<br/>name + description<br/>per project)]
     SK --> DB
     AG --> DB
     BL --> DB
     DB --> H[Haiku audit<br/>session-scoped, preamble-once]
 ```
 
-The audited catalog lives in `<project>/.spotter/tool-db.json`. **The daemon audits against the local DB only**; the global DB at `~/.spotter/tool-db.json` is a description-reuse cache shared across projects, not an audit source. Each project's local DB always matches the **current** discovery snapshot for that project (stale entries are pruned on refresh), so tools installed in *other* projects can never bleed into this project's audit.
+The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`, while Codex uses `<project>/.spotter/tool-db.codex.json`. **The daemon audits against the Claude local DB only**, and Codex native hooks read the Codex local DB. The global DB at `~/.spotter/tool-db.json` is a description-reuse cache shared across projects, not an audit source. Each host-local DB matches that host's **current** discovery snapshot for the project (stale entries are pruned on refresh), so tools from another project or another host cannot overwrite this session's audit catalog.
 
-**`spotter install` seeds the catalog automatically, and the SessionStart hook runs a background `spotter db refresh` on every Claude Code session start** — so you don't need to invoke catalog commands by hand. Each MCP server's `tools/list` is fetched via JSON-RPC (HTTP / SSE / stdio transports supported); skill and sub-agent metadata comes straight from frontmatter; the claude.ai baseline (25 hand-curated entries for Gmail / Calendar / Drive over OAuth proxy) is injected only when `claude mcp list` confirms the server is present. **You never have to maintain the tool list by hand.**
+**`spotter install` seeds the Claude catalog automatically, and the SessionStart hook runs a background `spotter db refresh` on every Claude Code session start** — so you don't need to invoke Claude catalog commands by hand. Codex uses `spotter db refresh --host-agent codex` and never writes the Claude catalog. Claude discovery reads `claude mcp list` plus Claude skills / sub-agents; Codex discovery reads `codex mcp list/get` plus Codex skills. Each MCP server's `tools/list` is fetched via JSON-RPC (HTTP / SSE / stdio transports supported); skill and sub-agent metadata comes straight from frontmatter; the claude.ai baseline (25 hand-curated entries for Gmail / Calendar / Drive over OAuth proxy) is injected only for Claude when `claude mcp list` confirms the server is present. **You never have to maintain the tool list by hand.**
 
 ## Spotter and Throughline
 
@@ -118,11 +118,15 @@ Both share the principle of **"don't rely on the primary agent (Bell) to do it i
 ## Common commands
 
 ```bash
-spotter db list          # show the current local tool-db (what the daemon actually audits against)
-spotter db refresh       # rediscover MCP / skills / sub-agents and update the DB
+spotter db list          # show the current Claude local tool-db
+spotter db list --host-agent codex
+                         # show the current Codex local tool-db
+spotter db refresh       # rediscover Claude MCP / skills / sub-agents and update the Claude DB
+spotter db refresh --host-agent codex
+                         # rediscover Codex MCP / skills and update .spotter/tool-db.codex.json
                          #   (run automatically on install and on SessionStart since v1.1.0,
-                         #    so this is rarely needed by hand)
-spotter db rebuild       # wipe both local + global DBs and refresh from scratch
+                         #    so the Claude form is rarely needed by hand)
+spotter db rebuild       # wipe Claude local + global DBs and refresh from scratch
                          #   (use after catalog-shape changes)
 spotter status           # list running daemons
 spotter doctor           # environment check (Node / claude CLI / Codex readiness / tool-db integrity)

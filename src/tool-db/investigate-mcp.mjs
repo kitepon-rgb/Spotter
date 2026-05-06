@@ -187,7 +187,7 @@ async function getStdioConfig({ name, claudeBin, projectRoot }) {
   return { command, args };
 }
 
-function splitCommandLine(s) {
+export function splitCommandLine(s) {
   const windows = extractUnquotedWindowsExecutable(s);
   if (windows) {
     const args = windows.rest.length > 0 ? splitArgs(windows.rest) : [];
@@ -207,7 +207,7 @@ function extractUnquotedWindowsExecutable(s) {
 // not a shell evaluator: it only preserves quoted spans and strips the quote
 // delimiters. Backslashes outside quotes are kept verbatim so Windows paths in
 // args do not get mangled.
-function splitArgs(s) {
+export function splitArgs(s) {
   const out = [];
   let current = '';
   let quote = null;

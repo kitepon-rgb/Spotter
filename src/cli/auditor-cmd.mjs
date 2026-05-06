@@ -57,7 +57,7 @@ export async function runAuditorJudgeCommand({
     return;
   }
   const payload = JSON.parse(await readFile(opts.inputPath, 'utf8'));
-  const catalog = await readLocalFn({ projectRoot: opts.projectRoot });
+  const catalog = await readLocalFn({ projectRoot: opts.projectRoot, hostAgent: opts.hostAgent });
   const backend = createAuditorBackendFn({
     backend: opts.backend,
     catalog,
@@ -93,9 +93,9 @@ export async function runAuditorMatrixCommand({
 
   const payload = JSON.parse(await readFile(opts.inputPath, 'utf8'));
   const auditorInput = toAuditorInput({ stage: opts.stage, payload });
-  const catalog = await readLocalFn({ projectRoot: opts.projectRoot });
   const matrix = [];
   for (const row of AUDITOR_MATRIX_ROWS) {
+    const catalog = await readLocalFn({ projectRoot: opts.projectRoot, hostAgent: row.hostAgent });
     matrix.push(await runAuditorMatrixRow({
       row,
       auditorInput,

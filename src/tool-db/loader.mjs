@@ -1,7 +1,8 @@
 // tool-db: read/write JSON files holding {name -> description} pairs.
 //
 // Two layers:
-//   - local:  <project>/.spotter/tool-db.json
+//   - local:  <project>/.spotter/tool-db.json          (Claude host)
+//             <project>/.spotter/tool-db.codex.json    (Codex host)
 //   - global: ~/.spotter/tool-db.json
 //
 // Both have the same shape:
@@ -25,8 +26,20 @@ export function globalDbPath() {
   return join(homedir(), '.spotter', 'tool-db.json');
 }
 
-export function localDbPath(projectRoot) {
-  return join(projectRoot, '.spotter', 'tool-db.json');
+export function localDbPath(projectRoot, hostAgent = 'claude') {
+  const host = normalizeToolDbHostAgent(hostAgent);
+  const file = host === 'claude' ? 'tool-db.json' : `tool-db.${host}.json`;
+  return join(projectRoot, '.spotter', file);
+}
+
+export function normalizeToolDbHostAgent(hostAgent = 'claude') {
+  if (hostAgent === undefined || hostAgent === null || hostAgent === '') {
+    return 'claude';
+  }
+  if (hostAgent === 'claude' || hostAgent === 'codex' || hostAgent === 'automation') {
+    return hostAgent;
+  }
+  throw new TypeError(`tool-db hostAgent must be claude, codex, or automation; got ${hostAgent}`);
 }
 
 // Load a DB file. Missing file → returns empty db (this is normal, not an error).

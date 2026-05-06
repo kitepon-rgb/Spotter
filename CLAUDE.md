@@ -101,7 +101,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **並走デーモン型**: SessionStart で 1 プロセス起動、SessionEnd で shutdown。Bell から呼ぶのではなく、hook 経由で **Bell の意思と独立に** user_input / tool_used / turn_end を受け取る。「Bell が自覚して呼ぶ」設計は **本プロダクトの存在意義を破壊する**ので却下されている。
 - **Claude 呼び出しは session-scoped + preamble-once + 事後回復** (v0.6.0 で更新): `claude -p --session-id <uuid>` で初回セッション確立、以降 `--resume` で再接続。**初回のみ preamble (role + schema + few-shot + catalog) を送り、以降は per-turn delta のみ**送ることで session を肥大化させない (v0.5.x は毎回 full 送信していて resumed が first より遅いという逆の結果が出ていた)。role collapse は `parseHaikuResponse` が `E_HAIKU_SCHEMA` を返した瞬間に `callHaiku.reset()` で session-id を rotate、次回呼び出しで preamble が新 session に自動で再送される。当該ターンは silent pass。**これは §0 の silent fallback 禁止違反ではなく、「想定済み異常 = 記録 + 正常リターン」の適用**。
 - **隔離実行**: Spotter の workdir (`~/.spotter/workdir/`) には **CLAUDE.md を置かない**。プロジェクト文脈に引きずられないことが品質保証の要件。
-- **ツールカタログは project-local tool-db**: daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。グローバル DB は description 再利用キャッシュで、Haiku の audit 入力には混ぜない。MCP は `tools/list`、スキル / サブエージェントは frontmatter の description から収集する。
+- **ツールカタログは host-local tool-db**: Claude daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。Codex native hooks は `<project>/.spotter/tool-db.codex.json` だけを読む。グローバル DB は description 再利用キャッシュで、audit 入力には混ぜない。Claude refresh は `claude mcp list` と Claude skills / sub-agents、Codex refresh は `codex mcp list/get` と Codex skills を discovery し、片方の refresh がもう片方の local DB を prune / overwrite してはいけない。
 - **Stop hook の介入**: `decision: "block"` + `reason` で Bell に継続応答を生成させる。`stop_hook_active: true` を見たら即 pass することで max 1 回ループを担保 (Claude Code 側の機構で自動)。
 
 ## §0 実装規範 (最重要)
@@ -141,7 +141,7 @@ spotter daemon start              # 内部用 (hook から呼ばれる)
 spotter hook <event>              # 内部用 (Claude Code hook から呼ばれる)
 ```
 
-`spotter catalog *` は v0.1 設計時の YAML catalog 時代のコマンドで、現行実装には存在しない。現行の catalog は project-local `.spotter/tool-db.json` を中心に `spotter db *` で扱う。
+`spotter catalog *` は v0.1 設計時の YAML catalog 時代のコマンドで、現行実装には存在しない。現行の catalog は host-local DB で扱い、Claude は `.spotter/tool-db.json`、Codex は `.spotter/tool-db.codex.json` を正本にする。CLI では `spotter db * --host-agent codex` で Codex 側を明示する。
 `spotter codex *` は `SpotterFinding[]` を `codex-sidecar` に渡す explicit second-pass workflow であり、
 `UserPromptSubmit` / `Stop` の primary auditor backend 置換ではない。primary backend migration は
 [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) を参照する。

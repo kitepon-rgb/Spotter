@@ -30,9 +30,11 @@ Usage:
   spotter uninstall [-y]                remove spotter hooks from <cwd>/.claude/settings.json
                                         and remove <cwd>/.spotter/marker.json
   spotter uninstall --user [-y]         remove from ~/.claude/settings.json
-  spotter db list                       show local tool-db (what the daemon audits)
-  spotter db refresh                    discover MCP / skills / sub-agents and update DB
-  spotter db rebuild                    wipe local + global DBs then refresh
+  spotter db list [--host-agent HOST]   show host-local tool-db (claude by default)
+  spotter db refresh [--host-agent HOST]
+                                        discover MCP / skills / sub-agents and update DB
+  spotter db rebuild [--host-agent HOST]
+                                        wipe host-local + global DBs then refresh
   spotter status                        show running daemons
   spotter doctor                        environment diagnostic
   spotter diagnostics logs [--json]     summarize daemon logs for precision diagnostics
@@ -84,9 +86,9 @@ async function main() {
     }
     case 'db': {
       const sub = rest[0];
-      if (sub === 'list') { await runDbList(); return; }
-      if (sub === 'refresh') { await runDbRefresh(); return; }
-      if (sub === 'rebuild') { await runDbRebuild(); return; }
+      if (sub === 'list') { await runDbList({ argv: rest.slice(1) }); return; }
+      if (sub === 'refresh') { await runDbRefresh({ argv: rest.slice(1) }); return; }
+      if (sub === 'rebuild') { await runDbRebuild({ argv: rest.slice(1) }); return; }
       process.stderr.write(`unknown db subcommand: ${sub}\n${USAGE}`);
       process.exit(2);
       return;

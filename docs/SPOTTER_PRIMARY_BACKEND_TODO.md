@@ -175,6 +175,11 @@ Gate:
   Haiku は factory 時に `buildPreamble({tools:catalog})` と `createHaikuCaller` を初期化する。
 - [x] `catalog` は daemon startup 時点の project-local `readLocal` 結果を正本にし、
   per-turn で再読込しない。これは現行 preamble-once behavior と一致させるため。
+- [x] tool-db は host-local に分離する。Claude daemon は
+  `<project>/.spotter/tool-db.json`、Codex native hooks は
+  `<project>/.spotter/tool-db.codex.json` を読み、`spotter db refresh --host-agent codex`
+  は Codex MCP / skills discovery だけで Codex DB を更新する。Claude refresh が Codex
+  DB を prune したり、Codex refresh が Claude DB を上書きしたりしてはいけない。
 - [x] auditor response parser を backend-neutral にする。
   現行 `parseHaikuResponse` の JSON schema check は `parseAuditorResponse` /
   `validateAuditorResponse` として切り出し、Codex CLI backend でも同じ schema check を使う。

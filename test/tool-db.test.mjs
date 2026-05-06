@@ -3,9 +3,21 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadDb, saveDb, emptyDb, ToolDbSchemaError } from '../src/tool-db/loader.mjs';
+import {
+  loadDb,
+  saveDb,
+  emptyDb,
+  ToolDbSchemaError,
+  localDbPath,
+  normalizeToolDbHostAgent,
+} from '../src/tool-db/loader.mjs';
 import { resolveAll } from '../src/tool-db/lookup.mjs';
 import { readLocal } from '../src/tool-db/refresh.mjs';
+import {
+  parseCodexMcpGetOutput,
+  parseCodexMcpListOutput,
+  parseEnabledCodexPluginIds,
+} from '../src/tool-db/investigate-codex.mjs';
 import { parseMcpListOutput, bellVisibleName, buildStdioSpawn } from '../src/tool-db/investigate-mcp.mjs';
 import { parseFrontmatter } from '../src/tool-db/frontmatter.mjs';
 import { listSkillsAll } from '../src/tool-db/investigate-skills.mjs';
@@ -67,6 +79,16 @@ test('saveDb + loadDb: roundtrip preserves entries', async () => {
   const loaded = await loadDb(localPath);
   assert.deepEqual(loaded.tools, db.tools);
   await rm(dir, { recursive: true, force: true });
+});
+
+test('localDbPath: separates Claude and Codex host-local DBs', () => {
+  const projectRoot = '/repo/project';
+  assert.equal(localDbPath(projectRoot), join(projectRoot, '.spotter', 'tool-db.json'));
+  assert.equal(localDbPath(projectRoot, 'claude'), join(projectRoot, '.spotter', 'tool-db.json'));
+  assert.equal(localDbPath(projectRoot, 'codex'), join(projectRoot, '.spotter', 'tool-db.codex.json'));
+  assert.equal(localDbPath(projectRoot, 'automation'), join(projectRoot, '.spotter', 'tool-db.automation.json'));
+  assert.throws(() => normalizeToolDbHostAgent('unknown'), /hostAgent/);
+  assert.throws(() => localDbPath(projectRoot, 'other'), /hostAgent/);
 });
 
 test('resolveAll: local hit only — no investigation, no writes', async () => {
@@ -937,7 +959,6 @@ test('readLocal: returns ONLY local entries — global tools must not leak in', 
   const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-readlocal-'));
   try {
     // Manually seed only the local DB; readLocal must ignore the global DB entirely.
-    const { localDbPath } = await import('../src/tool-db/loader.mjs');
     await saveDb(localDbPath(projectRoot), {
       version: 1,
       tools: { 'mcp__local__only': 'local-only desc' },
@@ -951,4 +972,60 @@ test('readLocal: returns ONLY local entries — global tools must not leak in', 
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
   }
+});
+
+test('readLocal: host-specific DBs do not overwrite or leak into each other', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-readlocal-host-'));
+  try {
+    await saveDb(localDbPath(projectRoot, 'claude'), {
+      version: 1,
+      tools: { 'mcp__claude__only': 'claude-only desc' },
+    });
+    await saveDb(localDbPath(projectRoot, 'codex'), {
+      version: 1,
+      tools: { 'mcp__codex__only': 'codex-only desc' },
+    });
+
+    assert.deepEqual(await readLocal({ projectRoot, hostAgent: 'claude' }), [
+      { name: 'mcp__claude__only', description: 'claude-only desc' },
+    ]);
+    assert.deepEqual(await readLocal({ projectRoot, hostAgent: 'codex' }), [
+      { name: 'mcp__codex__only', description: 'codex-only desc' },
+    ]);
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('codex investigation parsers: derive enabled MCP stdio servers and plugin ids', () => {
+  const list = `Name        Command        Args                  Env  Cwd  Status   Auth
+caveat      /usr/bin/node  /bin/caveat mcp-server -    -    enabled  Unsupported
+disabled    node           server.js              -    -    disabled Unsupported
+`;
+  assert.deepEqual(parseCodexMcpListOutput(list), ['caveat']);
+
+  const get = `caveat
+  enabled: true
+  transport: stdio
+  command: /usr/bin/node
+  args: /bin/caveat mcp-server --name 'two words'
+  cwd: -
+  env: -
+`;
+  assert.deepEqual(parseCodexMcpGetOutput(get), {
+    name: 'caveat',
+    transport: 'stdio',
+    command: '/usr/bin/node',
+    args: ['/bin/caveat', 'mcp-server', '--name', 'two words'],
+    cwd: undefined,
+    env: {},
+  });
+
+  assert.deepEqual(parseEnabledCodexPluginIds(`
+[plugins."github@openai-curated"]
+enabled = true
+
+[plugins."figma@openai-curated"]
+enabled = false
+`), ['github@openai-curated']);
 });

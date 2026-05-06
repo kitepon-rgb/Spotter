@@ -11,6 +11,14 @@ import { refresh, readLocal } from '../tool-db/refresh.mjs';
 import { localDbPath, globalDbPath, loadDb, saveDb, emptyDb } from '../tool-db/loader.mjs';
 import { writeFile } from 'node:fs/promises';
 
+const DB_USAGE = `spotter db — manage the host-specific tool-db
+
+Usage:
+  spotter db list [--host-agent claude|codex|automation]
+  spotter db refresh [--host-agent claude|codex|automation]
+  spotter db rebuild [--host-agent claude|codex|automation]
+`;
+
 function requireProjectRoot() {
   const root = findSpotterMarker(process.cwd());
   if (!root) {
@@ -20,11 +28,12 @@ function requireProjectRoot() {
   return root;
 }
 
-export async function runDbList() {
+export async function runDbList({ argv = [] } = {}) {
   const projectRoot = requireProjectRoot();
-  const tools = await readLocal({ projectRoot });
+  const opts = parseDbArgs(argv);
+  const tools = await readLocal({ projectRoot, hostAgent: opts.hostAgent });
   if (tools.length === 0) {
-    process.stdout.write('(empty — run `spotter db refresh` to populate)\n');
+    process.stdout.write(`(empty — run \`spotter db refresh --host-agent ${opts.hostAgent}\` to populate)\n`);
     return;
   }
   for (const { name, description } of tools) {
@@ -32,28 +41,53 @@ export async function runDbList() {
   }
 }
 
-export async function runDbRefresh() {
+export async function runDbRefresh({ argv = [] } = {}) {
   const projectRoot = requireProjectRoot();
+  const opts = parseDbArgs(argv);
   const log = (msg) => process.stderr.write(`spotter db refresh: ${msg}\n`);
-  log('discovering MCP servers, skills, and sub-agents...');
-  const resolved = await refresh({ projectRoot, logFn: log });
+  log(`discovering MCP servers, skills, and sub-agents for host=${opts.hostAgent}...`);
+  const resolved = await refresh({ projectRoot, hostAgent: opts.hostAgent, logFn: log });
   const counts = { local: 0, global: 0, investigated: 0 };
   for (const { source } of resolved.values()) counts[source] = (counts[source] ?? 0) + 1;
   process.stdout.write(
     `${resolved.size} tool(s) resolved (local=${counts.local}, global=${counts.global}, investigated=${counts.investigated})\n`
-      + `local DB:  ${localDbPath(projectRoot)}\n`
+      + `local DB:  ${localDbPath(projectRoot, opts.hostAgent)}\n`
       + `global DB: ${globalDbPath()}\n`
   );
 }
 
-export async function runDbRebuild() {
+export async function runDbRebuild({ argv = [] } = {}) {
   const projectRoot = requireProjectRoot();
+  const opts = parseDbArgs(argv);
   // v1.0.0: wipe BOTH local and global DB. Rationale: the catalog scope changed in
   // v1.0.0 (Claude Code built-ins removed; skills + sub-agents added). Stale entries
   // from older versions would otherwise linger in the global DB since `refresh` only
   // touches names currently produced by investigation. Users need a clean slate.
-  await saveDb(localDbPath(projectRoot), emptyDb());
+  await saveDb(localDbPath(projectRoot, opts.hostAgent), emptyDb());
   await saveDb(globalDbPath(), emptyDb());
-  process.stderr.write(`spotter db rebuild: cleared local + global DB, refreshing...\n`);
-  await runDbRefresh();
+  process.stderr.write(`spotter db rebuild: cleared ${opts.hostAgent} local + global DB, refreshing...\n`);
+  await runDbRefresh({ argv });
+}
+
+function parseDbArgs(argv) {
+  const opts = { hostAgent: 'claude' };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--host-agent') {
+      opts.hostAgent = requireValue(argv, (index += 1), '--host-agent');
+      continue;
+    }
+    process.stderr.write(`unknown db option: ${arg}\n${DB_USAGE}`);
+    process.exit(2);
+    return opts;
+  }
+  return opts;
+}
+
+function requireValue(argv, index, option) {
+  const value = argv[index];
+  if (!value || value.startsWith('--')) {
+    throw Object.assign(new Error(`${option} requires a value`), { exitCode: 2 });
+  }
+  return value;
 }

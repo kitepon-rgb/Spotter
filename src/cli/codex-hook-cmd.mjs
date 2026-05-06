@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,13 +26,14 @@ const DEFAULT_CODEX_HOOK_AUDITOR_TIMEOUT_MS = 20_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
 const DEFAULT_CODEX_STOP_SHORT_FINAL_MAX_CHARS = 120;
 const CODEX_PENDING_DIR = 'codex-pending';
+const CODEX_HOOK_EVENTS_FILE = 'codex-hook-events.jsonl';
 
 const CODEX_HOOK_USAGE = `spotter codex-hook — experimental Codex native hook adapter
 
 Usage:
   spotter codex-hook install [--codex-home DIR]
   spotter codex-hook uninstall [--codex-home DIR]
-  spotter codex-hook diagnostics [--codex-home DIR]
+  spotter codex-hook diagnostics [--codex-home DIR] [--project DIR]
   spotter codex-hook user-prompt-submit
   spotter codex-hook stop
 
@@ -73,30 +74,67 @@ export async function runCodexUserPromptSubmitHook({
   readInput = readStdinJson,
   readLocalFn = readLocal,
   createAuditorBackendFn = createAuditorBackend,
+  recordHookEventFn = appendCodexHookEvent,
   writeOutput = (text) => process.stdout.write(text),
+  writeError = (text) => process.stderr.write(text),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
   const projectRoot = findSpotterMarker(input.cwd);
   if (!projectRoot) return;
+  const startedAt = Date.now();
 
   const prompt = requireString(input, 'prompt');
   const contexts = await drainCodexPendingContexts({ projectRoot, sessionId: codexSessionId(input) });
   if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'UserPromptSubmit',
+        status: 'skipped',
+        reason: 'short_prompt',
+        pendingContextCount: contexts.length,
+        durationMs: Date.now() - startedAt,
+      },
+    }, writeError);
     writeCodexUserPromptContexts({ contexts, writeOutput });
     return;
   }
 
-  const catalog = await readLocalFn({ projectRoot });
+  const catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
   const backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
   let judgment;
   try {
     judgment = await backend.judge({ stage: 'user_input', userInput: prompt });
   } catch (err) {
     contexts.push(formatCodexHookBackendError(err));
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'UserPromptSubmit',
+        status: 'error',
+        backend: err?.backend ?? null,
+        code: err?.code ?? 'E_INTERNAL',
+        pendingContextCount: contexts.length,
+        durationMs: Date.now() - startedAt,
+      },
+    }, writeError);
     writeCodexUserPromptContexts({ contexts, writeOutput });
     return;
   }
+  await recordCodexHookEventSafe(recordHookEventFn, {
+    projectRoot,
+    event: {
+      hook: 'UserPromptSubmit',
+      status: 'success',
+      backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
+      pass: judgment.pass,
+      missingTools: judgment.findings.map((finding) => finding.toolName),
+      pendingContextCount: contexts.length,
+      backendDurationMs: judgment.meta?.durationMs ?? null,
+      durationMs: Date.now() - startedAt,
+    },
+  }, writeError);
   if (judgment.pass === true) {
     writeCodexUserPromptContexts({ contexts, writeOutput });
     return;
@@ -111,6 +149,7 @@ export async function runCodexStopHook({
   readLocalFn = readLocal,
   createAuditorBackendFn = createAuditorBackend,
   readCodexUsedToolsFn = readCodexUsedTools,
+  recordHookEventFn = appendCodexHookEvent,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
 } = {}) {
@@ -119,12 +158,25 @@ export async function runCodexStopHook({
   if (input.stop_hook_active === true) return;
   const projectRoot = findSpotterMarker(input.cwd);
   if (!projectRoot) return;
+  const startedAt = Date.now();
 
   const transcriptPath = requireString(input, 'transcript_path');
   const finalResponse = codexLastAssistantMessage(input) ?? '(no final response available)';
   const usedTools = await readCodexUsedToolsFn(transcriptPath);
-  if (shouldSkipShortCodexStop({ finalResponse, usedTools, env: process.env })) return;
-  const catalog = await readLocalFn({ projectRoot });
+  if (shouldSkipShortCodexStop({ finalResponse, usedTools, env: process.env })) {
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'Stop',
+        status: 'skipped',
+        reason: 'short_final_no_tools',
+        usedToolCount: usedTools.length,
+        durationMs: Date.now() - startedAt,
+      },
+    }, writeError);
+    return;
+  }
+  const catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
   const backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
   let judgment;
   try {
@@ -137,15 +189,54 @@ export async function runCodexStopHook({
       sessionId: codexSessionId(input),
       text: errorText,
     });
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'Stop',
+        status: 'error',
+        backend: err?.backend ?? null,
+        code: err?.code ?? 'E_INTERNAL',
+        usedToolCount: usedTools.length,
+        durationMs: Date.now() - startedAt,
+      },
+    }, writeError);
     return;
   }
-  if (judgment.pass === true) return;
+  if (judgment.pass === true) {
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'Stop',
+        status: 'success',
+        backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
+        pass: true,
+        missingTools: [],
+        usedToolCount: usedTools.length,
+        backendDurationMs: judgment.meta?.durationMs ?? null,
+        durationMs: Date.now() - startedAt,
+      },
+    }, writeError);
+    return;
+  }
 
   await appendCodexPendingContext({
     projectRoot,
     sessionId: codexSessionId(input),
     text: formatTransparentBlockReason(legacyResultFromJudgment(judgment).missing_tools),
   });
+  await recordCodexHookEventSafe(recordHookEventFn, {
+    projectRoot,
+    event: {
+      hook: 'Stop',
+      status: 'queued',
+      backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
+      pass: false,
+      missingTools: judgment.findings.map((finding) => finding.toolName),
+      usedToolCount: usedTools.length,
+      backendDurationMs: judgment.meta?.durationMs ?? null,
+      durationMs: Date.now() - startedAt,
+    },
+  }, writeError);
 }
 
 export async function runCodexHookInstallCommand({
@@ -183,7 +274,7 @@ export async function runCodexHookDiagnosticsCommand({
     return;
   }
   const opts = parseCodexHomeArgs(argv);
-  const result = await codexHookDiagnostics({ codexHome: opts.codexHome });
+  const result = await codexHookDiagnostics({ codexHome: opts.codexHome, projectRoot: opts.projectRoot });
   writeOutput(JSON.stringify(result, null, 2) + '\n');
 }
 
@@ -231,7 +322,7 @@ export async function uninstallCodexHooks({ codexHome = defaultCodexHome() } = {
   };
 }
 
-export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), spawnSyncFn = spawnSync } = {}) {
+export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), projectRoot = null, spawnSyncFn = spawnSync } = {}) {
   const features = spawnSyncFn('codex', ['features', 'list'], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
   const featureOutput = [features.stdout, features.stderr].filter(Boolean).join('\n');
   const hooks = await loadJson(join(codexHome, 'hooks.json'));
@@ -240,6 +331,7 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), spa
     userPromptSubmit: hookState(hooks, 'UserPromptSubmit', 'codex-hook user-prompt-submit'),
     stop: hookState(hooks, 'Stop', 'codex-hook stop'),
   };
+  const runtimeProjectRoot = projectRoot ? findSpotterMarker(projectRoot) : null;
   return {
     availability: features.error || features.status !== 0 || codexHooksFeature !== 'enabled'
       ? 'unavailable'
@@ -252,6 +344,9 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), spa
     hooksPath: join(codexHome, 'hooks.json'),
     installedHooks: installed,
     evidence: featureOutput.split('\n').find((line) => line.trim().startsWith('codex_hooks')) ?? null,
+    runtime: runtimeProjectRoot
+      ? await summarizeCodexHookEvents({ projectRoot: runtimeProjectRoot })
+      : null,
   };
 }
 
@@ -368,16 +463,110 @@ async function readCodexPendingContexts(path) {
   }
 }
 
+async function appendCodexHookEvent({ projectRoot, event }) {
+  const value = {
+    schema: 'spotter.codex_hook_event.v1',
+    timestamp: new Date().toISOString(),
+    ...event,
+  };
+  const path = codexHookEventsPath(projectRoot);
+  await mkdir(dirname(path), { recursive: true });
+  await appendFile(path, JSON.stringify(value) + '\n', 'utf8');
+}
+
+async function recordCodexHookEventSafe(recordHookEventFn, input, writeError) {
+  try {
+    await recordHookEventFn(input);
+  } catch (err) {
+    writeError(`Spotter codex-hook event log failed: ${err.message}\n`);
+  }
+}
+
+export async function summarizeCodexHookEvents({ projectRoot, readFileFn = readFile } = {}) {
+  if (typeof projectRoot !== 'string' || projectRoot.length === 0) {
+    throw new TypeError('summarizeCodexHookEvents: projectRoot must be a non-empty string');
+  }
+  const summary = {
+    schema: 'spotter.codex_hook_events_summary.v1',
+    projectRoot,
+    logPath: codexHookEventsPath(projectRoot),
+    exists: false,
+    events: 0,
+    parseErrors: 0,
+    byHook: {},
+    byStatus: {},
+    byBackend: {},
+    averageDurationMs: 0,
+    maxDurationMs: 0,
+    recent: [],
+  };
+  let totalDurationMs = 0;
+  try {
+    const raw = await readFileFn(summary.logPath, 'utf8');
+    summary.exists = true;
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        summary.parseErrors += 1;
+        continue;
+      }
+      summary.events += 1;
+      incrementCounter(summary.byHook, event.hook ?? 'unknown');
+      incrementCounter(summary.byStatus, event.status ?? 'unknown');
+      if (event.backend) incrementCounter(summary.byBackend, event.backend);
+      if (Number.isFinite(event.durationMs)) {
+        totalDurationMs += event.durationMs;
+        summary.maxDurationMs = Math.max(summary.maxDurationMs, event.durationMs);
+      }
+      summary.recent.push(compactCodexHookEvent(event));
+      if (summary.recent.length > 5) summary.recent.shift();
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  summary.averageDurationMs = summary.events > 0 ? Math.round(totalDurationMs / summary.events) : 0;
+  return summary;
+}
+
+function compactCodexHookEvent(event) {
+  return {
+    timestamp: event.timestamp ?? null,
+    hook: event.hook ?? 'unknown',
+    status: event.status ?? 'unknown',
+    backend: event.backend ?? null,
+    pass: typeof event.pass === 'boolean' ? event.pass : null,
+    missingTools: Array.isArray(event.missingTools) ? event.missingTools : [],
+    code: event.code ?? null,
+    reason: event.reason ?? null,
+    durationMs: Number.isFinite(event.durationMs) ? event.durationMs : null,
+  };
+}
+
+function codexHookEventsPath(projectRoot) {
+  return join(projectRoot, '.spotter', CODEX_HOOK_EVENTS_FILE);
+}
+
+function incrementCounter(counter, key) {
+  counter[key] = (counter[key] ?? 0) + 1;
+}
+
 function defaultCodexHome() {
   return process.env.CODEX_HOME || join(homedir(), '.codex');
 }
 
 function parseCodexHomeArgs(argv) {
-  const opts = { codexHome: defaultCodexHome() };
+  const opts = { codexHome: defaultCodexHome(), projectRoot: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--codex-home') {
       opts.codexHome = resolve(requireValue(argv, (index += 1), '--codex-home'));
+      continue;
+    }
+    if (arg === '--project') {
+      opts.projectRoot = resolve(requireValue(argv, (index += 1), '--project'));
       continue;
     }
     process.stderr.write(`unknown codex-hook option: ${arg}\n${CODEX_HOOK_USAGE}`);

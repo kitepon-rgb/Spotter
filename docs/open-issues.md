@@ -165,7 +165,7 @@ timeout 突破頻発なら緊急対処。
 
 ### tool-db.json の並列書き込み race condition (2026-04-20 v1.1.1 review で発見)
 
-**背景**: v1.1.0 で `spotter install` と `SessionStart` hook 両方から `refresh({projectRoot})` が走る構造になった。同一プロジェクトで `spotter install` 実行中に別 Claude Code セッションが SessionStart で bg refresh を起動すると、両者が `localDbPath(cwd)` を同時に書き込む。`saveDb` は tmp+rename で atomic なのでファイル corruption は起きないが、last-writer-wins で一方の snapshot が失われる可能性。
+**背景**: v1.1.0 で `spotter install` と `SessionStart` hook 両方から `refresh({projectRoot})` が走る構造になった。同一プロジェクトで `spotter install` 実行中に別 Claude Code セッションが SessionStart で bg refresh を起動すると、両者が Claude host-local `localDbPath(cwd, "claude")` を同時に書き込む。`saveDb` は tmp+rename で atomic なのでファイル corruption は起きないが、last-writer-wins で一方の snapshot が失われる可能性。2026-05-06 以降、Codex refresh は `.spotter/tool-db.codex.json` を使うため、Claude / Codex 間で互いのツールリストを prune / overwrite する問題は別ファイル化で解消済み。
 
 **影響**: 失われた差分は次回 refresh で再投入されるので最終的に収束 = 一時的な snapshot 後退のみ。実運用では install はユーザーが対話的に 1 回叩く想定 = 並列発生頻度は極低。`spotter db refresh` / `spotter db rebuild` と SessionStart bg refresh の間も同じ構造。
 

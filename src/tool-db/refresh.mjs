@@ -13,9 +13,10 @@
 import { resolveAll } from './lookup.mjs';
 import { listMcpToolsAll, listMcpServers, bellVisibleName } from './investigate-mcp.mjs';
 import { getClaudeAiBaselineByServer } from './claude-ai-baseline.mjs';
+import { buildCodexInvestigationSnapshot } from './investigate-codex.mjs';
 import { listSkillsAll } from './investigate-skills.mjs';
 import { listAgentsAll } from './investigate-agents.mjs';
-import { localDbPath, globalDbPath } from './loader.mjs';
+import { localDbPath, globalDbPath, normalizeToolDbHostAgent } from './loader.mjs';
 
 // Pure filter: returns the subset of the claude.ai baseline whose server name is
 // present in `presentServerNames`. Accepts a Set for O(1) membership. Extracted as
@@ -83,14 +84,23 @@ export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin =
 
 // Refresh the tool-db. Discovers all currently available tools, resolves each via the
 // 3-tier lookup, writes through. Returns the resolved Map.
-export async function refresh({ projectRoot, logFn = () => {}, claudeBin = 'claude' }) {
-  const snapshot = await buildInvestigationSnapshot({ logFn, claudeBin, projectRoot });
+export async function refresh({
+  projectRoot,
+  logFn = () => {},
+  claudeBin = 'claude',
+  codexBin = 'codex',
+  hostAgent = 'claude',
+} = {}) {
+  const toolDbHostAgent = normalizeToolDbHostAgent(hostAgent);
+  const snapshot = toolDbHostAgent === 'codex'
+    ? await buildCodexInvestigationSnapshot({ logFn, codexBin, projectRoot })
+    : await buildInvestigationSnapshot({ logFn, claudeBin, projectRoot });
   const toolNames = Array.from(snapshot.keys());
   const investigate = async (name) => snapshot.get(name) ?? null;
 
   return resolveAll({
     toolNames,
-    localPath: localDbPath(projectRoot),
+    localPath: localDbPath(projectRoot, toolDbHostAgent),
     globalPath: globalDbPath(),
     investigate,
     logFn,
@@ -102,8 +112,8 @@ export async function refresh({ projectRoot, logFn = () => {}, claudeBin = 'clau
 // `refresh` (so other projects can pick up descriptions cheaply) but is NEVER mixed
 // into the daemon's audit catalog. Mixing global in caused phantom-tool suggestions
 // from previously-visited projects bleeding into unrelated ones.
-export async function readLocal({ projectRoot }) {
+export async function readLocal({ projectRoot, hostAgent = 'claude' }) {
   const { loadDb } = await import('./loader.mjs');
-  const local = await loadDb(localDbPath(projectRoot));
+  const local = await loadDb(localDbPath(projectRoot, hostAgent));
   return Object.entries(local.tools).map(([name, description]) => ({ name, description }));
 }

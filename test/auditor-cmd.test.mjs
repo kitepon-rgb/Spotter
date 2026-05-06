@@ -19,8 +19,9 @@ test('runAuditorJudgeCommand: invokes selected backend with normalized user_inpu
         '--host-agent', 'codex',
         '--backend', 'codex-cli',
       ],
-      readLocalFn: async ({ projectRoot }) => {
+      readLocalFn: async ({ projectRoot, hostAgent }) => {
         assert.equal(projectRoot, dir);
+        assert.equal(hostAgent, 'codex');
         return [{ name: 'mcp__caveat__caveat_search', description: 'Search caveats.' }];
       },
       createAuditorBackendFn: ({ backend, catalog, projectRoot, hostAgent }) => {
@@ -72,13 +73,15 @@ test('runAuditorMatrixCommand: evaluates the four host/backend rows with one fix
   const inputPath = join(dir, 'input.json');
   const out = [];
   const rows = [];
+  const catalogHosts = [];
   let tick = 1000;
   try {
     await writeFile(inputPath, JSON.stringify({ user_input: 'Caveat の既知罠を確認して' }), 'utf8');
     await runAuditorMatrixCommand({
       argv: ['--stage', 'user_input', '--input', inputPath, '--project', dir],
-      readLocalFn: async ({ projectRoot }) => {
+      readLocalFn: async ({ projectRoot, hostAgent }) => {
         assert.equal(projectRoot, dir);
+        catalogHosts.push(hostAgent);
         return [{ name: 'mcp__caveat__caveat_search', description: 'Search caveats.' }];
       },
       createAuditorBackendFn: ({ backend, hostAgent, catalog, projectRoot, env }) => {
@@ -124,6 +127,7 @@ test('runAuditorMatrixCommand: evaluates the four host/backend rows with one fix
       'codex.codex-cli',
       'codex.codex-sidecar',
     ]);
+    assert.deepEqual(catalogHosts, ['claude', 'claude', 'codex', 'codex']);
     assert.equal(parsed.fixture.stage, 'user_input');
     assert.equal(parsed.summary.total, 4);
     assert.equal(parsed.summary.success, 4);

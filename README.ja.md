@@ -92,16 +92,16 @@ flowchart LR
       LG["Legacy — ~/.claude/.mcp.json"]
     end
     SCOPES -. merge .-> MCP
-    MCP --> DB[(ローカル tool-db.json<br/>name + description<br/>プロジェクト単位)]
+    MCP --> DB[(ホスト別ローカル tool-db<br/>name + description<br/>プロジェクト単位)]
     SK --> DB
     AG --> DB
     BL --> DB
     DB --> H[Haiku 監査<br/>session-scoped, preamble-once]
 ```
 
-監査対象のツール (name + description) は `<project>/.spotter/tool-db.json` (ローカル) に格納されます。**daemon が監査に使うのはローカル DB のみ**で、グローバル DB `~/.spotter/tool-db.json` は他プロジェクトでの description 再利用キャッシュとしてのみ機能します (live fetch コスト削減のため初回 refresh で参照、結果は local に write-through)。各プロジェクトの local DB は **そのプロジェクトの現時点の discovery 結果と一致** (refresh 時に prune される) ため、過去にインストールしていた MCP / スキル / サブエージェントが他プロジェクトに混入することはありません。
+監査対象のツール (name + description) は host-local に分離されます。Claude は `<project>/.spotter/tool-db.json`、Codex は `<project>/.spotter/tool-db.codex.json` を使います。**daemon が監査に使うのは Claude local DB のみ**で、Codex native hooks は Codex local DB を読みます。グローバル DB `~/.spotter/tool-db.json` は他プロジェクトでの description 再利用キャッシュとしてのみ機能し、監査入力には混ぜません。各 host-local DB は **その host の現時点の discovery 結果と一致** (refresh 時に prune される) するため、別プロジェクトや別 host のツールリストで上書きされることはありません。
 
-**`spotter install` が初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、通常の運用で手動コマンドを叩く必要はありません。各 MCP サーバーの `tools/list` は JSON-RPC で取得 (HTTP / SSE / stdio transport 対応)、スキルとサブエージェントは frontmatter から直接抽出、claude.ai baseline (OAuth proxy 経由の Gmail / Calendar / Drive 25 件) は `claude mcp list` に該当サーバーが存在する環境でのみ注入されます。**手書きでツールリストを管理する必要はありません**。
+**`spotter install` が Claude catalog の初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、Claude 通常運用で手動コマンドを叩く必要はありません。Codex は `spotter db refresh --host-agent codex` を使い、Claude catalog には書き込みません。Claude discovery は `claude mcp list` と Claude skills / sub-agents、Codex discovery は `codex mcp list/get` と Codex skills を読むため、両 host の利用可能ツール差分を別 DB として保持できます。各 MCP サーバーの `tools/list` は JSON-RPC で取得 (HTTP / SSE / stdio transport 対応)、スキルとサブエージェントは frontmatter から直接抽出、claude.ai baseline (OAuth proxy 経由の Gmail / Calendar / Drive 25 件) は Claude 側でのみ `claude mcp list` に該当サーバーが存在する環境で注入されます。**手書きでツールリストを管理する必要はありません**。
 
 ## Throughline との関係
 
@@ -118,10 +118,14 @@ flowchart LR
 ## よく使うコマンド
 
 ```bash
-spotter db list          # 現在のローカル tool-db (daemon が実際に audit に使う) を表示
-spotter db refresh       # MCP / スキル / サブエージェントから description を収集して DB 更新
-                         # (v1.1.0 以降、install 時と SessionStart 時に自動実行されるので通常は不要)
-spotter db rebuild       # local + global DB を両方消してから refresh (カタログ設計変更時のクリーン用)
+spotter db list          # 現在の Claude local tool-db を表示
+spotter db list --host-agent codex
+                         # 現在の Codex local tool-db を表示
+spotter db refresh       # Claude MCP / スキル / サブエージェントから description を収集して Claude DB 更新
+spotter db refresh --host-agent codex
+                         # Codex MCP / スキルから description を収集して .spotter/tool-db.codex.json を更新
+                         # (v1.1.0 以降、Claude 側は install 時と SessionStart 時に自動実行されるので通常は不要)
+spotter db rebuild       # Claude local + global DB を両方消してから refresh (カタログ設計変更時のクリーン用)
 spotter status           # 稼働中の daemon 一覧
 spotter doctor           # 環境診断 (Node / claude CLI / Codex readiness / tool-db 整合性)
 spotter diagnostics logs # daemon log から pass=false / backend latency / anomaly signal を集計

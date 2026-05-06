@@ -18,9 +18,9 @@ Public CLI:
 
 - `spotter install [-y|--yes] [--user]`
 - `spotter uninstall [-y|--yes] [--user]`
-- `spotter db list`
-- `spotter db refresh`
-- `spotter db rebuild`
+- `spotter db list [--host-agent claude|codex|automation]`
+- `spotter db refresh [--host-agent claude|codex|automation]`
+- `spotter db rebuild [--host-agent claude|codex|automation]`
 - `spotter status`
 - `spotter doctor`
 - `spotter diagnostics logs [--log-dir <dir>] [--json]`
