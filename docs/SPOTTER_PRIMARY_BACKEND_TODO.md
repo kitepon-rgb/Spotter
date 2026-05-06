@@ -100,16 +100,20 @@ Spotter hook / Codex plugin / future Codex integration が再入しない gate �
 `SPOTTER_SIDECAR=1` は `codex-sidecar` 子プロセス向けの既存 marker なので、Codex CLI
 backend では名前を混同しない。
 
-### 3. Codex host integration の入口が未確定
+### 3. Codex host integration の入口
 
-Claude Code には hooks があるが、Codex 側で同等の `SessionStart` /
-`UserPromptSubmit` / `PreToolUse` / `Stop` event があるとは限らない。
-Codex 対応はまず以下のどちらかを明確にする。
+Claude Code には hooks がある。Codex 側についても、2026-05-06 時点の local Codex で
+`codex_hooks` が stable / enabled であり、`~/.codex/hooks.json` に
+`UserPromptSubmit`, `PostToolUse`, `Stop` を登録できることを確認した。
+Caveat の Codex native hook 実運用でも同 payload surface が確認済み。
+Codex 対応はまず以下の入口を候補にする。
 
+- Codex native hooks (`~/.codex/hooks.json` + `[features].codex_hooks = true`) から Spotter を呼ぶ。
 - Codex plugin / MCP / wrapper として Spotter を明示実行する。
-- Codex CLI の app-server / exec-server / future hook surface に接続する。
+- Codex CLI の app-server / exec-server に接続する。
 
-Codex 側 event model が未確定のまま、Claude hook 前提の daemon を流用しない。
+Spotter の初期 Codex native adapter は Codex hooks surface を使い、Claude hook 前提の
+daemon は流用しない。
 
 ### 4. Claude host の latency
 
@@ -241,7 +245,7 @@ Gate:
   `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND=codex-cli`, `SPOTTER_CHILD_BACKEND=codex-cli`。
 - [ ] 将来の Codex plugin / wrapper 側も `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` を見て
   再入しない gate を持つ。Claude hook の `SPOTTER_PARENT_PID` だけに依存しない。
-- [ ] Codex CLI backend が Spotter hooks / daemon を増殖させないことを unit / smoke で確認する。
+- [x] Codex CLI backend が Spotter hooks / daemon を増殖させないことを unit / smoke で確認する。
 - [x] Codex CLI spawn option の unit test で `stdio[0] === 'ignore'`、read-only sandbox、
   recursion marker env、tempfile cleanup、stderr cap を固定する。
 - [ ] Haiku backend と Codex CLI backend の latency / process count / output validity を同じ fixture で比較する。
@@ -259,13 +263,17 @@ Gate:
 
 ### Phase 3. Codex Native UX Tuning
 
-- [ ] Codex host detection を定義する。
-  既存 `detectHostAgent` の env marker だけで足りるか、Codex plugin / wrapper 側の
-  明示 `--host-agent codex` が必要かを決める。
-- [ ] Codex 側 event source を調査する:
-  plugin, MCP, wrapper, app-server, exec-server のどれで Spotter を呼ぶか。
-- [ ] Codex 用の input contract を定義する。
-  Claude hook JSON をそのまま要求しない。Codex 側で自然に渡せる形にする。
+- [x] Codex host detection を定義する。
+  Codex native hook adapter は `hostAgent=codex` を明示して backend selector に渡す。
+  子 Codex CLI backend から再入した hook は `SPOTTER_PARENT_PID` で即 return する。
+- [x] Codex 側 event source を調査する:
+  initial implementation は user-level `~/.codex/hooks.json` の Codex native hooks
+  (`UserPromptSubmit`, `Stop`) を使う。plugin hooks は local feature flag 上まだ under development。
+- [x] Codex 用の input contract を定義する。
+  `UserPromptSubmit` は `payload.prompt`, `cwd`, `session_id` を使う。
+  `Stop` は `payload.last_assistant_message` / `lastAssistantMessage` と
+  `payload.transcript_path` から final response と used tool names を作る。
+  Claude hook JSON は要求しない。
 - [x] Codex 側 event source が未確定でも実装を進められるように、明示 CLI の
   `spotter auditor judge --stage user_input|turn_end --input FILE --host-agent codex --backend codex-cli`
   相当の smoke entrypoint を先に用意する。安定公開機能ではなく
@@ -273,9 +281,12 @@ Gate:
 - [x] Codex event source が未確定の間は、この smoke entrypoint だけで
   「Codex native integration 完了」とは呼ばない。Phase 3 gate の実セッション smoke は、
   実際の Codex 側入口から Spotter が呼ばれたことを条件にする。
-- [ ] Codex host では primary backend default を Codex CLI にする。
-- [ ] Codex host では `codex-sidecar` を primary backend default にしない。
-- [ ] Codex host で Codex CLI unavailable のとき、明示 error を返す。
+- [x] Codex host では primary backend default を Codex CLI にする。
+  `spotter codex-hook user-prompt-submit|stop` は `SPOTTER_AUDITOR_BACKEND` が無い限り
+  `codex-cli` を選ぶ。
+- [x] Codex host では `codex-sidecar` を primary backend default にしない。
+- [x] Codex host で Codex CLI unavailable のとき、明示 error を返す。
+  Codex hook adapter は Haiku に落とさず、Codex CLI backend の structured error を表面化する。
 - [ ] Codex native 環境で latency tuning を行う:
   short prompt skip、catalog compression、backend warm path、per-stage timeout、
   cache / memoization、async advisory 化できる箇所を実測する。
@@ -373,7 +384,10 @@ Gate:
 
 ## Open Questions
 
-- Codex host integration の自然な入口は plugin / MCP / wrapper / app-server / exec-server のどれか。
+- Codex `Stop` hook で `decision:"block"` を返した場合の UI grouping が許容可能か。
+  Caveat 実運用では Stop reminder を次 `UserPromptSubmit` に送る方が UI 上は自然と観測されている。
+  Spotter は補正応答を促す性質が強いため、まず Claude と同じ block semantics を実装し、
+  Codex 実セッション smoke で判断する。
 - `codex exec --output-schema` の final response 取り出しは、version drift にどこまで耐えるか。
 - `codex exec --ephemeral` が本当に session file / project state を汚さないか。
 - Claude host で選択 backend が hook timeout 内に安定して収まるか。
@@ -423,6 +437,21 @@ Gate:
   `mcp__caveat__caveat_search` の missing tool を検出し、finding `source=codex-cli`、
   `durationMs=11670`, schema-valid `SpotterJudgment` を確認済み。これは internal smoke であり、
   Codex native event source から Spotter が呼ばれた証明ではない。
+- Phase 3 実装で `spotter codex-hook install|uninstall|diagnostics|user-prompt-submit|stop` を追加した。
+  Codex hook adapter は `~/.codex/hooks.json` に `UserPromptSubmit` / `Stop` を登録し、
+  `[features].codex_hooks = true` を有効化する。hook runtime は `.spotter/marker.json` で
+  project gating し、`SPOTTER_PARENT_PID` で子 Codex CLI backend の再入を遮断し、
+  primary auditor backend は既定で `codex-cli` を使う。unit tests では install merge、
+  uninstall、diagnostics、outside-project exit、child env exit、UserPromptSubmit context output、
+  Stop block output、Codex transcript tool-name extraction を確認済み。
+- Local diagnostics smoke では `codexBinary=present`, `codexHooksFeature=enabled` を確認した。
+  実ユーザーの `~/.codex/hooks.json` には Caveat hooks だけがあり、Spotter hooks は
+  `not-installed` と正しく判定される。一時 `--codex-home /tmp/spotter-codex-hook-smoke`
+  への install / diagnostics smoke は `availability=available`。
+- `spotter codex-hook user-prompt-submit` の stdin smoke は、Codex CLI backend まで到達して
+  `hookSpecificOutput.additionalContext` を返した。後続 re-smoke は Codex usage limit により
+  `E_CODEX_CLI_EXIT` で停止したが、Haiku fallback や silent pass にはならなかった。
+  このため actual Codex interactive session smoke はまだ Gate 未達。
 
 現時点で文書上の blocking contradiction はない。残る unchecked item は実装・実測・smoke が必要な
 作業項目であり、試験予定として残してよい。実装可能性監査としても、現時点の計画書に

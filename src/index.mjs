@@ -30,6 +30,11 @@ export {
   CODEX_AUDITOR_SCHEMA,
   createCodexCliAuditorBackend,
 } from './core/codex-cli-backend.mjs';
+export {
+  codexLastAssistantMessage,
+  codexToolInputText,
+  readCodexUsedTools,
+} from './core/codex-transcript.mjs';
 export { assertHostAgent, detectHostAgent as detectNeutralHostAgent } from './core/host-agent.mjs';
 export {
   createSidecarResultRecord,

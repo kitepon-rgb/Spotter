@@ -26,6 +26,7 @@ test('buildCodexCliAuditorPrompt: uses a stateless Codex-specific prompt, not Ha
   assert.match(prompt, /You are Spotter/);
   assert.match(prompt, /stage=user_input/);
   assert.match(prompt, /mcp__caveat__caveat_search/);
+  assert.match(prompt, /follow-up tools whose need depends on a result not yet observed/);
   assert.ok(!prompt.includes('あなたは Spotter。Bell'), 'Codex CLI prompt must not reuse raw Haiku preamble');
 });
 

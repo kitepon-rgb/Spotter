@@ -116,6 +116,7 @@ export function buildCodexCliAuditorPrompt({ catalog, input }) {
     'You are Spotter, a tool-use auditor. Return JSON only.',
     'Schema: {"pass":boolean,"missing_tools":[{"name":string,"reason":string}]}',
     'Use only exact tool names from <catalog>. If no listed tool clearly applies, return {"pass":true,"missing_tools":[]}.',
+    'Report only tools that are immediately applicable from the current input/output. Do not report follow-up tools whose need depends on a result not yet observed.',
     'Do not invent tool names. Do not explain outside JSON.',
     '',
     '<catalog>',

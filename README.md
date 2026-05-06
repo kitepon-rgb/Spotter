@@ -134,6 +134,10 @@ spotter codex review|explore|opinion --findings findings.json --host-agent claud
 spotter codex work --findings findings.json --instruction "Update docs" --approve-work \
   --allowed-path docs/ --preserve-worktree
                          # run approved codex-sidecar work in an isolated worktree
+spotter codex-hook install
+                         # experimental: register Codex native UserPromptSubmit / Stop hooks
+spotter codex-hook diagnostics
+                         # experimental: check Codex hooks feature and Spotter hook entries
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
 ```
 

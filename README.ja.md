@@ -132,6 +132,10 @@ spotter codex review|explore|opinion --findings findings.json --host-agent claud
 spotter codex work --findings findings.json --instruction "docs 更新" --approve-work \
   --allowed-path docs/ --preserve-worktree
                          # 承認済み codex-sidecar work を isolated worktree で実行
+spotter codex-hook install
+                         # experimental: Codex native UserPromptSubmit / Stop hook を登録
+spotter codex-hook diagnostics
+                         # experimental: Codex hooks feature と Spotter hook 登録を診断
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ```
 

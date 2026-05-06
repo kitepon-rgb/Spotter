@@ -136,6 +136,7 @@ spotter diagnostics logs [--json]
 spotter codex risk-check --findings <file> [--host-agent <agent>]
 spotter codex review / explore / opinion --findings <file> [--host-agent <agent>]
 spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path> (--preserve-worktree | --remove-worktree)
+spotter codex-hook install / uninstall / diagnostics   # experimental Codex native hooks
 spotter daemon start              # 内部用 (hook から呼ばれる)
 spotter hook <event>              # 内部用 (Claude Code hook から呼ばれる)
 ```
@@ -144,6 +145,8 @@ spotter hook <event>              # 内部用 (Claude Code hook から呼ばれ�
 `spotter codex *` は `SpotterFinding[]` を `codex-sidecar` に渡す explicit second-pass workflow であり、
 `UserPromptSubmit` / `Stop` の primary auditor backend 置換ではない。primary backend migration は
 [docs/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/SPOTTER_PRIMARY_BACKEND_TODO.md) を参照する。
+`spotter codex-hook *` は Codex native hooks 用の experimental adapter であり、Codex host の
+primary auditor backend は既定で Codex CLI (`codex exec`) を使う。
 
 テストランナーは Node 組み込み (`node --test`)。現行 CI は `.github/workflows/ci.yml` で Node 22.5 / 22.x の Linux / Windows / macOS matrix を `node --test` で走らせる。
 
