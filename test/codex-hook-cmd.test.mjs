@@ -21,7 +21,7 @@ async function makeProject() {
   return dir;
 }
 
-test('installCodexHooks: merges Spotter hooks and enables codex_hooks feature', async () => {
+test('installCodexHooks: merges Spotter hooks and enables hooks feature', async () => {
   const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-'));
   try {
     await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
@@ -52,8 +52,28 @@ test('installCodexHooks: merges Spotter hooks and enables codex_hooks feature', 
     assert.equal(hooks.hooks.UserPromptSubmit[1].hooks[0].timeoutSec, 60);
     assert.equal(hooks.hooks.UserPromptSubmit[1].hooks[0].async, false);
     assert.match(config, /^\[features\]$/m);
-    assert.match(config, /^codex_hooks = true$/m);
+    assert.match(config, /^hooks = true$/m);
     assert.match(config, /^other = true$/m);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('installCodexHooks: adds current hooks feature even when legacy codex_hooks exists', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-legacy-feature-'));
+  try {
+    await writeFile(join(codexHome, 'config.toml'), '[features]\ncodex_hooks = true\n', 'utf8');
+
+    const result = await installCodexHooks({
+      codexHome,
+      nodePath: '/usr/bin/node',
+      spotterBin: '/repo/bin/spotter.mjs',
+    });
+    const config = await readFile(join(codexHome, 'config.toml'), 'utf8');
+
+    assert.equal(result.feature, 'enabled');
+    assert.match(config, /^hooks = true$/m);
+    assert.match(config, /^codex_hooks = true$/m);
   } finally {
     await rm(codexHome, { recursive: true, force: true });
   }
@@ -459,13 +479,31 @@ test('codexHookDiagnostics: reports feature and hook installation state', async 
     await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
     const result = await codexHookDiagnostics({
       codexHome,
+      spawnSyncFn: () => ({ status: 0, stdout: 'hooks stable true\n', stderr: '' }),
+    });
+
+    assert.equal(result.availability, 'available');
+    assert.equal(result.codexHooksFeature, 'enabled');
+    assert.equal(result.evidence, 'hooks stable true');
+    assert.equal(result.installedHooks.sessionStart, 'installed');
+    assert.equal(result.installedHooks.userPromptSubmit, 'installed');
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('codexHookDiagnostics: accepts legacy codex_hooks feature output', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-legacy-'));
+  try {
+    await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    const result = await codexHookDiagnostics({
+      codexHome,
       spawnSyncFn: () => ({ status: 0, stdout: 'codex_hooks stable true\n', stderr: '' }),
     });
 
     assert.equal(result.availability, 'available');
     assert.equal(result.codexHooksFeature, 'enabled');
-    assert.equal(result.installedHooks.sessionStart, 'installed');
-    assert.equal(result.installedHooks.userPromptSubmit, 'installed');
+    assert.equal(result.evidence, 'codex_hooks stable true');
   } finally {
     await rm(codexHome, { recursive: true, force: true });
   }

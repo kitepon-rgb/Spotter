@@ -113,7 +113,7 @@ mini model を固定し、必要な smoke / 実験だけ `SPOTTER_CODEX_CLI_MODE
 
 **2026-05-07 方針メモ**: Codex native hook の timeout は `UserPromptSubmit` と `Stop` を同一に
 扱わない。`UserPromptSubmit` はユーザー入力直後の体感 UX に直撃するため短く保つ。一方 Codex
-`Stop` は回答後監査で、現行実装では immediate block ではなく `.spotter/codex-pending/` への
+`Stop` は回答後監査で、現行実装では immediate block ではなく `.spotter/pending/` への
 deferred delivery なので、多少長くても UX 影響は相対的に小さい。`Stop` で有用な指摘を timeout
 で落とす損失のほうが大きい可能性があるため、実運用で `E_CODEX_CLI_TIMEOUT` が再発する場合は
 `UserPromptSubmit` は 10-20s 程度、`Stop` は 30-45s 程度の非対称 timeout を検討する。無制限には
@@ -126,7 +126,7 @@ deferred delivery なので、多少長くても UX 影響は相対的に小さ�
 `SessionStart`・`UserPromptSubmit`・`Stop` installed を返すことを確認。`~/.codex/hooks.json` と
 `.claude/settings.json` の Spotter hook command はどちらも global npm 版
 `/home/kite/.npm-global/lib/node_modules/claude-spotter/bin/spotter.mjs` を参照していた。
-`.spotter/codex-hook-events.jsonl` は同 thread の `UserPromptSubmit` で
+`.spotter/hook-events.jsonl` は同 thread の `UserPromptSubmit` で
 `2026-05-06T13:17:19.799Z` / `2026-05-06T13:17:20.154Z` に更新され、Codex CLI backend の
 `pass=false` → `pass=true` を記録。daemon log 側の同時刻更新はなかったが、Codex native hook
 event path としては新規記録が増えている。Claude DB `.spotter/tool-db.json` は 366 tools、
@@ -201,7 +201,7 @@ timeout 突破頻発なら緊急対処。
 
 ### `/ask-spotter` スラッシュコマンド (v0.3 予定)
 
-ユーザーが明示的に Spotter に問い合わせできるスラッシュコマンド。現状は Stop hook の `decision: "block"` のみが介入経路で、ユーザー発案の問い合わせは不可。
+ユーザーが明示的に Spotter に問い合わせできるスラッシュコマンド。現状は hook 由来の `additionalContext` / pending queue のみが介入経路で、ユーザー発案の問い合わせは不可。
 
 ### async hook 化 (v0.4+)
 
@@ -209,7 +209,7 @@ timeout 突破頻発なら緊急対処。
 
 ### Codex Stop の immediate block 不在
 
-Codex native `Stop` は現状 immediate block ではなく deferred delivery。`Stop` で見つかった不足ツールは `.spotter/codex-pending/` に保存され、次の same-session `UserPromptSubmit` の `additionalContext` で Codex に提示される。2026-05-06 の実測では `decision:"block"` を返すと final answer 後に `Stop Blocked` / exit code 1 となり、Claude Code のような綺麗な継続応答にはならなかったため、Caveat と同じ pending queue 方式を採用している。
+Codex native `Stop` は現状 immediate block ではなく deferred delivery。`Stop` で見つかった不足ツールは `.spotter/pending/` に保存され、次の same-session `UserPromptSubmit` の `additionalContext` で Codex に提示される。2026-05-06 の実測では `decision:"block"` を返すと final answer 後に `Stop Blocked` / exit code 1 となり、Claude Code のような綺麗な継続応答にはならなかったため、Caveat と同じ pending queue 方式を採用している。v1.4.8 以降は Claude / Codex で host-neutral pending queue を共有する。
 
 **次アクション**: Codex native hooks が将来 `Stop` で non-blocking continuation / additional context を正式提供したら、pending queue を immediate delivery に置き換えるか再検討する。それまでは deferred であることを README / contract に明記しておく。
 

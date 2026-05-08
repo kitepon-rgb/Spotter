@@ -64,8 +64,10 @@ empty stdin is an unexpected hook failure.
 
 Codex native hooks use Codex hook payloads, not Claude hook JSON. The
 current Codex adapter installs user-level `~/.codex/hooks.json` entries for `SessionStart`,
-`UserPromptSubmit`, and `Stop`, keeps `.spotter/marker.json` project gating, exits early when
-`SPOTTER_PARENT_PID` is set, and selects Codex CLI as the default primary auditor backend.
+`UserPromptSubmit`, and `Stop`, enables the current Codex CLI `[features].hooks = true`
+(while still recognizing legacy `codex_hooks` diagnostics output), keeps `.spotter/marker.json`
+project gating, exits early when `SPOTTER_PARENT_PID` is set, and selects Codex CLI as the
+default primary auditor backend.
 When `spotter install` sees Codex CLI and registers Codex hooks, it also synchronously seeds
 `.spotter/tool-db.codex.json` so the first Codex session has a host-local catalog. Codex
 `SessionStart` does not start a daemon; it only launches a detached

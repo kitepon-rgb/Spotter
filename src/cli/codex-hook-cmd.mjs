@@ -35,6 +35,7 @@ const CODEX_HOOK_TIMEOUT_SEC = 60;
 const DEFAULT_CODEX_HOOK_AUDITOR_TIMEOUT_MS = 20_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
 const DEFAULT_CODEX_STOP_SHORT_FINAL_MAX_CHARS = 120;
+const CODEX_HOOK_FEATURE_NAMES = ['hooks', 'codex_hooks'];
 
 const CODEX_HOOK_USAGE = `spotter codex-hook — Codex native hook adapter
 
@@ -364,7 +365,8 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), pro
   const features = spawnSyncFn('codex', ['features', 'list'], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
   const featureOutput = [features.stdout, features.stderr].filter(Boolean).join('\n');
   const hooks = await loadJson(join(codexHome, 'hooks.json'));
-  const codexHooksFeature = /^codex_hooks\s+\S+\s+true\b/m.test(featureOutput) ? 'enabled' : 'not-enabled';
+  const evidence = featureOutput.split('\n').find((line) => isEnabledCodexHookFeatureLine(line)) ?? null;
+  const codexHooksFeature = evidence ? 'enabled' : 'not-enabled';
   const installed = {
     sessionStart: hookState(hooks, 'SessionStart', 'codex-hook session-start'),
     userPromptSubmit: hookState(hooks, 'UserPromptSubmit', 'codex-hook user-prompt-submit'),
@@ -382,7 +384,7 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), pro
     codexHome,
     hooksPath: join(codexHome, 'hooks.json'),
     installedHooks: installed,
-    evidence: featureOutput.split('\n').find((line) => line.trim().startsWith('codex_hooks')) ?? null,
+    evidence,
     runtime: runtimeProjectRoot
       ? await summarizeCodexHookEvents({ projectRoot: runtimeProjectRoot })
       : null,
@@ -653,7 +655,7 @@ function isSpotterCodexHook(hook) {
 async function ensureCodexHooksFeature(configPath) {
   let raw = '';
   if (existsSync(configPath)) raw = await readFile(configPath, 'utf8');
-  if (/^\s*codex_hooks\s*=\s*true\s*$/m.test(raw)) return 'already-enabled';
+  if (/^\s*hooks\s*=\s*true\s*$/m.test(raw)) return 'already-enabled';
   const next = enableCodexHooksFeature(raw);
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(configPath, next, 'utf8');
@@ -663,7 +665,7 @@ async function ensureCodexHooksFeature(configPath) {
 function enableCodexHooksFeature(raw) {
   const text = raw.trimEnd();
   if (!/^\s*\[features\]\s*$/m.test(text)) {
-    return `${text}${text ? '\n\n' : ''}[features]\ncodex_hooks = true\n`;
+    return `${text}${text ? '\n\n' : ''}[features]\nhooks = true\n`;
   }
   const lines = text.split('\n');
   let inFeatures = false;
@@ -678,13 +680,21 @@ function enableCodexHooksFeature(raw) {
       inFeatures = /^\s*\[features\]\s*$/.test(line);
       continue;
     }
-    if (inFeatures && /^\s*codex_hooks\s*=/.test(line)) {
-      lines[index] = 'codex_hooks = true';
+    if (inFeatures && /^\s*hooks\s*=/.test(line)) {
+      lines[index] = 'hooks = true';
       return `${lines.join('\n')}\n`;
     }
   }
-  lines.splice(insertAt, 0, 'codex_hooks = true');
+  lines.splice(insertAt, 0, 'hooks = true');
   return `${lines.join('\n')}\n`;
+}
+
+function isEnabledCodexHookFeatureLine(line) {
+  const trimmed = String(line ?? '').trim();
+  return CODEX_HOOK_FEATURE_NAMES.some((name) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`^${escaped}\\s+\\S+\\s+true\\b`).test(trimmed);
+  });
 }
 
 function hookState(settings, event, commandFragment) {

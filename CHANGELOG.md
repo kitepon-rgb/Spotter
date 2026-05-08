@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.4.9
+
+**Codex hooks feature 名の現行 CLI 追従**。現行 Codex CLI の `codex features list` は
+hook 機能を `hooks stable true` と表示するが、Spotter の `codex-hook diagnostics` は旧名
+`codex_hooks` だけを見ていたため、hooks 登録済みでも `availability:"unavailable"` と誤判定していた。
+
+### 変更点
+
+- **編集 [src/cli/codex-hook-cmd.mjs](src/cli/codex-hook-cmd.mjs)**:
+  `codexHookDiagnostics` が現行 `hooks` と旧 `codex_hooks` の両方を enabled evidence として扱う。
+  `installCodexHooks` は現行 CLI に合わせて `[features].hooks = true` を書く。既に旧
+  `codex_hooks = true` がある環境では削除せず、`hooks = true` を追加して現行 CLI で確実に有効化する。
+- **編集 [test/codex-hook-cmd.test.mjs](test/codex-hook-cmd.test.mjs)**:
+  現行 `hooks stable true` と旧 `codex_hooks stable true` の diagnostics 回帰テスト、
+  旧 feature key が残る config への install 回帰テストを追加。
+- **編集 docs**:
+  `open-issues.md` の Codex pending / hook event path 記述を v1.4.8 以降の
+  host-neutral `.spotter/pending/` / `.spotter/hook-events.jsonl` に追従。
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.9`
+2. Codex hooks を使う環境では、各 Spotter install 済み project で `spotter install` を再実行
+   (`~/.codex/config.toml` に `[features].hooks = true` を確実に反映するため)
+
+### 検証
+
+- `node --test` 322 tests / 321 pass / 1 skip 緑
+- `spotter codex-hook diagnostics --project /home/kite/projects/Spotter` が
+  `availability:"available"` / evidence=`hooks stable true` を返すことを実機確認
+
 ## 1.4.8
 
 **Hook 挙動 parity (Codex → Claude) 移植**。Codex 側で確定していた 3 つの hook 挙動 — Stop

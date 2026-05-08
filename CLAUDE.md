@@ -12,6 +12,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.9** (2026-05-08): **Codex hooks feature 名の現行 CLI 追従**。現行 Codex CLI は
+hook 機能を `hooks stable true` として公開しているが、Spotter の `codex-hook diagnostics` は
+旧名 `codex_hooks` だけを見ていたため、`~/.codex/hooks.json` の 3 hook が installed でも
+`availability:"unavailable"` と誤判定していた。修正: diagnostics は `hooks` / `codex_hooks`
+両方を enabled evidence として認識し、install は `[features].hooks = true` を書く。旧
+`codex_hooks = true` が残る環境では削除せず、現行 key を追加する。Codex primary auditor /
+host-local DB / pending queue / hook event JSONL の契約は v1.4.8 から変更なし。
+
 **v1.4.8** (2026-05-08): **Hook 挙動 parity (Codex → Claude) 移植**。Codex 側で確定していた
 3 つの hook 挙動を Claude 側にも移植し、両 host で同じ思想で動くよう揃えた。
 (A) **Stop short-skip**: daemon `handleTurnEnd` 冒頭で短い final response (≤120 chars) かつ
