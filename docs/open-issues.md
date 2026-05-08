@@ -91,6 +91,18 @@ Haiku を維持。Haiku 明示利用は `SPOTTER_AUDITOR_BACKEND=haiku` か `cur
 別プロジェクトでの Claude 実セッション smoke と数日分 diagnostics は Phase 7 rollout 観測で
 追って計測する。
 
+**2026-05-08 更新 (v1.4.10 availability-based primary auditor)**: v1.4.7 の opt-in `next` policy を
+撤廃し、Claude host の primary auditor は既定で「Codex CLI が PATH にあれば CLI、なければ Haiku」
+の 2 段選択に変更した。検出は `isCodexCliAvailable` が `env.PATH` を同期 walk
+(spawn 無し、Windows は PATHEXT 相当を試行)、selection-time のみ。一度選ばれた backend が runtime で
+落ちた場合は従来通り `AuditorBackendError` を throw し、別 backend へ silent retry しない
+(§0 fallback 禁止維持)。`SPOTTER_AUDITOR_BACKEND_POLICY=next` を export していたユーザーは設定を
+外して構わない (受理はするが selection には影響しない)。`SPOTTER_AUDITOR_BACKEND=haiku` の明示固定
+は引き続き有効。codex-sidecar は `spotter codex *` の明示 second-pass workflow 専用で primary
+chain には入れない (現セッションでも `[caveat:codex-sidecar] advisory unavailable: sidecar
+command failed` を観測)。Codex host (`codex-cli` 固定) と監査用子プロセスのモデル指定
+(`gpt-5.4-mini` / `model_reasoning_effort="low"`) は変更なし。
+
 **2026-05-08 完了 (v1.4.8 Hook behavior parity)**: Codex 改修で確定した hook 挙動 3 種を
 Claude 側にも移植完了。
 (A) Stop short-skip = daemon `handleTurnEnd` で短い final + 0 used_tools のとき auditor を呼ばずに即 pass。

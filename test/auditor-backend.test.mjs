@@ -70,57 +70,71 @@ test('selectAuditorBackend: explicit backend wins over policy and host default',
   });
 });
 
-test('selectAuditorBackend: current keeps Haiku for Claude and Codex hosts', () => {
+test('selectAuditorBackend: Claude host picks Codex CLI when detected on PATH', () => {
   assert.deepEqual(selectAuditorBackend({
     hostAgent: 'claude',
-    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'current' },
-  }), {
-    backend: 'haiku',
-    mode: 'compatibility_haiku',
-    compatibility: 'current_haiku',
-    reason: 'policy_current_claude',
-  });
-  assert.deepEqual(selectAuditorBackend({
-    hostAgent: 'codex',
-    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'current' },
-  }), {
-    backend: 'haiku',
-    mode: 'compatibility_haiku',
-    compatibility: 'current_haiku',
-    reason: 'policy_current_codex',
-  });
-});
-
-test('selectAuditorBackend: next promotes Codex CLI for Codex and Claude hosts (Phase 5)', () => {
-  assert.deepEqual(selectAuditorBackend({
-    hostAgent: 'codex',
-    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'next' },
+    env: {},
+    isCodexCliAvailable: () => true,
   }), {
     backend: 'codex-cli',
     mode: 'codex-cli',
     compatibility: 'none',
-    reason: 'policy_next_codex_host',
+    reason: 'claude_host_codex_cli_detected',
   });
+});
+
+test('selectAuditorBackend: Claude host falls back to Haiku when codex is unavailable', () => {
   assert.deepEqual(selectAuditorBackend({
     hostAgent: 'claude',
-    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'next' },
+    env: {},
+    isCodexCliAvailable: () => false,
+  }), {
+    backend: 'haiku',
+    mode: 'compatibility_haiku',
+    compatibility: 'current_haiku',
+    reason: 'claude_host_codex_cli_unavailable',
+  });
+});
+
+test('selectAuditorBackend: Codex host always picks Codex CLI regardless of detection result', () => {
+  // Codex native hooks already require codex on PATH — no Haiku fallback for that host.
+  assert.deepEqual(selectAuditorBackend({
+    hostAgent: 'codex',
+    env: {},
+    isCodexCliAvailable: () => false,
   }), {
     backend: 'codex-cli',
     mode: 'codex-cli',
     compatibility: 'none',
-    reason: 'policy_next_claude_codex_cli',
+    reason: 'codex_host',
   });
 });
 
-test('selectAuditorBackend: explicit haiku still wins under next policy on Claude host', () => {
-  // Phase 5 must not silently fall back to Haiku, but explicit
-  // SPOTTER_AUDITOR_BACKEND=haiku is the documented compatibility escape hatch.
+test('selectAuditorBackend: legacy SPOTTER_AUDITOR_BACKEND_POLICY=next/current is accepted but no longer changes selection', () => {
+  // v1.4.10 collapsed the policy distinction into availability detection.
+  // Legacy env values must still parse (no E_BACKEND_POLICY_UNKNOWN) so existing
+  // user setups don't blow up, but they no longer steer the chosen backend.
+  for (const policy of ['current', 'next']) {
+    assert.equal(selectAuditorBackend({
+      hostAgent: 'claude',
+      env: { SPOTTER_AUDITOR_BACKEND_POLICY: policy },
+      isCodexCliAvailable: () => true,
+    }).backend, 'codex-cli');
+    assert.equal(selectAuditorBackend({
+      hostAgent: 'claude',
+      env: { SPOTTER_AUDITOR_BACKEND_POLICY: policy },
+      isCodexCliAvailable: () => false,
+    }).backend, 'haiku');
+  }
+});
+
+test('selectAuditorBackend: explicit haiku still wins on Claude host even when codex is detected', () => {
+  // Documented compatibility escape hatch — once a backend is chosen the
+  // backend's runtime failures throw `AuditorBackendError`, no silent fallback.
   assert.deepEqual(selectAuditorBackend({
     hostAgent: 'claude',
-    env: {
-      SPOTTER_AUDITOR_BACKEND: 'haiku',
-      SPOTTER_AUDITOR_BACKEND_POLICY: 'next',
-    },
+    env: { SPOTTER_AUDITOR_BACKEND: 'haiku' },
+    isCodexCliAvailable: () => true,
   }), {
     backend: 'haiku',
     mode: 'haiku',
@@ -141,26 +155,47 @@ test('createAuditorBackend: codex-sidecar returns the sidecar auditor backend', 
   assert.equal(backend.name, 'codex-sidecar');
 });
 
-test('createAuditorBackend: auto + Claude host + next policy yields codex-cli backend', () => {
+test('createAuditorBackend: auto + Claude host + codex on PATH yields codex-cli backend', () => {
   const backend = createAuditorBackend({
     backend: 'auto',
     catalog,
     projectRoot: '/repo',
     hostAgent: 'claude',
-    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'next' },
+    env: {},
+    isCodexCliAvailable: () => true,
   });
   assert.equal(backend.name, 'codex-cli');
 });
 
-test('createAuditorBackend: auto + Claude host + current policy stays on Haiku', () => {
+test('createAuditorBackend: auto + Claude host + codex missing falls back to Haiku', () => {
   const backend = createAuditorBackend({
     backend: 'auto',
     catalog,
     projectRoot: '/repo',
     hostAgent: 'claude',
-    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'current' },
+    env: {},
+    isCodexCliAvailable: () => false,
   });
   assert.equal(backend.name, 'haiku');
+});
+
+test('createAuditorBackend: logger reports the selected backend and reason', () => {
+  const lines = [];
+  createAuditorBackend({
+    backend: 'auto',
+    catalog,
+    projectRoot: '/repo',
+    hostAgent: 'claude',
+    env: {},
+    isCodexCliAvailable: () => false,
+    logger: (msg) => lines.push(msg),
+  });
+  assert.ok(
+    lines.some((line) =>
+      line.includes('backend=haiku') && line.includes('reason=claude_host_codex_cli_unavailable')
+    ),
+    `expected selection log line, got: ${JSON.stringify(lines)}`
+  );
 });
 
 test('createHaikuAuditorBackend: adapter returns SpotterJudgment and preserves preamble-once caller state', async () => {

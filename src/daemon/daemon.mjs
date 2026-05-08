@@ -84,7 +84,11 @@ export async function startDaemon({
   codexRiskCheckEnabled = isCodexRiskDispatchEnabled(),
   codexRiskCheckDryRun = isCodexRiskDispatchDryRun(),
   dispatchCodexRiskCheckFn = dispatchCodexRiskCheck,
-  auditorBackendName = process.env.SPOTTER_AUDITOR_BACKEND || (process.env.SPOTTER_AUDITOR_BACKEND_POLICY ? 'auto' : 'haiku'),
+  // If a haikuCaller is explicitly injected (test path), default to haiku — the
+  // injection itself signals caller intent. Production callers never inject one,
+  // so they hit the `auto` branch which runs availability detection. Explicit
+  // SPOTTER_AUDITOR_BACKEND env or auditorBackendName override still wins above.
+  auditorBackendName = process.env.SPOTTER_AUDITOR_BACKEND || (haikuCaller ? 'haiku' : 'auto'),
   auditorEnv = process.env,
   stopShortFinalMaxChars = resolveStopShortFinalMaxChars(process.env),
 } = {}) {
@@ -118,13 +122,14 @@ export async function startDaemon({
   }
   logFn(`tool-db loaded: ${toolList.length} tools` + (projectRoot ? ` (project=${projectRoot})` : ''));
 
-  // Phase 1 primary backend interface: default remains Haiku, but daemon now calls through
-  // an auditor adapter so future Codex CLI / sidecar backends share one judgment surface.
-  // hostAgent is hard-coded to 'claude' because this daemon process is Claude-only
-  // (see readLocal({hostAgent:'claude'}) above and dispatchCodexRiskCheck hostAgent below).
-  // Without this, SPOTTER_AUDITOR_BACKEND_POLICY=next opt-in would fail with
-  // E_BACKEND_HOST_UNKNOWN on Claude Code launches that don't set CLAUDECODE/CLAUDE_CODE
-  // (e.g. custom wrappers), even though the daemon clearly belongs to a Claude host.
+  // v1.4.10: default `auto` triggers availability-based selection — Codex CLI when
+  // detected on PATH, Haiku otherwise. `SPOTTER_AUDITOR_BACKEND=haiku` (or any other
+  // explicit backend) still wins. hostAgent is hard-coded to 'claude' because this
+  // daemon process is Claude-only (see readLocal({hostAgent:'claude'}) above and
+  // dispatchCodexRiskCheck hostAgent below); without this, `auto` selection would
+  // fail with E_BACKEND_HOST_UNKNOWN on Claude Code launches that don't set
+  // CLAUDECODE/CLAUDE_CODE (e.g. custom wrappers), even though the daemon clearly
+  // belongs to a Claude host.
   const auditorBackend = createAuditorBackend({
     backend: auditorBackendName,
     catalog: toolList,

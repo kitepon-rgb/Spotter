@@ -12,6 +12,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.10** (2026-05-08): **Claude host primary auditor を availability-based 2 段選択に変更**。
+v1.4.7 までは `SPOTTER_AUDITOR_BACKEND_POLICY=next` を立てた Claude セッションだけが Codex CLI
+primary auditor を使い、それ以外は無条件で Haiku を呼んでいた。Phase 4 matrix smoke
+(2026-05-06: `claude.codex-cli=10041ms` vs Haiku `user_input ~14.3s / turn_end ~16.6s`) で
+Codex CLI の latency 優位は確定済みだったため、opt-in を撤廃して既定動作を「Codex CLI が PATH
+で検出できれば CLI、なければ Haiku」に変更する。検出は configuration-time
+(`isCodexCliAvailable` が `env.PATH` を同期 walk、subprocess は spawn しない、Windows は PATHEXT
+相当の `.cmd` / `.exe` / `.bat` を試行)。一度選ばれた backend が runtime で落ちた場合は従来通り
+`AuditorBackendError` を throw し、別 backend への silent retry はしない (§0 fallback 禁止維持)。
+codex-sidecar は `spotter codex *` の明示 second-pass workflow 専用に固定 (primary chain には
+入れない)。`SPOTTER_AUDITOR_BACKEND_POLICY` 環境変数は legacy 値 (`current` / `next`) を
+back-compat で受理するが selection には影響しない。`SPOTTER_AUDITOR_BACKEND=haiku` の明示固定は
+引き続き有効。Codex host の primary backend (`codex-cli` 固定) と監査用子プロセスのモデル指定
+(`gpt-5.4-mini` / `model_reasoning_effort="low"`) は変更なし。
+
 **v1.4.9** (2026-05-08): **Codex hooks feature 名の現行 CLI 追従**。現行 Codex CLI は
 hook 機能を `hooks stable true` として公開しているが、Spotter の `codex-hook diagnostics` は
 旧名 `codex_hooks` だけを見ていたため、`~/.codex/hooks.json` の 3 hook が installed でも

@@ -12,6 +12,7 @@ import { AuditorBackendError } from './auditor-error.mjs';
 import { detectHostAgent } from './host-agent.mjs';
 import { createCodexCliAuditorBackend } from './codex-cli-backend.mjs';
 import { createCodexSidecarAuditorBackend } from './codex-sidecar-auditor-backend.mjs';
+import { isCodexCliAvailable as defaultIsCodexCliAvailable } from './codex-cli-availability.mjs';
 
 export { AuditorBackendError } from './auditor-error.mjs';
 export {
@@ -33,10 +34,17 @@ export function createAuditorBackend({
   logger = () => {},
   haikuCaller = null,
   timeoutMs = DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS,
+  isCodexCliAvailable = defaultIsCodexCliAvailable,
 } = {}) {
   const selected = backend === 'auto'
-    ? selectAuditorBackend({ hostAgent, env, projectConfig: projectRoot ? { projectRoot } : null })
+    ? selectAuditorBackend({
+        hostAgent,
+        env,
+        projectConfig: projectRoot ? { projectRoot } : null,
+        isCodexCliAvailable,
+      })
     : { backend, mode: backend, compatibility: backend === 'haiku' ? 'current_haiku' : 'none', reason: 'explicit_backend' };
+  logger(`auditor backend selected: backend=${selected.backend} reason=${selected.reason}`);
   if (selected.backend === 'haiku') {
     return createHaikuAuditorBackend({ catalog, logger, haikuCaller, timeoutMs });
   }
@@ -126,6 +134,7 @@ export function selectAuditorBackend({
   env = process.env,
   projectConfig = null,
   stage = 'user_input',
+  isCodexCliAvailable = defaultIsCodexCliAvailable,
 } = {}) {
   const explicit = env?.SPOTTER_AUDITOR_BACKEND;
   const policy = env?.SPOTTER_AUDITOR_BACKEND_POLICY;
@@ -135,7 +144,7 @@ export function selectAuditorBackend({
   if (explicit !== undefined && explicit !== '') {
     assertAuditorBackend(explicit);
     if (explicit === 'auto') {
-      return selectByPolicy({ hostAgent: effectiveHost, policy, projectConfig });
+      return selectByPolicy({ hostAgent: effectiveHost, policy, projectConfig, env, isCodexCliAvailable });
     }
     return {
       backend: explicit,
@@ -145,51 +154,56 @@ export function selectAuditorBackend({
     };
   }
 
-  return selectByPolicy({ hostAgent: effectiveHost, policy, projectConfig });
+  return selectByPolicy({ hostAgent: effectiveHost, policy, projectConfig, env, isCodexCliAvailable });
 }
 
-function selectByPolicy({ hostAgent, policy, projectConfig }) {
+// v1.4.10: Claude host = Codex CLI when detected on PATH, else Haiku.
+// Codex host = Codex CLI unconditionally (Codex native hooks already require codex
+// to be installed). The `SPOTTER_AUDITOR_BACKEND_POLICY` env var (`current` / `next`)
+// is accepted for back-compat but no longer changes behavior — selection is now
+// availability-based on both hosts. `SPOTTER_AUDITOR_BACKEND=haiku` (or any explicit
+// backend name) still wins above this function via the explicit branch.
+//
+// Detection is configuration-time (synchronous PATH walk via `isCodexCliAvailable`,
+// no spawn, no network). Once a backend is chosen, runtime failures throw
+// `AuditorBackendError` — selection-time availability is not a runtime fallback.
+// Phase 4 matrix smoke (2026-05-06, GeForce 5000 fixture) measured
+// `claude.codex-cli=10041ms` vs Haiku `user_input ~14.3s / turn_end ~16.6s`, so
+// Codex CLI wins on latency when reachable; Haiku stays as the default safety net
+// for environments without codex on PATH.
+function selectByPolicy({ hostAgent, policy, projectConfig, env, isCodexCliAvailable }) {
   const effectivePolicy = policy || 'current';
   assertAuditorPolicy(effectivePolicy);
-  if (effectivePolicy === 'current') {
-    if (hostAgent === 'unknown' || hostAgent === 'automation') {
-      throw new AuditorBackendError(
-        'E_BACKEND_HOST_UNKNOWN',
-        `explicit auditor backend required for hostAgent=${hostAgent}`,
-        { backend: 'auto', diagnostics: { hostAgent, policy: effectivePolicy, projectConfig } }
-      );
-    }
-    return {
-      backend: 'haiku',
-      mode: 'compatibility_haiku',
-      compatibility: 'current_haiku',
-      reason: `policy_current_${hostAgent}`,
-    };
+  if (hostAgent === 'unknown' || hostAgent === 'automation') {
+    throw new AuditorBackendError(
+      'E_BACKEND_HOST_UNKNOWN',
+      `explicit auditor backend required for hostAgent=${hostAgent}`,
+      { backend: 'auto', diagnostics: { hostAgent, policy: effectivePolicy, projectConfig } }
+    );
   }
   if (hostAgent === 'codex') {
     return {
       backend: 'codex-cli',
       mode: 'codex-cli',
       compatibility: 'none',
-      reason: 'policy_next_codex_host',
+      reason: 'codex_host',
     };
   }
   if (hostAgent === 'claude') {
-    // Phase 5: Claude host opt-in `next` policy promotes the primary auditor backend
-    // from Haiku to Codex CLI. Phase 4 matrix smoke (2026-05-06, GeForce 5000 fixture)
-    // measured `claude.codex-cli=10041ms` vs `claude.codex-sidecar=12863ms` and Haiku
-    // diagnostics averaged `user_input ~14.3s / turn_end ~16.6s`, so Codex CLI wins on
-    // latency without giving up schema-fixed JSON judgment. Hidden fallback is
-    // forbidden — when codex-cli is unavailable / times out / exits non-zero,
-    // `createCodexCliAuditorBackend` throws `AuditorBackendError` and the daemon
-    // surfaces the structured error instead of dropping back to Haiku.
-    // Haiku stays reachable only via `current` policy or
-    // `SPOTTER_AUDITOR_BACKEND=haiku`.
+    const codexAvailable = isCodexCliAvailable({ env });
+    if (codexAvailable) {
+      return {
+        backend: 'codex-cli',
+        mode: 'codex-cli',
+        compatibility: 'none',
+        reason: 'claude_host_codex_cli_detected',
+      };
+    }
     return {
-      backend: 'codex-cli',
-      mode: 'codex-cli',
-      compatibility: 'none',
-      reason: 'policy_next_claude_codex_cli',
+      backend: 'haiku',
+      mode: 'compatibility_haiku',
+      compatibility: 'current_haiku',
+      reason: 'claude_host_codex_cli_unavailable',
     };
   }
   throw new AuditorBackendError(

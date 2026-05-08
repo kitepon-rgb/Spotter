@@ -292,7 +292,7 @@ function parseJudgeArgs(argv) {
     inputPath: null,
     projectRoot: process.cwd(),
     hostAgent: null,
-    backend: process.env.SPOTTER_AUDITOR_BACKEND || (process.env.SPOTTER_AUDITOR_BACKEND_POLICY ? 'auto' : 'haiku'),
+    backend: process.env.SPOTTER_AUDITOR_BACKEND || 'auto',
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];

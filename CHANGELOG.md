@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.4.10
+
+**Claude host primary auditor: Codex CLI 検出で自動採用、なければ Haiku の 2 段選択へ**。
+v1.4.7 までは Phase 5 opt-in の `SPOTTER_AUDITOR_BACKEND_POLICY=next` を立てたセッションだけが
+Codex CLI を primary auditor に使い、それ以外は無条件で Haiku を呼んでいた。実測 (Phase 4 matrix
+2026-05-06: `claude.codex-cli=10041ms` vs Haiku `user_input ~14.3s / turn_end ~16.6s`) で Codex CLI
+の latency 優位は十分に確定していたため、opt-in を撤廃して既定動作を「Codex CLI 検出時 CLI、
+なければ Haiku」に変更する。検出は configuration-time (daemon 起動時に env.PATH を同期 walk、
+spawn 無し)。一度選ばれた backend が runtime で落ちた場合は従来通り `AuditorBackendError` を
+throw する (§0 fallback 禁止維持) — 検出は **selection-time のみ**で、runtime 失敗時に別 backend へ
+silent retry することはない。codex-sidecar は `spotter codex *` の明示 second-pass workflow
+専用に固定 (現セッションでも `[caveat:codex-sidecar] advisory unavailable: sidecar command failed`
+を観測したため、primary chain には入れない)。Codex host の primary backend (`codex-cli` 固定) と
+監査用子プロセスのモデル指定 (`gpt-5.4-mini` / `model_reasoning_effort="low"`) は変更なし。
+
+### 変更点
+
+- **新規 [src/core/codex-cli-availability.mjs](src/core/codex-cli-availability.mjs)**:
+  `isCodexCliAvailable({env, platform, fileExists})` を追加。env.PATH を同期 walk して codex
+  バイナリの実在を判定する。Windows は PATHEXT 相当 (`.cmd` / `.exe` / `.bat`) を試行、`Path` を
+  優先しつつ `PATH` を fallback として受理。subprocess は spawn しない。
+- **編集 [src/core/auditor-backend.mjs](src/core/auditor-backend.mjs)**:
+  `selectByPolicy` を policy 区分 (`current` / `next`) ベースから availability ベースに置換。
+  Claude host = `isCodexCliAvailable` 結果で `codex-cli` / `haiku` を分岐、
+  Codex host = `codex-cli` 固定。`SPOTTER_AUDITOR_BACKEND_POLICY` 環境変数は legacy 値
+  (`current` / `next`) を引き続き受理するが selection には影響しない (back-compat)。
+  `selectAuditorBackend` / `createAuditorBackend` に `isCodexCliAvailable` DI パラメータを追加。
+  `createAuditorBackend` は選択結果と理由を logger に 1 行出力する。
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**:
+  `auditorBackendName` のデフォルトを `'haiku'` から `'auto'` に変更。`haikuCaller` が明示注入
+  された呼び出し (テスト経路) では `'haiku'` を既定にし、test 用 fixture が `projectRoot` 不要で
+  動作するよう保つ。
+- **編集 [src/cli/auditor-cmd.mjs](src/cli/auditor-cmd.mjs)**:
+  `parseJudgeArgs` の backend デフォルトを `'auto'` に変更 (旧: `SPOTTER_AUDITOR_BACKEND_POLICY`
+  が無いと `'haiku'` 固定だった)。
+- **新規 [test/codex-cli-availability.test.mjs](test/codex-cli-availability.test.mjs)**:
+  POSIX / Windows / 空 PATH / malformed PATH / `path.posix` vs `path.win32` の 7 件回帰ガード。
+- **編集 [test/auditor-backend.test.mjs](test/auditor-backend.test.mjs)**:
+  旧 `policy_current_*` / `policy_next_*` テストを availability-based テスト
+  (`claude_host_codex_cli_detected` / `claude_host_codex_cli_unavailable` / `codex_host`) に置換、
+  legacy policy 値の受理 + selection 無効化テスト、`createAuditorBackend` の logger 出力テストを追加。
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.10`
+2. 既存プロジェクトでの settings.json 再生成は不要 (hook command path / contract に変更なし)。
+3. `SPOTTER_AUDITOR_BACKEND_POLICY=next` を export していたユーザーは設定を外して構わない
+   (受理はするが既定動作と同じになる)。`SPOTTER_AUDITOR_BACKEND=haiku` の明示固定は引き続き有効。
+
 ## 1.4.9
 
 **Codex hooks feature 名の現行 CLI 追従**。現行 Codex CLI の `codex features list` は
