@@ -1,11 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
 import { runUserPrompt } from '../src/hooks/user-prompt.mjs';
+import { runStop } from '../src/hooks/stop.mjs';
 import { TransportError } from '../src/daemon/transport.mjs';
+import {
+  appendPendingContext,
+  drainPendingContexts,
+  pendingPath,
+  readPendingContexts,
+} from '../src/hooks/pending-context.mjs';
 import {
   formatTransparentContext,
   formatTransparentBlockReason,
@@ -346,6 +353,295 @@ test('runUserPrompt: short prompts return without daemon traffic', async () => {
       },
     });
     assert.equal(sendCount, 0);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+// Phase B (hook parity, 2026-05-08): pending-context queue + Stop deferred delivery.
+
+test('pendingPath: sanitizes session id and joins under .spotter/pending/', () => {
+  const path = pendingPath({ projectRoot: '/repo', sessionId: 'abc/123' });
+  assert.ok(path.endsWith(join('.spotter', 'pending', 'abc123.json')), `got ${path}`);
+});
+
+test('pendingPath: returns null for empty / missing inputs', () => {
+  assert.equal(pendingPath({}), null);
+  assert.equal(pendingPath({ projectRoot: '/repo' }), null);
+  assert.equal(pendingPath({ projectRoot: '/repo', sessionId: '' }), null);
+  assert.equal(pendingPath({ projectRoot: '/repo', sessionId: '!!!' }), null);
+  assert.equal(pendingPath({ projectRoot: '', sessionId: 'abc' }), null);
+});
+
+test('appendPendingContext: creates file and dedupes identical entries', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-pending-append-'));
+  try {
+    await appendPendingContext({ projectRoot: project, sessionId: 's1', text: 'hello' });
+    await appendPendingContext({ projectRoot: project, sessionId: 's1', text: 'hello' }); // dup
+    await appendPendingContext({ projectRoot: project, sessionId: 's1', text: 'world' });
+    const path = pendingPath({ projectRoot: project, sessionId: 's1' });
+    const raw = await readFile(path, 'utf8');
+    assert.deepEqual(JSON.parse(raw), ['hello', 'world']);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('drainPendingContexts: returns array and unlinks file', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-pending-drain-'));
+  try {
+    await appendPendingContext({ projectRoot: project, sessionId: 's1', text: 'one' });
+    await appendPendingContext({ projectRoot: project, sessionId: 's1', text: 'two' });
+    const drained = await drainPendingContexts({ projectRoot: project, sessionId: 's1' });
+    assert.deepEqual(drained, ['one', 'two']);
+    const path = pendingPath({ projectRoot: project, sessionId: 's1' });
+    await assert.rejects(stat(path), (err) => err.code === 'ENOENT');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('drainPendingContexts: returns empty array when file is missing', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-pending-empty-'));
+  try {
+    const drained = await drainPendingContexts({ projectRoot: project, sessionId: 'never-written' });
+    assert.deepEqual(drained, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: pass:true returns without writing pending context or stdout', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-pass-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let appendCalls = 0;
+    await runStop({
+      readInput: async () => ({
+        session_id: 's-pass',
+        cwd: project,
+        transcript_path: '/tmp/transcript.jsonl',
+      }),
+      sendRequestFn: async () => ({ ok: true, result: { pass: true, missing_tools: [] } }),
+      appendPendingContextFn: async () => { appendCalls += 1; return true; },
+      getLastAssistantTextFn: () => 'final reply text',
+    });
+    assert.equal(appendCalls, 0);
+    const drained = await drainPendingContexts({ projectRoot: project, sessionId: 's-pass' });
+    assert.deepEqual(drained, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: pass:false queues block reason and emits no stdout', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-defer-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let stdoutWrites = 0;
+    await runStop({
+      readInput: async () => ({
+        session_id: 's-defer',
+        cwd: project,
+        transcript_path: '/tmp/transcript.jsonl',
+      }),
+      sendRequestFn: async () => ({
+        ok: true,
+        result: {
+          pass: false,
+          missing_tools: [{ name: 'mcp__caveat__caveat_search', reason: '既知の罠を確認する必要がある' }],
+        },
+      }),
+      getLastAssistantTextFn: () => 'A について応答した',
+    });
+    // No stdout from Stop hook itself; behavior visible via the pending queue file.
+    assert.equal(stdoutWrites, 0);
+    const path = pendingPath({ projectRoot: project, sessionId: 's-defer' });
+    const queued = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(queued.length, 1);
+    assert.match(queued[0], /\[Spotter からの指摘\]/);
+    assert.match(queued[0], /mcp__caveat__caveat_search/);
+    assert.match(queued[0], /既知の罠を確認する必要がある/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: stop_hook_active=true is observed (daemon early-passes; no pending write)', async () => {
+  // Phase B keeps the stop_hook_active observation route alive: the daemon early-passes when
+  // stop_hook_active is true, the hook receives pass:true, and nothing is queued.
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-active-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let observedStopHookActive = null;
+    await runStop({
+      readInput: async () => ({
+        session_id: 's-active',
+        cwd: project,
+        transcript_path: '/tmp/transcript.jsonl',
+        stop_hook_active: true,
+      }),
+      sendRequestFn: async ({ payload }) => {
+        observedStopHookActive = payload.stop_hook_active;
+        return { ok: true, result: { pass: true, missing_tools: [], reason: 'stop_hook_active' } };
+      },
+      getLastAssistantTextFn: () => 'reply',
+    });
+    assert.equal(observedStopHookActive, true);
+    const drained = await drainPendingContexts({ projectRoot: project, sessionId: 's-active' });
+    assert.deepEqual(drained, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: transport failure exits with stderr (no silent fallback to pending)', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-transport-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    const dieCalls = [];
+    await runStop({
+      readInput: async () => ({
+        session_id: 's-transport',
+        cwd: project,
+        transcript_path: '/tmp/transcript.jsonl',
+      }),
+      sendRequestFn: async () => {
+        throw new TransportError('E_UNREACHABLE', 'daemon missing');
+      },
+      appendPendingContextFn: async () => {
+        throw new Error('appendPendingContext must NOT be called on transport failure');
+      },
+      getLastAssistantTextFn: () => 'reply',
+      dieFn: (msg, code) => { dieCalls.push({ msg, code }); },
+    });
+    assert.equal(dieCalls.length, 1);
+    assert.equal(dieCalls[0].code, 1); // E_UNREACHABLE → exit 1 per exitCodeFor
+    assert.match(dieCalls[0].msg, /E_UNREACHABLE/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: drains pending context and merges with daemon pass:false additionalContext', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-drain-merge-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await appendPendingContext({
+      projectRoot: project,
+      sessionId: 's-merge',
+      text: '[Spotter からの指摘]\n前ターンの指摘テキスト',
+    });
+    let output = '';
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-merge',
+        cwd: project,
+        prompt: '次のターンの長いユーザー入力',
+      }),
+      sendRequestFn: async () => ({
+        ok: true,
+        result: {
+          pass: false,
+          missing_tools: [{ name: 'mcp__caveat__caveat_search', reason: '今ターンの推奨' }],
+        },
+      }),
+      writeOutput: (text) => { output += text; },
+      dieFn: (m, c) => { throw new Error(`die ${c}: ${m}`); },
+    });
+    const parsed = JSON.parse(output);
+    const ctx = parsed.hookSpecificOutput.additionalContext;
+    assert.match(ctx, /前ターンの指摘テキスト/);
+    assert.match(ctx, /\[Spotter からの推奨ツール\]/);
+    assert.match(ctx, /今ターンの推奨/);
+    // pending file deleted after drain
+    const drained = await drainPendingContexts({ projectRoot: project, sessionId: 's-merge' });
+    assert.deepEqual(drained, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: short prompt with pending context emits drain only and skips daemon', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-short-pending-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await appendPendingContext({
+      projectRoot: project,
+      sessionId: 's-short-p',
+      text: '[Spotter からの指摘]\n保留中の指摘',
+    });
+    let output = '';
+    let sendCalls = 0;
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-short-p',
+        cwd: project,
+        prompt: 'ok',
+      }),
+      sendRequestFn: async () => { sendCalls += 1; return { ok: true, result: { pass: true } }; },
+      writeOutput: (text) => { output += text; },
+    });
+    assert.equal(sendCalls, 0, 'short prompt must not call daemon');
+    const parsed = JSON.parse(output);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /保留中の指摘/);
+    // drained
+    const drained = await drainPendingContexts({ projectRoot: project, sessionId: 's-short-p' });
+    assert.deepEqual(drained, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: pending drain only (daemon pass:true) still emits additionalContext', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-drain-only-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await appendPendingContext({
+      projectRoot: project,
+      sessionId: 's-drain-only',
+      text: '[Spotter からの指摘]\n前ターン保留',
+    });
+    let output = '';
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-drain-only',
+        cwd: project,
+        prompt: '次のターンの長いユーザー入力',
+      }),
+      sendRequestFn: async () => ({ ok: true, result: { pass: true, missing_tools: [] } }),
+      writeOutput: (text) => { output += text; },
+    });
+    const parsed = JSON.parse(output);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /前ターン保留/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: no pending and daemon pass:true emits no output (existing behavior)', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-noop-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let writeCount = 0;
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-noop',
+        cwd: project,
+        prompt: '長めのユーザー入力',
+      }),
+      sendRequestFn: async () => ({ ok: true, result: { pass: true, missing_tools: [] } }),
+      writeOutput: () => { writeCount += 1; },
+    });
+    assert.equal(writeCount, 0);
   } finally {
     await rm(project, { recursive: true, force: true });
   }

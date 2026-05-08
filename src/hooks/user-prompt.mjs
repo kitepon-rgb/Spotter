@@ -6,6 +6,12 @@
 // fired in a context we skipped), we spawn a fresh daemon and retry once. This is the
 // natural recovery point — the start of a new turn — so the user's prompt is still
 // audited even after long pauses or daemon failures.
+//
+// Phase B (hook parity, 2026-05-08): deferred Stop delivery. Drain
+// `<projectRoot>/.spotter/pending/<sessionId>.json` populated by the previous turn's Stop
+// hook and merge those entries into the same additionalContext. Drain runs even on the
+// short-prompt early-return path so pending context never gets stuck behind a "ok" / "thanks"
+// reply.
 
 import {
   readStdinJson,
@@ -17,9 +23,11 @@ import {
   isSubagentCall,
   isOutsideSpotterProject,
   findSpotterMarker,
+  recordClaudeHookEvent,
 } from './lib.mjs';
 import { sendRequest, TransportError } from '../daemon/transport.mjs';
 import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
+import { drainPendingContexts } from './pending-context.mjs';
 
 const TIMEOUT_MS = 50_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
@@ -28,6 +36,8 @@ export async function runUserPrompt({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
   spawnDaemonAndWaitReadyFn = spawnDaemonAndWaitReady,
+  drainPendingContextsFn = drainPendingContexts,
+  recordHookEventFn = recordClaudeHookEvent,
   writeOutput = (text) => process.stdout.write(text),
   dieFn = die,
 } = {}) {
@@ -38,8 +48,32 @@ export async function runUserPrompt({
 
   const sessionId = requireString(input, 'session_id');
   const prompt = requireString(input, 'prompt');
+  const projectRoot = findSpotterMarker(input.cwd);
+  const startedAt = Date.now();
 
-  if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) return;
+  // Phase B: drain pending Spotter findings deferred from the previous turn's Stop hook.
+  // We always attempt to drain — even on the short-prompt skip path — so pending text never
+  // gets stuck behind a one-liner reply.
+  const pendingContexts = projectRoot
+    ? await drainPendingContextsFn({ projectRoot, sessionId })
+    : [];
+
+  if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
+    if (pendingContexts.length > 0) {
+      emitAdditionalContext(writeOutput, pendingContexts);
+    }
+    await recordHookEventFn({
+      projectRoot,
+      event: {
+        hook: 'UserPromptSubmit',
+        status: 'skipped',
+        reason: 'short_prompt',
+        pendingContextCount: pendingContexts.length,
+        durationMs: Date.now() - startedAt,
+      },
+    });
+    return;
+  }
 
   const sendUserInput = () =>
     sendRequestFn({
@@ -55,7 +89,6 @@ export async function runUserPrompt({
   } catch (err) {
     if (err instanceof TransportError && err.code === 'E_UNREACHABLE') {
       // v0.12.0: daemon is gone (heartbeat shutdown, crash, missing). Resurrect and retry.
-      const projectRoot = findSpotterMarker(input.cwd);
       if (!projectRoot) {
         dieFn(`user-prompt: cannot resurrect daemon — no .spotter/marker.json above cwd=${input.cwd}`, 2);
         return;
@@ -63,36 +96,91 @@ export async function runUserPrompt({
       try {
         await spawnDaemonAndWaitReadyFn({ sessionId, projectRoot });
       } catch (spawnErr) {
+        await recordHookEventFn({
+          projectRoot,
+          event: {
+            hook: 'UserPromptSubmit',
+            status: 'error',
+            code: spawnErr?.code ?? 'E_RESURRECT_FAILED',
+            durationMs: Date.now() - startedAt,
+          },
+        });
         dieFn(`user-prompt: daemon resurrect failed: ${spawnErr.message}`, spawnErr.exitCode ?? 2);
         return;
       }
       try {
         response = await sendUserInput();
       } catch (retryErr) {
+        await recordHookEventFn({
+          projectRoot,
+          event: {
+            hook: 'UserPromptSubmit',
+            status: 'error',
+            code: retryErr?.code ?? 'E_INTERNAL',
+            durationMs: Date.now() - startedAt,
+          },
+        });
         dieFn(`user-prompt transport failure after resurrect: ${retryErr.code ?? '?'}: ${retryErr.message}`, exitCodeFor(retryErr));
         return;
       }
     } else {
+      await recordHookEventFn({
+        projectRoot,
+        event: {
+          hook: 'UserPromptSubmit',
+          status: 'error',
+          code: err?.code ?? 'E_INTERNAL',
+          durationMs: Date.now() - startedAt,
+        },
+      });
       dieFn(`user-prompt transport failure: ${err.code ?? '?'}: ${err.message}`, exitCodeFor(err));
       return;
     }
   }
 
   if (response.ok !== true) {
+    await recordHookEventFn({
+      projectRoot,
+      event: {
+        hook: 'UserPromptSubmit',
+        status: 'error',
+        code: response.error?.code ?? 'E_INTERNAL',
+        durationMs: Date.now() - startedAt,
+      },
+    });
     dieFn(`daemon error on user_input: ${response.error?.code ?? '?'}: ${response.error?.message ?? ''}`, 2);
     return;
   }
 
   const result = response.result;
-  if (result.pass === true) {
-    return;
+  const contexts = pendingContexts.slice();
+  if (result.pass !== true) {
+    contexts.push(formatTransparentContext(result.missing_tools));
+  }
+  if (contexts.length > 0) {
+    emitAdditionalContext(writeOutput, contexts);
   }
 
-  const additionalContext = formatTransparentContext(result.missing_tools);
+  await recordHookEventFn({
+    projectRoot,
+    event: {
+      hook: 'UserPromptSubmit',
+      status: 'success',
+      pass: result.pass === true,
+      missingTools: Array.isArray(result.missing_tools) ? result.missing_tools.map((m) => m.name) : [],
+      pendingContextCount: pendingContexts.length,
+      durationMs: Date.now() - startedAt,
+    },
+  });
+}
+
+function emitAdditionalContext(writeOutput, contexts) {
+  const text = contexts.map((c) => String(c).trim()).filter(Boolean).join('\n\n');
+  if (!text) return;
   const output = {
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext,
+      additionalContext: text,
     },
   };
   writeOutput(JSON.stringify(output));

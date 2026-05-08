@@ -1,10 +1,14 @@
 import { resolve } from 'node:path';
 import { defaultDaemonLogDir, summarizeDaemonLogs } from '../core/daemon-log-diagnostics.mjs';
+import { summarizeHookEvents } from '../core/hook-event-log.mjs';
 
 const DIAGNOSTICS_USAGE = `spotter diagnostics — read-only operational diagnostics
 
 Usage:
-  spotter diagnostics logs [--log-dir DIR] [--json]
+  spotter diagnostics logs [--log-dir DIR] [--project DIR] [--json]
+
+  --log-dir   daemon log directory (default: ~/.spotter/runtime)
+  --project   project root for hook-events.jsonl (default: cwd)
 `;
 
 export async function runDiagnosticsCommand({ argv = process.argv.slice(2) } = {}) {
@@ -20,15 +24,21 @@ export async function runDiagnosticsCommand({ argv = process.argv.slice(2) } = {
 export async function runDiagnosticsLogsCommand({
   argv = [],
   summarizeDaemonLogsFn = summarizeDaemonLogs,
+  summarizeHookEventsFn = summarizeHookEvents,
   writeOutput = (text) => process.stdout.write(text),
 } = {}) {
   const opts = parseLogsArgs(argv);
   const summary = await summarizeDaemonLogsFn({ logDir: opts.logDir });
+  // Phase D (hook parity, 2026-05-08): hook-event JSONL read alongside daemon log so
+  // the hook-side observations (skip reasons, drained pending counts, transport errors
+  // that never reach the daemon) surface in the same diagnostics output.
+  const hookEvents = await summarizeHookEventsFn({ projectRoot: opts.projectRoot });
+  const merged = { ...summary, hookEvents };
   if (opts.json) {
-    writeOutput(JSON.stringify(summary, null, 2) + '\n');
+    writeOutput(JSON.stringify(merged, null, 2) + '\n');
     return;
   }
-  writeOutput(formatDaemonLogSummary(summary));
+  writeOutput(formatDaemonLogSummary(merged));
 }
 
 export function formatDaemonLogSummary(summary) {
@@ -80,18 +90,50 @@ export function formatDaemonLogSummary(summary) {
     `  codex_risk_check: dispatched=${summary.codexRiskCheck.dispatched}, disabled_skips=${summary.codexRiskCheck.disabledSkips}, no_project_skips=${summary.codexRiskCheck.noProjectRootSkips}, failures=${summary.codexRiskCheck.dispatchFailures}`
   );
 
+  // Phase D (hook parity): host-neutral hook-events.jsonl summary if present.
+  const hookEvents = summary.hookEvents;
+  if (hookEvents) {
+    if (!hookEvents.exists) {
+      lines.push(`  hook-events.jsonl: not present (path=${hookEvents.logPath})`);
+    } else {
+      lines.push(
+        `  hook-events.jsonl: events=${hookEvents.events}, parse_errors=${hookEvents.parseErrors}, avg=${hookEvents.averageDurationMs}ms, max=${hookEvents.maxDurationMs}ms`
+      );
+      const byHost = formatCounter(hookEvents.byHost);
+      if (byHost) lines.push(`    by host: ${byHost}`);
+      const byHook = formatCounter(hookEvents.byHook);
+      if (byHook) lines.push(`    by hook: ${byHook}`);
+      const byStatus = formatCounter(hookEvents.byStatus);
+      if (byStatus) lines.push(`    by status: ${byStatus}`);
+      const byBackend = formatCounter(hookEvents.byBackend);
+      if (byBackend) lines.push(`    by backend: ${byBackend}`);
+    }
+  }
+
   return lines.join('\n') + '\n';
+}
+
+function formatCounter(counter) {
+  if (!counter || typeof counter !== 'object') return '';
+  const entries = Object.entries(counter).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return '';
+  return entries.map(([k, v]) => `${k}=${v}`).join(', ');
 }
 
 function parseLogsArgs(argv) {
   const opts = {
     logDir: defaultDaemonLogDir(),
+    projectRoot: process.cwd(),
     json: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--log-dir') {
       opts.logDir = resolve(requireValue(argv, (index += 1), '--log-dir'));
+      continue;
+    }
+    if (arg === '--project') {
+      opts.projectRoot = resolve(requireValue(argv, (index += 1), '--project'));
       continue;
     }
     if (arg === '--json') {

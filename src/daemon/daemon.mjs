@@ -48,6 +48,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
 const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
+// Phase A (hook parity, 2026-05-08): short-final + 0 used_tools のターンは Stop auditor を skip。
+// Codex 側 `shouldSkipShortCodexStop` と同じ閾値 (120 chars)。閾値 <= 0 で機能無効。
+// finalResponse は code-point 単位で計測 (Codex 側と同じ `[...str.trim()].length`)。
+const DEFAULT_STOP_SHORT_FINAL_MAX_CHARS = 120;
 // v0.5.0: lowered 60s → 30s. Session-scoped (--resume) means the first call still pays
 // cold-start but subsequent calls skip it. 45s covers first-call cold path plus the
 // observed Haiku CLI latency spikes (2026-04-20 log shows 20.9s resumed calls and 30s
@@ -82,6 +86,7 @@ export async function startDaemon({
   dispatchCodexRiskCheckFn = dispatchCodexRiskCheck,
   auditorBackendName = process.env.SPOTTER_AUDITOR_BACKEND || (process.env.SPOTTER_AUDITOR_BACKEND_POLICY ? 'auto' : 'haiku'),
   auditorEnv = process.env,
+  stopShortFinalMaxChars = resolveStopShortFinalMaxChars(process.env),
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -115,10 +120,16 @@ export async function startDaemon({
 
   // Phase 1 primary backend interface: default remains Haiku, but daemon now calls through
   // an auditor adapter so future Codex CLI / sidecar backends share one judgment surface.
+  // hostAgent is hard-coded to 'claude' because this daemon process is Claude-only
+  // (see readLocal({hostAgent:'claude'}) above and dispatchCodexRiskCheck hostAgent below).
+  // Without this, SPOTTER_AUDITOR_BACKEND_POLICY=next opt-in would fail with
+  // E_BACKEND_HOST_UNKNOWN on Claude Code launches that don't set CLAUDECODE/CLAUDE_CODE
+  // (e.g. custom wrappers), even though the daemon clearly belongs to a Claude host.
   const auditorBackend = createAuditorBackend({
     backend: auditorBackendName,
     catalog: toolList,
     projectRoot,
+    hostAgent: 'claude',
     env: auditorEnv,
     logger: logFn,
     haikuCaller,
@@ -254,6 +265,26 @@ export async function startDaemon({
     if (state.lastUserInput === null) {
       logFn('turn_end: no user_input observed, passing');
       return { pass: true, missing_tools: [], reason: 'no_user_input' };
+    }
+
+    // Phase A (hook parity): short final + 0 used_tools のターンは auditor を呼ばずに skip。
+    // Codex 側 `shouldSkipShortCodexStop` と同じ判定軸。「了解」「ありがとう」級の相槌応答に
+    // 7-10s の auditor spawn を毎回掛けないための latency 削減。0 件条件があるので「caveat
+    // 検索しました」のような短いツール後報告は skip されない。
+    const finalChars = [...finalResponse.trim()].length;
+    if (
+      shouldSkipShortStop({
+        finalResponse,
+        usedTools: state.usedTools,
+        maxChars: stopShortFinalMaxChars,
+      })
+    ) {
+      logFn(
+        `turn_end: pass=true, reason=short_final_no_tools, usedTools=0, finalChars=${finalChars}, maxChars=${stopShortFinalMaxChars}`
+      );
+      state.usedTools = [];
+      state.lastUserInput = null;
+      return { pass: true, missing_tools: [], reason: 'short_final_no_tools' };
     }
 
     // v0.13.0: state.lastUserInput は turn_end の Haiku 判定には渡さない (新軸は
@@ -398,3 +429,24 @@ async function shutdown(server, sessionId, logFn) {
 export function pidFilePath(sessionId) {
   return join(homedir(), '.spotter', 'runtime', `session-${sessionId}.pid`);
 }
+
+// Phase A (hook parity): pure-function short-stop predicate. Exported for test
+// reuse. `maxChars` is the resolved threshold (env-aware, see resolveStopShortFinalMaxChars);
+// `<= 0` disables the skip entirely.
+export function shouldSkipShortStop({ finalResponse, usedTools, maxChars }) {
+  if (!Number.isFinite(maxChars) || maxChars <= 0) return false;
+  if (Array.isArray(usedTools) && usedTools.length > 0) return false;
+  return [...String(finalResponse ?? '').trim()].length <= maxChars;
+}
+
+// Reads `SPOTTER_STOP_SHORT_FINAL_MAX_CHARS` from env. Empty / missing → default 120.
+// Non-numeric → default. `0` or negative → disables the skip (NaN-safe).
+export function resolveStopShortFinalMaxChars(env = process.env) {
+  const raw = env?.SPOTTER_STOP_SHORT_FINAL_MAX_CHARS;
+  if (raw === undefined || raw === '') return DEFAULT_STOP_SHORT_FINAL_MAX_CHARS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_STOP_SHORT_FINAL_MAX_CHARS;
+  return parsed;
+}
+
+export { DEFAULT_STOP_SHORT_FINAL_MAX_CHARS };

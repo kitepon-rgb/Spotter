@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { appendFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,15 @@ import {
   readStdinJson,
   requireString,
 } from '../hooks/lib.mjs';
+import {
+  appendPendingContext,
+  drainPendingContexts,
+} from '../hooks/pending-context.mjs';
+import {
+  appendHookEvent,
+  hookEventsPath,
+  summarizeHookEvents,
+} from '../core/hook-event-log.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
@@ -26,8 +35,6 @@ const CODEX_HOOK_TIMEOUT_SEC = 60;
 const DEFAULT_CODEX_HOOK_AUDITOR_TIMEOUT_MS = 20_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
 const DEFAULT_CODEX_STOP_SHORT_FINAL_MAX_CHARS = 120;
-const CODEX_PENDING_DIR = 'codex-pending';
-const CODEX_HOOK_EVENTS_FILE = 'codex-hook-events.jsonl';
 
 const CODEX_HOOK_USAGE = `spotter codex-hook — Codex native hook adapter
 
@@ -114,7 +121,7 @@ export async function runCodexUserPromptSubmitHook({
   const startedAt = Date.now();
 
   const prompt = requireString(input, 'prompt');
-  const contexts = await drainCodexPendingContexts({ projectRoot, sessionId: codexSessionId(input) });
+  const contexts = await drainPendingContexts({ projectRoot, sessionId: codexSessionId(input) });
   if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
@@ -213,7 +220,7 @@ export async function runCodexStopHook({
   } catch (err) {
     const errorText = formatCodexHookBackendError(err);
     writeError(`${errorText}\n`);
-    await appendCodexPendingContext({
+    await appendPendingContext({
       projectRoot,
       sessionId: codexSessionId(input),
       text: errorText,
@@ -248,7 +255,7 @@ export async function runCodexStopHook({
     return;
   }
 
-  await appendCodexPendingContext({
+  await appendPendingContext({
     projectRoot,
     sessionId: codexSessionId(input),
     text: formatTransparentBlockReason(legacyResultFromJudgment(judgment).missing_tools),
@@ -450,60 +457,17 @@ function codexSessionId(payload) {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function codexPendingPath({ projectRoot, sessionId }) {
-  if (!sessionId) return null;
-  const clean = sessionId.replace(/[^A-Za-z0-9_-]/g, '');
-  if (!clean) return null;
-  return join(projectRoot, '.spotter', CODEX_PENDING_DIR, `${clean}.json`);
-}
+// Phase B (hook parity, 2026-05-08): pending-context helpers were moved to
+// `src/hooks/pending-context.mjs` and the on-disk path migrated from
+// `.spotter/codex-pending/` to host-neutral `.spotter/pending/`. The Claude Stop hook
+// now writes to the same queue.
 
-async function appendCodexPendingContext({ projectRoot, sessionId, text }) {
-  const path = codexPendingPath({ projectRoot, sessionId });
-  const value = String(text ?? '').trim();
-  if (!path || !value) return false;
-  const contexts = await readCodexPendingContexts(path);
-  if (!contexts.includes(value)) contexts.push(value);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(contexts, null, 2) + '\n', 'utf8');
-  return true;
-}
-
-async function drainCodexPendingContexts({ projectRoot, sessionId }) {
-  const path = codexPendingPath({ projectRoot, sessionId });
-  if (!path) return [];
-  const contexts = await readCodexPendingContexts(path);
-  if (contexts.length > 0) {
-    try {
-      await unlink(path);
-    } catch (err) {
-      if (err.code !== 'ENOENT') throw err;
-    }
-  }
-  return contexts;
-}
-
-async function readCodexPendingContexts(path) {
-  try {
-    const raw = await readFile(path, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.map((item) => typeof item === 'string' ? item.trim() : '').filter(Boolean)
-      : [];
-  } catch (err) {
-    if (err.code === 'ENOENT') return [];
-    throw err;
-  }
-}
-
+// Phase D (hook parity, 2026-05-08): Codex hook events now go through the host-neutral
+// `appendHookEvent` so Claude / Codex events live in the same `.spotter/hook-events.jsonl`.
+// Kept as an internal wrapper so existing call sites (and the `recordHookEventFn` DI knob
+// in tests) can stay on the same shape.
 async function appendCodexHookEvent({ projectRoot, event }) {
-  const value = {
-    schema: 'spotter.codex_hook_event.v1',
-    timestamp: new Date().toISOString(),
-    ...event,
-  };
-  const path = codexHookEventsPath(projectRoot);
-  await mkdir(dirname(path), { recursive: true });
-  await appendFile(path, JSON.stringify(value) + '\n', 'utf8');
+  await appendHookEvent({ projectRoot, host: 'codex', event });
 }
 
 async function recordCodexHookEventSafe(recordHookEventFn, input, writeError) {
@@ -514,17 +478,24 @@ async function recordCodexHookEventSafe(recordHookEventFn, input, writeError) {
   }
 }
 
+// Phase D (hook parity, 2026-05-08): Codex `--project` diagnostics now read the host-neutral
+// `<projectRoot>/.spotter/hook-events.jsonl` and filter to `host:"codex"` so the existing
+// `codex-hook diagnostics` shape (counts of just Codex events) stays intact.
 export async function summarizeCodexHookEvents({ projectRoot, readFileFn = readFile } = {}) {
   if (typeof projectRoot !== 'string' || projectRoot.length === 0) {
     throw new TypeError('summarizeCodexHookEvents: projectRoot must be a non-empty string');
   }
+  const full = await summarizeHookEvents({ projectRoot, readFileFn });
+  // Re-aggregate with a Codex-only filter so the legacy diagnostics caller doesn't see Claude
+  // entries pulled in from the unified file. We re-read the JSONL ourselves to keep counts
+  // exact (summarizeHookEvents already iterated, but it folded Claude entries in).
   const summary = {
-    schema: 'spotter.codex_hook_events_summary.v1',
+    schema: 'spotter.hook_events_summary.v1',
     projectRoot,
-    logPath: codexHookEventsPath(projectRoot),
-    exists: false,
+    logPath: hookEventsPath(projectRoot),
+    exists: full.exists,
     events: 0,
-    parseErrors: 0,
+    parseErrors: full.parseErrors,
     byHook: {},
     byStatus: {},
     byBackend: {},
@@ -532,19 +503,19 @@ export async function summarizeCodexHookEvents({ projectRoot, readFileFn = readF
     maxDurationMs: 0,
     recent: [],
   };
+  if (!summary.exists) return summary;
   let totalDurationMs = 0;
   try {
     const raw = await readFileFn(summary.logPath, 'utf8');
-    summary.exists = true;
     for (const line of raw.split(/\r?\n/)) {
       if (!line.trim()) continue;
       let event;
       try {
         event = JSON.parse(line);
       } catch {
-        summary.parseErrors += 1;
         continue;
       }
+      if (event.host !== 'codex') continue;
       summary.events += 1;
       incrementCounter(summary.byHook, event.hook ?? 'unknown');
       incrementCounter(summary.byStatus, event.status ?? 'unknown');
@@ -575,10 +546,6 @@ function compactCodexHookEvent(event) {
     reason: event.reason ?? null,
     durationMs: Number.isFinite(event.durationMs) ? event.durationMs : null,
   };
-}
-
-function codexHookEventsPath(projectRoot) {
-  return join(projectRoot, '.spotter', CODEX_HOOK_EVENTS_FILE);
 }
 
 function incrementCounter(counter, key) {

@@ -1,5 +1,138 @@
 # Changelog
 
+## 1.4.8
+
+**Hook 挙動 parity (Codex → Claude) 移植**。Codex 側で確定していた 3 つの hook 挙動 — Stop
+short-skip / Stop deferred delivery / hook event JSONL ログ — を Claude 側にも適用し、
+両 host で同じ思想で動くよう揃えた。`decision:"block"` は Claude hook から完全撤去された。
+
+### 変更点
+
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)** (Phase A):
+  `handleTurnEnd` 冒頭に short-final + 0 used_tools の skip 分岐を追加。最終応答が ≤120 chars
+  (code-point 単位) かつ used_tools 0 件のとき auditor を呼ばずに
+  `{pass:true, reason:"short_final_no_tools"}` を即返す。`SPOTTER_STOP_SHORT_FINAL_MAX_CHARS`
+  で閾値変更、`<= 0` で機能無効化。Codex 側 `shouldSkipShortCodexStop` と同じ判定軸。
+  pure helper `shouldSkipShortStop` / `resolveStopShortFinalMaxChars` を export。
+- **編集 [src/hooks/stop.mjs](src/hooks/stop.mjs)** (Phase B):
+  `decision:"block"` を撤去。daemon が `pass:false` を返したら、
+  `<projectRoot>/.spotter/pending/<sessionId>.json` に指摘テキスト (formatTransparentBlockReason
+  の同じ wording) を append し、stdout は空のまま exit 0。次の UserPromptSubmit が drain して
+  `additionalContext` で配信する。`stop_hook_active:true` の早期 pass は維持。
+- **編集 [src/hooks/user-prompt.mjs](src/hooks/user-prompt.mjs)** (Phase B):
+  入口で `<projectRoot>/.spotter/pending/<sessionId>.json` を drain → `additionalContext` に統合。
+  daemon の `pass:false` 結果と pending drain は同じ `additionalContext` に合体。短プロンプト
+  早期 return 経路でも drain は走るので pending が一時返答に詰まらない。
+- **新規 [src/hooks/pending-context.mjs](src/hooks/pending-context.mjs)** (Phase B):
+  共有 pending queue helper (`pendingPath` / `appendPendingContext` / `drainPendingContexts` /
+  `readPendingContexts`)。Claude / Codex 両 host から同じ実装を通る。pending file は
+  `<projectRoot>/.spotter/pending/<sanitized-id>.json`、JSON 配列形式、識別 dedupe。
+- **編集 [src/cli/codex-hook-cmd.mjs](src/cli/codex-hook-cmd.mjs)** (Phase B + Phase D):
+  Codex 側 private `codexPendingPath` / `appendCodexPendingContext` / `drainCodexPendingContexts`
+  / `readCodexPendingContexts` を共有 helper に置換、`CODEX_PENDING_DIR` 定数撤去。
+  `appendCodexHookEvent` は `appendHookEvent({host:'codex'})` の薄い wrapper に変更し、
+  `summarizeCodexHookEvents` は host:codex でフィルタする wrapper にして既存 export 名互換を維持。
+  pending 保存先を `.spotter/codex-pending/` から host-neutral `.spotter/pending/` に移行。
+- **新規 [src/core/hook-event-log.mjs](src/core/hook-event-log.mjs)** (Phase D):
+  host-neutral hook event JSONL helper (`appendHookEvent` / `appendHookEventSafe` /
+  `summarizeHookEvents` / `hookEventsPath` / schema 定数)。schema は
+  `spotter.hook_event.v1`、`host: "claude" | "codex"` フィールドを必須化。
+- **編集 Claude 側 hook 5 種** (Phase D):
+  `src/hooks/{session-start,user-prompt,pre-tool-use,stop,session-end}.mjs` に
+  `recordClaudeHookEvent` 経由で hook event JSONL に append。各 hook の status / reason /
+  durationMs / pendingContextCount / missingTools が `<projectRoot>/.spotter/hook-events.jsonl`
+  に時系列で記録される。Codex 側 records と同一ファイル / 同一 schema。
+- **編集 [src/hooks/lib.mjs](src/hooks/lib.mjs)** (Phase D):
+  Claude hook 用の `recordClaudeHookEvent` ヘルパ追加 (best-effort、失敗は stderr へ warn のみで
+  hook 自体は壊さない)。
+- **編集 [src/cli/diagnostics-cmd.mjs](src/cli/diagnostics-cmd.mjs)** (Phase D):
+  `--project DIR` option 追加 (default: cwd)。daemon log の集計に加えて
+  `<projectRoot>/.spotter/hook-events.jsonl` も読み、`hookEvents` セクションに
+  `byHost` / `byHook` / `byStatus` / `byBackend` / 平均 / 最大 duration を出力。
+- **編集 test/** (Phase A/B/D 合わせて 37 件追加 / 3 件 short-skip 干渉回避):
+  test/daemon.test.mjs (Phase A 13 件), test/hooks.test.mjs (Phase B 13 件),
+  test/hook-event-log.test.mjs (Phase D 11 件)。フルスイート 320 tests / 319 pass / 1 skip。
+
+### 安全制約 (変更なし)
+
+`SPOTTER_PARENT_PID` / `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` / `agent_id` /
+`source === "startup"` / `.spotter/marker.json` / PID preexist check / 10 秒 Haiku call window
+はすべて v1.4.7 と同じ仕様を維持。daemon の auditor 経路 (`createAuditorBackend` /
+`createCodexCliAuditorBackend`) も無変更。Backend 取り扱い (Phase 5 / v1.4.7 で完了済み) も
+無変更。Backend error / transport error は引き続き hook が exit 1 + stderr で表面化し、pending
+queue へは混ぜない (silent fallback 禁止)。
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.8`
+2. 各プロジェクトで `spotter install` 再実行 (新 hook event JSONL の path 整合のため)
+3. 既存 `<projectRoot>/.spotter/codex-pending/` ディレクトリは v1.4.8 では参照されなくなる
+   (新パスは `.spotter/pending/`)。残存 file は手動削除可、自動 cleanup はしない
+4. 既存 `<projectRoot>/.spotter/codex-hook-events.jsonl` も v1.4.8 では新規書き込みされず、
+   新ファイルは `.spotter/hook-events.jsonl`。古い JSONL は手動 archive / 削除が望ましい
+
+### 検証
+
+- `node --test` 320 tests / 319 pass / 1 skip 緑
+- 実セッション smoke は Spotter 自身のリポジトリでは self-referential 制約のため実施せず。
+  別プロジェクトでの実セッション smoke と数日分 diagnostics は rollout 観測フェーズに回す
+
+## 1.4.7
+
+**Claude host の opt-in `next` policy を Codex CLI primary auditor に切り替え (Phase 5)**。
+v1.4.6 までは `SPOTTER_AUDITOR_BACKEND_POLICY=next` を Claude host で立てても
+`policy_next_claude_held_for_phase5` のまま Haiku に張り付いていた。Phase 4 matrix smoke
+(2026-05-06, GeForce 5000 fixture) で `claude.codex-cli=10041ms` /
+`claude.codex-sidecar=12863ms` と Codex CLI が latency 優位、かつ Haiku diagnostics 平均が
+`user_input ~14.3s / turn_end ~16.6s` だったため、Claude host も `next` で Codex CLI を
+選ぶようにした。Codex host 既定 (`v1.4.3` で固定) と同じ判定軸。
+
+### 変更点
+
+- **編集 [src/core/auditor-backend.mjs](src/core/auditor-backend.mjs)**:
+  `selectByPolicy` の Claude+`next` 経路を Codex CLI に変更
+  (`reason=policy_next_claude_codex_cli`, `compatibility=none`)。`current` policy と
+  `SPOTTER_AUDITOR_BACKEND=haiku` 明示時のみ Haiku を維持する。Codex CLI が unavailable /
+  timeout / schema invalid / non-zero exit の場合、`createCodexCliAuditorBackend` が
+  既存通り `AuditorBackendError` を投げ、daemon は Haiku に hidden fallback せず
+  structured error として hook に伝搬する。
+- **編集 [test/auditor-backend.test.mjs](test/auditor-backend.test.mjs)**:
+  Phase 1 用の "held for phase5" 固定を Phase 5 後の挙動 (Claude+`next` →
+  `policy_next_claude_codex_cli`) に置き換え、`current` policy が両 host で Haiku を維持する
+  test、Claude+`next` で `SPOTTER_AUDITOR_BACKEND=haiku` 明示が依然として Haiku を選ぶ
+  互換 test、`createAuditorBackend` factory が `auto` + Claude + `next` で Codex CLI backend を
+  返す factory-level test を追加。
+- **編集 [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md)** /
+  [docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md) /
+  [docs/open-issues.md](docs/open-issues.md):
+  Claude host の `current` / `next` policy 表と Phase 5 ゲート、Haiku compatibility が
+  `current` policy または `SPOTTER_AUDITOR_BACKEND=haiku` 明示時のみであること、hidden
+  fallback 不可を明記。
+
+### 安全制約 (変更なし)
+
+`SPOTTER_PARENT_PID`, `SPOTTER_BACKEND`, `SPOTTER_CHILD_BACKEND`, `agent_id`,
+`source === "startup"`, `.spotter/marker.json`, PID preexist check, 10 秒 Haiku call window
+は全て v1.4.6 と同じ仕様を維持。Codex CLI auditor child は引き続き
+`--ephemeral --ignore-user-config --ignore-rules --sandbox read-only` + recursion marker env で
+spawn される。
+
+### ユーザー側で必要な手順
+
+1. `npm install -g claude-spotter@1.4.7`
+2. Claude host の `next` policy を試したいプロジェクトで
+   `SPOTTER_AUDITOR_BACKEND_POLICY=next` をセット (例: shell rc / `.envrc`)
+3. Codex CLI が PATH にあること、`codex --version` が通ることを確認
+4. `current` policy (= 既存 Haiku 動作) は明示変更しない限り維持される
+
+### 検証
+
+- `node --test` 緑化
+- 実セッション smoke は Spotter 自身のリポジトリでは self-referential 制約があるため
+  実施しない。代替として Phase 4 matrix smoke (2026-05-06) と Phase 5 unit test を gate に
+  使う。別プロジェクトでの実セッション smoke と数日分 diagnostics は Phase 7 rollout 観測で
+  追って計測する。
+
 ## 1.4.6
 
 **Codex 初回セッションが空 catalog に依存し得る穴を修正**。v1.4.5 までは

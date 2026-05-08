@@ -82,6 +82,26 @@ Codex native に Spotter を適用して先に最適化し、実測できた改�
 完了済みの primary backend migration ログは
 [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md) に保持する。
 
+**2026-05-08 更新 (v1.4.7 Phase 5)**: Claude host の opt-in `next` policy を Codex CLI に
+切り替えた。`SPOTTER_AUDITOR_BACKEND_POLICY=next` を設定した Claude セッションは
+`policy_next_claude_codex_cli` で `codex exec` 経由の primary auditor を呼ぶ。Codex CLI
+unavailable / timeout / schema invalid / non-zero exit は hidden fallback せず、
+`AuditorBackendError` を構造化エラーとして hook に伝搬する。`current` policy は既存互換の
+Haiku を維持。Haiku 明示利用は `SPOTTER_AUDITOR_BACKEND=haiku` か `current` policy のみ。
+別プロジェクトでの Claude 実セッション smoke と数日分 diagnostics は Phase 7 rollout 観測で
+追って計測する。
+
+**2026-05-08 完了 (v1.4.8 Hook behavior parity)**: Codex 改修で確定した hook 挙動 3 種を
+Claude 側にも移植完了。
+(A) Stop short-skip = daemon `handleTurnEnd` で短い final + 0 used_tools のとき auditor を呼ばずに即 pass。
+(B) Stop deferred delivery = `decision:"block"` 撤去、`.spotter/pending/<sessionId>.json` 経由で
+次 UserPromptSubmit の `additionalContext` として配信。Codex 側 pending path も
+host-neutral `.spotter/pending/` に移行 (旧 `.spotter/codex-pending/`)。
+(D) Hook event JSONL = `.spotter/hook-events.jsonl` (schema `spotter.hook_event.v1` + `host` フィールド)
+に Claude / Codex 両 host の hook event を時系列で記録、`spotter diagnostics logs --json` で
+集計表示。設計判断と検証ログは [`SPOTTER_HOOK_PARITY_TODO.md`](SPOTTER_HOOK_PARITY_TODO.md)。
+別プロジェクトでの実セッション smoke と数日分 diagnostics は rollout 観測フェーズで実施する。
+
 **2026-05-06 更新**: `spotter diagnostics logs --json` は backend 別集計 (`backends`,
 `stages.*.backends`) を持つようになった。Haiku first/resumed だけでなく、Codex CLI /
 codex-sidecar primary auditor の duration / pass=false / missing 件数を同じ summary で比較できる。

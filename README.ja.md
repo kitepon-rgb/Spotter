@@ -75,8 +75,8 @@ flowchart TD
     BA --> SH[Stop hook<br/>応答と使用済みツールから最終チェック]
     SH --> DEC{見落とし<br/>あり?}
     DEC -->|なし| DONE([完了])
-    DEC -->|あり| SB[差し戻し<br/>max 1 回<br/>stop_hook_active で自動担保]
-    SB --> BA2([Bell の補正応答]) --> DONE
+    DEC -->|あり| SB[.spotter/pending/ に積む<br/>v1.4.8 deferred delivery]
+    SB --> NEXT([次の UserPromptSubmit で<br/>additionalContext として配信])
 ```
 
 ### カタログの収集経路
@@ -178,8 +178,8 @@ Codex CLI auditor の子プロセスは、hook 判定を安く速く保つため
 
 ## 既知の制約
 
-- Stop hook は Bell の最初の応答が**出力された後**に発火するため、Spotter が Stop で差し戻した場合、ユーザーは「最初の応答 + 補正応答」の 2 連続を見ます (Claude Code の hook 仕様による制約)。UserPromptSubmit 段階での先回り検出を精度の軸にしています
-- Codex native `Stop` は **即時ブロックではなく遅延配送**です。Codex `Stop` で不足ツールを見つけた場合、Spotter は `.spotter/codex-pending/` に指摘を保存し、次の same-session `UserPromptSubmit` で `additionalContext` として提示します。これは Codex の現行 `decision:"block"` が `Stop Blocked` / exit code 1 になりやすい実測結果を避けるためです
+- v1.4.8 以降、Claude / Codex 両 host で `Stop` hook は **遅延配送 (deferred delivery)** に統一されました。`Stop` で見落としツールを検出した場合、Spotter は `<projectRoot>/.spotter/pending/<sessionId>.json` に指摘を積み、次の same-session `UserPromptSubmit` で `additionalContext` として配信します。当ターンの最初の応答は transcript にそのまま残るため、`decision:"block"` で補正サイクルを回す方式の「最終応答が補正中心になって元の文脈が迷子」問題が解消します (Codex 側は `Stop Blocked` / exit code 1 回避も兼ねる)
+- pending ファイルは Claude / Codex が同じパス (`.spotter/pending/`) を共有します。host-neutral 設計です
 - **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Bell に届かない症状として顕在化します (timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
 
 <details>

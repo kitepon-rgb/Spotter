@@ -175,11 +175,21 @@ function selectByPolicy({ hostAgent, policy, projectConfig }) {
     };
   }
   if (hostAgent === 'claude') {
+    // Phase 5: Claude host opt-in `next` policy promotes the primary auditor backend
+    // from Haiku to Codex CLI. Phase 4 matrix smoke (2026-05-06, GeForce 5000 fixture)
+    // measured `claude.codex-cli=10041ms` vs `claude.codex-sidecar=12863ms` and Haiku
+    // diagnostics averaged `user_input ~14.3s / turn_end ~16.6s`, so Codex CLI wins on
+    // latency without giving up schema-fixed JSON judgment. Hidden fallback is
+    // forbidden — when codex-cli is unavailable / times out / exits non-zero,
+    // `createCodexCliAuditorBackend` throws `AuditorBackendError` and the daemon
+    // surfaces the structured error instead of dropping back to Haiku.
+    // Haiku stays reachable only via `current` policy or
+    // `SPOTTER_AUDITOR_BACKEND=haiku`.
     return {
-      backend: 'haiku',
-      mode: 'compatibility_haiku',
-      compatibility: 'current_haiku',
-      reason: 'policy_next_claude_held_for_phase5',
+      backend: 'codex-cli',
+      mode: 'codex-cli',
+      compatibility: 'none',
+      reason: 'policy_next_claude_codex_cli',
     };
   }
   throw new AuditorBackendError(

@@ -9,6 +9,7 @@
 
 - 現状課題と観測タスク: [`open-issues.md`](open-issues.md)
 - カタログ / tool-db 設計: [`catalog-design.md`](catalog-design.md)
+- 進行中の hook parity 移植 TODO: [`SPOTTER_HOOK_PARITY_TODO.md`](SPOTTER_HOOK_PARITY_TODO.md)
 
 完了済み計画と歴史記録:
 
@@ -73,7 +74,7 @@ tool environment without overwriting Claude `.spotter/tool-db.json` or Claude's 
 description cache at `~/.spotter/tool-db.json`. Codex global cache writes go to
 `~/.spotter/tool-db.codex.json`. Codex `Stop` does not
 block the just-finished answer. It uses deferred delivery: Spotter context is queued under
-`.spotter/codex-pending/` and surfaced on the next same-session `UserPromptSubmit`.
+`.spotter/pending/` (host-neutral, shared with Claude Stop deferred delivery as of v1.4.8) and surfaced on the next same-session `UserPromptSubmit`.
 This is intentional. Real Codex hook smoke showed that `decision:"block"` after final
 answer becomes `Stop Blocked` / exit code 1 rather than a clean continuation, so the
 Codex adapter follows the pending-queue pattern until Codex exposes a non-blocking
@@ -93,18 +94,32 @@ no used tools are skipped to avoid duplicate post-answer latency.
   - returns outside a project containing `.spotter/marker.json`.
   - otherwise starts detached `spotter db refresh --host-agent codex` and returns without waiting.
 - `UserPromptSubmit`
-  - returns early for child calls, subagent calls, outside-project calls, and short prompts.
-  - sends `event:"user_input"` to the daemon.
+  - returns early for child calls, subagent calls, outside-project calls.
+  - drains `<projectRoot>/.spotter/pending/<sessionId>.json` before deciding short-prompt skip.
+  - on short prompt (≤10 chars trimmed), emits drained pending context (if any) and returns.
+  - sends `event:"user_input"` to the daemon for non-short prompts.
   - on `E_UNREACHABLE`, respawns daemon once and retries.
-  - when daemon returns `pass:false`, emits `additionalContext` with transparent Spotter wording.
+  - merges drained pending context with daemon `pass:false` finding into one `additionalContext`.
+  - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
 - `PreToolUse`
   - records `tool_name` as `event:"tool_used"`.
   - never calls Haiku.
-- `Stop`
+  - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
+- `Stop` (Phase B / v1.4.8 — deferred delivery)
   - sends visible assistant text as `event:"turn_end"`.
-  - when daemon returns `pass:false`, returns `decision:"block"` with transparent Spotter wording.
+  - daemon may early-pass with `reason:"short_final_no_tools"` when final ≤120 chars and used_tools is empty
+    (`SPOTTER_STOP_SHORT_FINAL_MAX_CHARS` to tune; `<= 0` disables).
+  - on `pass:false`, **does NOT** return `decision:"block"`. Appends the same transparent
+    block-reason wording to `<projectRoot>/.spotter/pending/<sessionId>.json` (JSON array,
+    de-duplicated) and exits 0 with no stdout. Pending entries surface on the next same-session
+    UserPromptSubmit's `additionalContext`.
+  - `stop_hook_active:true` triggers daemon early-pass; nothing is queued.
+  - backend / transport errors still exit 1 + stderr (silent fallback forbidden).
+  - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
 - `SessionEnd`
   - requests daemon shutdown for the session.
+  - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl` (cleanup
+    failures are warned to stderr, not failed).
 
 ## Daemon Safety Contract
 
@@ -229,9 +244,14 @@ Second-pass workflow は、主判定で得た `SpotterFinding[]` を別の観点
 dispatch も opt-in かつ detached であり、hook response は Codex を待ちません。
 
 Codex host の primary auditor backend は v1.4.5 時点で Codex CLI (`codex exec`) が既定です。
-Claude host は現行 Haiku-compatible path を既定として維持します。完了済みの migration
-計画と smoke 結果は [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
-に保管しています。
+Claude host の `current` policy は現行 Haiku-compatible path を既定として維持します。
+v1.4.7 以降、Claude host の opt-in `next` policy
+(`SPOTTER_AUDITOR_BACKEND_POLICY=next`) は primary auditor を Codex CLI に切り替えます
+(reason `policy_next_claude_codex_cli`)。Codex CLI が unavailable / timeout / schema invalid /
+non-zero exit の場合は `AuditorBackendError` を hidden fallback せず構造化エラーとして表面化します。
+Claude host で Haiku を選べるのは `current` policy または `SPOTTER_AUDITOR_BACKEND=haiku`
+明示時のみです。完了済みの migration 計画と smoke 結果は
+[`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md) に保管しています。
 
 ## Regression Coverage
 

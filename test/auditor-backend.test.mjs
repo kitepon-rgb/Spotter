@@ -70,11 +70,28 @@ test('selectAuditorBackend: explicit backend wins over policy and host default',
   });
 });
 
-test('selectAuditorBackend: current and next presets are fixed for Phase 1', () => {
-  assert.equal(selectAuditorBackend({
+test('selectAuditorBackend: current keeps Haiku for Claude and Codex hosts', () => {
+  assert.deepEqual(selectAuditorBackend({
     hostAgent: 'claude',
     env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'current' },
-  }).backend, 'haiku');
+  }), {
+    backend: 'haiku',
+    mode: 'compatibility_haiku',
+    compatibility: 'current_haiku',
+    reason: 'policy_current_claude',
+  });
+  assert.deepEqual(selectAuditorBackend({
+    hostAgent: 'codex',
+    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'current' },
+  }), {
+    backend: 'haiku',
+    mode: 'compatibility_haiku',
+    compatibility: 'current_haiku',
+    reason: 'policy_current_codex',
+  });
+});
+
+test('selectAuditorBackend: next promotes Codex CLI for Codex and Claude hosts (Phase 5)', () => {
   assert.deepEqual(selectAuditorBackend({
     hostAgent: 'codex',
     env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'next' },
@@ -84,10 +101,32 @@ test('selectAuditorBackend: current and next presets are fixed for Phase 1', () 
     compatibility: 'none',
     reason: 'policy_next_codex_host',
   });
-  assert.equal(selectAuditorBackend({
+  assert.deepEqual(selectAuditorBackend({
     hostAgent: 'claude',
     env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'next' },
-  }).reason, 'policy_next_claude_held_for_phase5');
+  }), {
+    backend: 'codex-cli',
+    mode: 'codex-cli',
+    compatibility: 'none',
+    reason: 'policy_next_claude_codex_cli',
+  });
+});
+
+test('selectAuditorBackend: explicit haiku still wins under next policy on Claude host', () => {
+  // Phase 5 must not silently fall back to Haiku, but explicit
+  // SPOTTER_AUDITOR_BACKEND=haiku is the documented compatibility escape hatch.
+  assert.deepEqual(selectAuditorBackend({
+    hostAgent: 'claude',
+    env: {
+      SPOTTER_AUDITOR_BACKEND: 'haiku',
+      SPOTTER_AUDITOR_BACKEND_POLICY: 'next',
+    },
+  }), {
+    backend: 'haiku',
+    mode: 'haiku',
+    compatibility: 'explicit_haiku',
+    reason: 'explicit_backend',
+  });
 });
 
 test('selectAuditorBackend: auto on unknown host requires explicit backend', () => {
@@ -100,6 +139,28 @@ test('selectAuditorBackend: auto on unknown host requires explicit backend', () 
 test('createAuditorBackend: codex-sidecar returns the sidecar auditor backend', () => {
   const backend = createAuditorBackend({ backend: 'codex-sidecar', catalog, projectRoot: '/repo' });
   assert.equal(backend.name, 'codex-sidecar');
+});
+
+test('createAuditorBackend: auto + Claude host + next policy yields codex-cli backend', () => {
+  const backend = createAuditorBackend({
+    backend: 'auto',
+    catalog,
+    projectRoot: '/repo',
+    hostAgent: 'claude',
+    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'next' },
+  });
+  assert.equal(backend.name, 'codex-cli');
+});
+
+test('createAuditorBackend: auto + Claude host + current policy stays on Haiku', () => {
+  const backend = createAuditorBackend({
+    backend: 'auto',
+    catalog,
+    projectRoot: '/repo',
+    hostAgent: 'claude',
+    env: { SPOTTER_AUDITOR_BACKEND_POLICY: 'current' },
+  });
+  assert.equal(backend.name, 'haiku');
 });
 
 test('createHaikuAuditorBackend: adapter returns SpotterJudgment and preserves preamble-once caller state', async () => {

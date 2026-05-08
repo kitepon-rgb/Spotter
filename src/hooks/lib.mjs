@@ -140,6 +140,21 @@ export function formatTransparentContext(missingTools) {
   ].join('\n');
 }
 
+// Phase D (hook parity, 2026-05-08): hook-event JSONL helper for Claude-side hooks.
+// Each Claude hook calls this once with its observation; failures are silenced (a
+// missing diagnostics file is acceptable, but the hook itself must not break).
+import { appendHookEventSafe } from '../core/hook-event-log.mjs';
+
+export async function recordClaudeHookEvent({ projectRoot, event, writeError } = {}) {
+  if (typeof projectRoot !== 'string' || projectRoot.length === 0) return;
+  await appendHookEventSafe({
+    projectRoot,
+    host: 'claude',
+    event,
+    writeError: writeError ?? ((text) => process.stderr.write(text)),
+  });
+}
+
 export function formatTransparentBlockReason(missingTools) {
   // §12.3: transparent phrasing for Stop hook block.
   const lines = missingTools.map((m) => `- \`${m.name}\`: ${m.reason}`);

@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { startDaemon, DaemonAlreadyRunningError, pidFilePath } from '../src/daemon/daemon.mjs';
+import {
+  startDaemon,
+  DaemonAlreadyRunningError,
+  pidFilePath,
+  shouldSkipShortStop,
+  resolveStopShortFinalMaxChars,
+  DEFAULT_STOP_SHORT_FINAL_MAX_CHARS,
+} from '../src/daemon/daemon.mjs';
 import { sendRequest } from '../src/daemon/transport.mjs';
 import { HaikuError } from '../src/daemon/haiku-caller.mjs';
 import { mkdtemp, writeFile, rm, unlink } from 'node:fs/promises';
@@ -89,7 +96,9 @@ test('startDaemon: turn_end per-turn prompt has no <user_input> tag (v0.13.0)', 
     promptsSeen.push(prompt);
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
-  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0 });
+  // Phase A: disable short-skip so this test exercises the auditor path even with a
+  // short final_response (this test asserts prompt shape, not skip behavior).
+  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0, stopShortFinalMaxChars: 0 });
   try {
     await sendRequest({
       sessionId,
@@ -339,7 +348,9 @@ test('startDaemon: turn_end with schema-violating Haiku output → silent pass +
     return 'Spotter のロールは正式に終了します。あなたのご質問は...';
   };
   haikuCaller.reset = () => { resetCalled += 1; };
-  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0 });
+  // Phase A: disable short-skip so this test reaches the auditor (and triggers role-collapse
+  // recovery) even with a short final_response.
+  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0, stopShortFinalMaxChars: 0 });
   try {
     await sendRequest({
       sessionId,
@@ -410,6 +421,9 @@ test('startDaemon: turn_end log records mode=resumed when caller is past its fir
     haikuCaller,
     logFn: (msg) => logs.push(msg),
     haikuCallWindowMs: 0,
+    // Phase A: disable short-skip so this test reaches the auditor (it asserts mode=resumed,
+    // not skip behavior) even with a short final_response.
+    stopShortFinalMaxChars: 0,
   });
   try {
     await sendRequest({
@@ -689,6 +703,239 @@ test('startDaemon: opt-in codex_risk_check dispatches pass=false findings asynch
     assert.equal(dispatches[0].stage, 'user_input');
     assert.equal(dispatches[0].dryRun, true);
     assert.equal(dispatches[0].judgment.findings[0].toolName, 'current_time');
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Phase A (hook parity, 2026-05-08): short-final + 0 used_tools のターンは Stop auditor を skip。
+
+test('shouldSkipShortStop: skips when final ≤ maxChars and no used tools', () => {
+  assert.equal(shouldSkipShortStop({ finalResponse: '了解', usedTools: [], maxChars: 120 }), true);
+  assert.equal(shouldSkipShortStop({ finalResponse: '   了解   ', usedTools: [], maxChars: 120 }), true);
+});
+
+test('shouldSkipShortStop: does not skip when used tools exist (even if final is short)', () => {
+  assert.equal(
+    shouldSkipShortStop({ finalResponse: 'caveat 検索しました', usedTools: ['mcp__caveat__caveat_search'], maxChars: 120 }),
+    false
+  );
+});
+
+test('shouldSkipShortStop: does not skip when final exceeds maxChars', () => {
+  const long = 'a'.repeat(121);
+  assert.equal(shouldSkipShortStop({ finalResponse: long, usedTools: [], maxChars: 120 }), false);
+});
+
+test('shouldSkipShortStop: maxChars <= 0 disables the skip entirely', () => {
+  assert.equal(shouldSkipShortStop({ finalResponse: '了解', usedTools: [], maxChars: 0 }), false);
+  assert.equal(shouldSkipShortStop({ finalResponse: '了解', usedTools: [], maxChars: -1 }), false);
+});
+
+test('shouldSkipShortStop: uses code-point length so multibyte chars count as 1', () => {
+  // Codex 側 [...str.trim()].length と同じ数え方 (surrogate pair / CJK は 1 文字扱い)
+  const cjk = 'あ'.repeat(120); // 120 code points
+  assert.equal(shouldSkipShortStop({ finalResponse: cjk, usedTools: [], maxChars: 120 }), true);
+  assert.equal(shouldSkipShortStop({ finalResponse: cjk + 'あ', usedTools: [], maxChars: 120 }), false);
+});
+
+test('resolveStopShortFinalMaxChars: returns default when env unset / empty', () => {
+  assert.equal(resolveStopShortFinalMaxChars({}), DEFAULT_STOP_SHORT_FINAL_MAX_CHARS);
+  assert.equal(resolveStopShortFinalMaxChars({ SPOTTER_STOP_SHORT_FINAL_MAX_CHARS: '' }), DEFAULT_STOP_SHORT_FINAL_MAX_CHARS);
+});
+
+test('resolveStopShortFinalMaxChars: parses numeric env override', () => {
+  assert.equal(resolveStopShortFinalMaxChars({ SPOTTER_STOP_SHORT_FINAL_MAX_CHARS: '200' }), 200);
+  assert.equal(resolveStopShortFinalMaxChars({ SPOTTER_STOP_SHORT_FINAL_MAX_CHARS: '0' }), 0);
+  assert.equal(resolveStopShortFinalMaxChars({ SPOTTER_STOP_SHORT_FINAL_MAX_CHARS: '-1' }), -1);
+});
+
+test('resolveStopShortFinalMaxChars: non-numeric env falls back to default', () => {
+  assert.equal(resolveStopShortFinalMaxChars({ SPOTTER_STOP_SHORT_FINAL_MAX_CHARS: 'abc' }), DEFAULT_STOP_SHORT_FINAL_MAX_CHARS);
+});
+
+test('startDaemon: turn_end short final + 0 used_tools skips auditor', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `short-skip-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async (_prompt) => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0 });
+  try {
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '質問' },
+      timeoutMs: 2_000,
+    });
+    const resp = await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: '了解しました', stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.pass, true);
+    assert.equal(resp.result.reason, 'short_final_no_tools');
+    // Haiku was invoked for user_input only (1 call); turn_end was skipped.
+    assert.equal(haikuCalls, 1);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: turn_end short final but used tools → normal audit (no skip)', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `short-with-tools-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async (_prompt) => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0 });
+  try {
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '質問', },
+      timeoutMs: 2_000,
+    });
+    await sendRequest({
+      sessionId,
+      event: 'tool_used',
+      payload: { tool_name: 'mcp__caveat__caveat_search' },
+      timeoutMs: 2_000,
+    });
+    const resp = await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: '検索しました', stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.pass, true);
+    assert.notEqual(resp.result.reason, 'short_final_no_tools');
+    // user_input + turn_end の 2 回呼ばれる (skip されない)
+    assert.equal(haikuCalls, 2);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: turn_end long final + 0 used_tools → normal audit (no skip)', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `long-no-tools-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async (_prompt) => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({
+    sessionId,
+    tools,
+    haikuCaller,
+    haikuCallWindowMs: 0,
+    stopShortFinalMaxChars: 50,
+  });
+  try {
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '質問' },
+      timeoutMs: 2_000,
+    });
+    const resp = await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: 'a'.repeat(60), stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.notEqual(resp.result.reason, 'short_final_no_tools');
+    assert.equal(haikuCalls, 2);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: stopShortFinalMaxChars=0 disables short-skip entirely', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `skip-disabled-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async (_prompt) => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({
+    sessionId,
+    tools,
+    haikuCaller,
+    haikuCallWindowMs: 0,
+    stopShortFinalMaxChars: 0,
+  });
+  try {
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '質問' },
+      timeoutMs: 2_000,
+    });
+    const resp = await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: '了解', stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.notEqual(resp.result.reason, 'short_final_no_tools');
+    // skip 無効化されているので turn_end も auditor を呼ぶ
+    assert.equal(haikuCalls, 2);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: short-skip resets state.usedTools and state.lastUserInput', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `short-skip-reset-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async (_prompt) => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({ sessionId, tools, haikuCaller, haikuCallWindowMs: 0 });
+  try {
+    // turn 1: user_input → short final → skipped
+    await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '質問1' },
+      timeoutMs: 2_000,
+    });
+    await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: '了解', stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    // turn 2: turn_end without preceding user_input → must hit no_user_input branch
+    // (proves state.lastUserInput was cleared by the short-skip path)
+    const resp = await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: 'b'.repeat(200), stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    assert.equal(resp.ok, true);
+    assert.equal(resp.result.reason, 'no_user_input');
+    assert.equal(haikuCalls, 1);
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });

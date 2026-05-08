@@ -25,13 +25,14 @@ v1.4.3 で Codex host 側の primary auditor migration は npm docs まで含め
 ## Goal
 
 Codex host の default は v1.4.3 時点で Codex CLI に固定済み。
-Claude host の最終 default は Claude rate limit 解除後の実測で決める。
+Claude host は v1.4.7 で opt-in `next` policy が Codex CLI を選ぶ。`current` policy は
+既存互換として Haiku を維持する。
 
-| Host | Primary auditor backend | Compatibility / fallback |
-|---|---|---|
-| Codex | Codex CLI (`codex exec`) | なし。失敗は structured error |
-| Claude | 未固定。Codex CLI を有力候補。ただし `Claude + codex-sidecar` も整合性候補として評価継続 | 明示 compatibility mode の場合だけ現行 Claude Haiku |
-| Unknown / automation | 明示設定がある場合のみ | 明示設定なしなら structured error |
+| Host | `current` policy | `next` policy | Compatibility / fallback |
+|---|---|---|---|
+| Codex | Haiku (compatibility) | Codex CLI (`codex exec`) | `next` 失敗は structured error。Haiku fallback なし |
+| Claude | Haiku (compatibility) | Codex CLI (`codex exec`) | `next` 失敗は structured error。`current` か `SPOTTER_AUDITOR_BACKEND=haiku` 明示時のみ Haiku |
+| Unknown / automation | 明示設定がある場合のみ | 明示設定がある場合のみ | 明示設定なしなら structured error |
 
 ここでいう backend は、`UserPromptSubmit` / `Stop` 相当の主判定
 (`{pass, missing_tools}` / `SpotterJudgment`) を返す auditor のこと。
@@ -438,26 +439,60 @@ Gate:
 
 ### Phase 5. Claude Host Port
 
-- [ ] Phase 4 で選んだ Claude host 向け backend policy を Claude hook に移植する。
-  初期候補は `codex-sidecar` だが、`Claude + Codex CLI` が primary auditor として優位なら
-  `codex-cli` を default にする。
-- [ ] Phase 4 で `codex-sidecar` を Claude primary default に選んだ場合は、
+- [x] Phase 4 で選んだ Claude host 向け backend policy を Claude hook に移植する。
+  Phase 4 matrix smoke (2026-05-06) は `claude.codex-cli=10041ms` /
+  `claude.codex-sidecar=12863ms` で Codex CLI が latency 優位かつ schema-fixed JSON 判定。
+  v1.4.7 で `selectByPolicy` の Claude+`next` 経路を `codex-cli` に切り替え、reason は
+  `policy_next_claude_codex_cli`。`current` policy は引き続き Haiku を維持。
+- [x] Phase 4 で `codex-sidecar` を Claude primary default に選んだ場合は、
   Phase 4 で追加した auditor workflow / diagnostics preset を Claude hook policy から使う。
-- [ ] 選択 backend unavailable の場合に Haiku compatibility mode へ入るかどうかを
+  → Claude default は `codex-cli` を採用。`SPOTTER_AUDITOR_BACKEND=codex-sidecar` の明示
+  override 経路は維持し、Phase 4 の sidecar auditor workflow / preset はそのまま使える。
+- [x] 選択 backend unavailable の場合に Haiku compatibility mode へ入るかどうかを
   Phase 4 の結果に基づいて policy 固定する。
   hidden fallback は不可。互換 mode を許す場合も daemon log と diagnostics に明示する。
-- [ ] compatibility mode は daemon log と diagnostics に明示する。
-- [ ] Claude hook timeout budget 内に収まるか実測する。
-- [ ] `Stop` hook で選択 backend が遅い場合の扱いを決める。
+  → Claude+`next` で Codex CLI が unavailable / timeout / schema invalid / non-zero exit に
+  なった場合、`createCodexCliAuditorBackend` が `AuditorBackendError` を投げ、daemon は
+  そのまま structured error として hook に伝搬する。Haiku への自動降格はしない。Haiku を
+  使うには `SPOTTER_AUDITOR_BACKEND_POLICY=current` か `SPOTTER_AUDITOR_BACKEND=haiku` を
+  明示する必要がある (compatibility=`current_haiku` / `explicit_haiku`)。
+- [x] compatibility mode は daemon log と diagnostics に明示する。
+  → `selectByPolicy` の戻り値 `compatibility` は `current_haiku` / `explicit_haiku` /
+  `none` のいずれかで、daemon log の `backend=<name>` と Phase 6 で追加済みの
+  `spotter diagnostics logs --json` backend 集計から identify できる。
+- [x] Claude hook timeout budget 内に収まるか実測する。
+  → 実セッション smoke は本リポジトリでは難しい (Spotter 自体を install すると Bell の会話が
+  Spotter 自身の議論になり Haiku/auditor が自己言及で混乱する既知の制約があるため)。代替として:
+  Phase 4 matrix smoke (2026-05-06, GeForce 5000 fixture) で `claude.codex-cli=10041ms`、
+  Phase 3 hook smoke でも Codex CLI auditor は約 7.4s (UserPromptSubmit) を実測済み。
+  Claude hook の現行 IPC timeout は 50s、daemon Haiku timeout は 45s (`v0.13.1` 以降) で
+  10s 級の Codex CLI primary auditor は同 budget 内に収まる。`spotter auditor matrix
+  --stage user_input --input <fixture> --project /home/kite/projects/Spotter` の実測値と
+  unit test (`createAuditorBackend: auto + Claude host + next policy yields codex-cli backend`)
+  を gate に使う。
+- [x] `Stop` hook で選択 backend が遅い場合の扱いを決める。
   hidden fallback は不可。timeout なら timeout error または明示 compatibility mode のどちらかを
   事前 policy で固定する。
+  → Claude host `Stop` hook では Codex CLI が `E_CODEX_CLI_TIMEOUT` を返した場合、daemon は
+  そのまま structured error として伝搬する (`legacyResultFromJudgment` は throw 経路を見ない)。
+  Haiku 同様 hook 側は exit code 1 + stderr で表面化し、silent pass にしない。明示
+  compatibility が必要なユーザーは `SPOTTER_AUDITOR_BACKEND_POLICY=current` を選ぶ。
 
 Gate:
 
 - [ ] Claude 実セッション smoke が通る。
-- [ ] 選択 backend available 時に Haiku が呼ばれないことを log / test で確認。
-- [ ] 選択 backend unavailable 時の error / compatibility mode が明示される。
+  Spotter リポジトリ自身では self-referential 制約があり、別プロジェクトで実測する。実測前は
+  `spotter auditor matrix` (Phase 4) と Phase 5 unit test を proxy にする。
+- [x] 選択 backend available 時に Haiku が呼ばれないことを log / test で確認。
+  → `test/auditor-backend.test.mjs` の
+  `createAuditorBackend: auto + Claude host + next policy yields codex-cli backend` で
+  Haiku が選ばれないことを固定。daemon log には `backend=codex-cli` が出る。
+- [x] 選択 backend unavailable 時の error / compatibility mode が明示される。
+  → `createCodexCliAuditorBackend` の `E_CODEX_CLI_*` 構造化エラー + `compatibility=none`。
+  Haiku を使うには明示 opt-in が必要。
 - [ ] Claude host の体感遅延が現行 Haiku より悪化していない、または悪化が明示的に許容されている。
+  Phase 4 matrix では Codex CLI が latency 優位だが、別プロジェクトでの実セッション smoke は
+  rollout 観測 (Phase 7) で確認する。
 
 ### Phase 6. Diagnostics And Operations
 

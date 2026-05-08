@@ -16,7 +16,16 @@
 // in user-prompt.mjs). The --parent-pid scheme from v0.6.2 is gone; orphan cleanup is
 // now heartbeat-based inside the daemon.
 
-import { readStdinJson, requireString, die, isChildCall, isSubagentCall, isOutsideSpotterProject, findSpotterMarker } from './lib.mjs';
+import {
+  readStdinJson,
+  requireString,
+  die,
+  isChildCall,
+  isSubagentCall,
+  isOutsideSpotterProject,
+  findSpotterMarker,
+  recordClaudeHookEvent,
+} from './lib.mjs';
 import { spawnDaemonAndWaitReady, spawnRefreshDetached } from './spawn-daemon.mjs';
 
 export async function runSessionStart({
@@ -24,6 +33,7 @@ export async function runSessionStart({
   readInput = readStdinJson,
   spawnDaemonAndWaitReadyFn = spawnDaemonAndWaitReady,
   spawnRefreshDetachedFn = spawnRefreshDetached,
+  recordHookEventFn = recordClaudeHookEvent,
 } = {}) {
   if (isChildCall()) return;
 
@@ -39,8 +49,13 @@ export async function runSessionStart({
     die(`SessionStart: failed to locate project root from cwd=${input.cwd}`, 2);
   }
 
+  const startedAt = Date.now();
   await spawnDaemonAndWaitReadyFn({ sessionId, projectRoot, now });
   spawnRefreshDetachedFn({ projectRoot });
+  await recordHookEventFn({
+    projectRoot,
+    event: { hook: 'SessionStart', status: 'spawned', durationMs: Date.now() - startedAt },
+  });
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {

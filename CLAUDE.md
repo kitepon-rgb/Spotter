@@ -8,7 +8,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 課題を解決したら open-issues.md から項目を消し、CHANGELOG にリリース番号とともに記録する運用。
 
+進行中の hook 挙動 parity 移植 (Codex → Claude の short-skip / deferred delivery / JSONL event log) は [docs/SPOTTER_HOOK_PARITY_TODO.md](docs/SPOTTER_HOOK_PARITY_TODO.md) で進捗管理する。
+
 ## Repository Status
+
+**v1.4.8** (2026-05-08): **Hook 挙動 parity (Codex → Claude) 移植**。Codex 側で確定していた
+3 つの hook 挙動を Claude 側にも移植し、両 host で同じ思想で動くよう揃えた。
+(A) **Stop short-skip**: daemon `handleTurnEnd` 冒頭で短い final response (≤120 chars) かつ
+used_tools 0 件のとき auditor を呼ばずに即 pass (`SPOTTER_STOP_SHORT_FINAL_MAX_CHARS` で調整可)。
+(B) **Stop deferred delivery**: Claude `decision:"block"` を完全撤去。指摘テキストを
+`<projectRoot>/.spotter/pending/<sessionId>.json` に積み、次の UserPromptSubmit が drain して
+`additionalContext` で配信する。当ターンの最終応答は transcript にそのまま残るため「最後の
+ログを見ても A という文脈が迷子になる」UX 欠陥を解消。Codex 側 pending path も
+host-neutral `.spotter/pending/` へ移行 (旧 `.spotter/codex-pending/`)。
+(D) **Hook event JSONL log**: schema `spotter.hook_event.v1` + `host` フィールドの
+`<projectRoot>/.spotter/hook-events.jsonl` に Claude / Codex 両 host の hook event を時系列で
+書く。`spotter diagnostics logs --json` (`--project DIR` 追加) は hookEvents を
+`byHost` / `byHook` / `byStatus` / `byBackend` で集計表示。recursive hook / daemon
+proliferation guard、auditor backend 取り扱い (v1.4.7) は変更なし。
+
+**v1.4.7** (2026-05-08): **Claude host の opt-in `next` policy を Codex CLI primary auditor に切り替え (Phase 5)**。
+`SPOTTER_AUDITOR_BACKEND_POLICY=next` を立てた Claude セッションは `policy_next_claude_codex_cli` で
+`codex exec` 経由の auditor を呼び、Phase 4 matrix で latency 優位だった Codex CLI を採用する。
+`current` policy と `SPOTTER_AUDITOR_BACKEND=haiku` 明示時のみ Haiku 互換を維持。Codex CLI が
+unavailable / timeout / schema invalid / non-zero exit の場合は hidden fallback せず
+`AuditorBackendError` を構造化エラーとして hook に伝搬する。recursive hook / daemon
+proliferation guard (`SPOTTER_PARENT_PID` / `SPOTTER_BACKEND` / `SPOTTER_CHILD_BACKEND` /
+`agent_id` / `source === "startup"` / marker / PID preexist / 10 秒 call window) は変更なし。
 
 **v1.4.6** (2026-05-07): **Codex 初回セッション用 tool-db を install 時に同期 seed**。
 Codex CLI が見える `spotter install` は Codex hooks 登録後に
@@ -202,7 +228,14 @@ primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査
 
 プラン §12 のうち、実装段階ではなく **設計思想レベルで開いたまま** の論点。独断で決めずユーザーに確認すること。実装レベルの穴 (Spotter の現コードに存在する技術的課題) は [docs/open-issues.md](docs/open-issues.md) を参照。
 
-- **最初の応答を取り消せない仕様への中長期対応** (§12.4): Stop hook で差し戻せるが、ユーザーが最初の応答を一瞬でも目にする点は Claude Code 側の仕様で変えられない。Pre-Response hook 相当の feature が来たら全面見直しの可能性
+- **最初の応答を取り消せない仕様への中長期対応** (§12.4): v1.4.8 で Stop hook を deferred delivery
+  に切り替えた (block 撤去 → pending queue → 次 UserPromptSubmit で `additionalContext` 配信)。
+  これにより当ターンの最終応答は transcript にそのまま残り、補正は次ターンで Bell が受け取る形に
+  なったため「最終応答が補正中心になって元の文脈が迷子」という UX 欠陥は解消した。残る論点は
+  「ユーザーが最初の応答を **見てから次の入力をするまで** 指摘を知らせる手段が無い」点。Pre-Response
+  hook 相当の feature が Claude Code 側で公式追加された場合、`docs-lookup` で確認した通り 2026-05-08
+  時点では未提供 ([SPOTTER_HOOK_PARITY_TODO.md](docs/SPOTTER_HOOK_PARITY_TODO.md) 参照)、
+  追加されれば再評価する
 
 §12.1 (カタログ初期構築の手動 vs 自動列挙) は v0.7.0 の tool-db 置換で完全に自動側に確定したため、未解決から削除済み。
 

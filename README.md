@@ -75,8 +75,8 @@ flowchart TD
     BA --> SH[Stop hook<br/>Spotter re-audits answer + tools used]
     SH --> DEC{Missed<br/>tool?}
     DEC -->|No| DONE([Done])
-    DEC -->|Yes| SB[Send-back to Bell<br/>max 1 round<br/>guarded by stop_hook_active]
-    SB --> BA2([Bell's amended answer]) --> DONE
+    DEC -->|Yes| SB[Queue finding to .spotter/pending/<br/>v1.4.8 deferred delivery]
+    SB --> NEXT([Surfaces as additionalContext<br/>on next UserPromptSubmit])
 ```
 
 ### Catalog discovery
@@ -182,7 +182,7 @@ those values for smoke tests or controlled experiments.
 ## Known limitations
 
 - The `Stop` hook fires **after** Bell's first answer has already been streamed to the user. When Spotter sends Bell back, the user sees both the original answer and the corrected one. Detection accuracy in `UserPromptSubmit` (the *pre-response* stage) is therefore Spotter's primary axis of quality
-- Codex native `Stop` is **deferred**, not an immediate block. If Spotter finds a missed tool at Codex `Stop`, it writes the finding to `.spotter/codex-pending/` and surfaces it on the next same-session `UserPromptSubmit` as `additionalContext`. This avoids Codex's current `Stop Blocked` / exit-code-1 behavior for `decision:"block"`
+- `Stop` hook is **deferred** for both Claude and Codex hosts as of v1.4.8. When Spotter finds a missed tool at `Stop`, it appends the finding to `<projectRoot>/.spotter/pending/<sessionId>.json` and surfaces it on the next same-session `UserPromptSubmit` as `additionalContext`. The original assistant message stays as the turn's final transcript entry — no `decision:"block"` re-generation cycle. The same pending file is shared by Claude and Codex (host-neutral path)
 - **Since v0.5.0, JSON schema violations from Haiku are treated as expected-anomalies** (silent pass + session renew, logged as `role_collapse_reset`) — this is the role-collapse recovery path. **Haiku timeouts still throw**, which surfaces as `UserPromptSubmit` blocking the user's prompt from reaching Bell. Timeouts have been raised twice (30s in v0.5.0, 45s in v0.13.1); making timeouts fail-open is deferred until §0 is revisited
 
 <details>
