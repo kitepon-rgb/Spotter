@@ -24,6 +24,16 @@ const finding = {
 
 const cleanGitStatus = async () => ({ stdout: '', stderr: '' });
 
+// On Windows, codex-sidecar-runner wraps non-Node commands with `cmd.exe /c` so
+// PATHEXT lookup applies to .cmd shims. Tests assert against logical sidecar
+// args ('diagnostics', 'risk-check', 'work', ...) so we strip that wrap here.
+const withWindowsUnwrap = (fn) => (cmd, args, opts) => {
+  if (process.platform === 'win32' && cmd === 'cmd.exe' && Array.isArray(args) && args[0] === '/c') {
+    return fn(args[1], args.slice(2), opts);
+  }
+  return fn(cmd, args, opts);
+};
+
 test('runCodexRiskCheck: invokes codex-sidecar risk-check with context-file and saves structured record', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-codex-risk-'));
   const calls = [];
@@ -34,7 +44,7 @@ test('runCodexRiskCheck: invokes codex-sidecar risk-check with context-file and 
       findings: [finding],
       dryRun: true,
       now: () => new Date('2026-05-06T01:02:03.004Z'),
-      execFileFn: async (cmd, args, opts) => {
+      execFileFn: withWindowsUnwrap(async (cmd, args, opts) => {
         calls.push({ cmd, args, opts });
         assert.equal(opts.cwd, project);
         assert.equal(opts.env.SPOTTER_SIDECAR, '1');
@@ -60,7 +70,7 @@ test('runCodexRiskCheck: invokes codex-sidecar risk-check with context-file and 
           }),
           stderr: '',
         };
-      },
+      }),
     });
 
     assert.equal(calls.length, 2);
@@ -85,7 +95,7 @@ test('runCodexRiskCheck: prompt includes exact risk schema hints', async () => {
       findings: [finding],
       dryRun: true,
       save: false,
-      execFileFn: async (_cmd, args) => {
+      execFileFn: withWindowsUnwrap(async (_cmd, args) => {
         if (args[0] === 'diagnostics') {
           return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
         }
@@ -101,7 +111,7 @@ test('runCodexRiskCheck: prompt includes exact risk schema hints', async () => {
           }),
           stderr: '',
         };
-      },
+      }),
     });
     assert.equal(record.status, 'success');
   } finally {
@@ -143,13 +153,13 @@ test('runCodexRiskCheck: Codex host still invokes sidecar when explicit structur
       hostAgent: 'codex',
       findings: [finding],
       save: false,
-      execFileFn: async (_cmd, args) => {
+      execFileFn: withWindowsUnwrap(async (_cmd, args) => {
         if (args[0] === 'diagnostics') {
           return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
         }
         riskCalls += 1;
         return { stdout: JSON.stringify({ status: 'ok', workflow: 'risk-check', summary: 'ok' }), stderr: '' };
-      },
+      }),
     });
 
     assert.equal(riskCalls, 1);
@@ -204,13 +214,13 @@ test('runCodexReadOnlyWorkflow: maps review/explore/opinion to matching codex-si
         findings: [finding],
         dryRun: true,
         save: false,
-        execFileFn: async (_cmd, args) => {
+        execFileFn: withWindowsUnwrap(async (_cmd, args) => {
           if (args[0] === 'diagnostics') {
             return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
           }
           seen.push(args[0]);
           return { stdout: JSON.stringify({ status: 'dry-run', workflow: args[0] }), stderr: '' };
-        },
+        }),
       });
       assert.equal(record.status, 'success');
       assert.equal(record.workflow, workflow);
@@ -319,7 +329,7 @@ test('runCodexWork: invokes codex-sidecar work with scoped config and validates 
       cleanup: 'remove',
       save: false,
       gitStatusFn: cleanGitStatus,
-      execFileFn: async (cmd, args) => {
+      execFileFn: withWindowsUnwrap(async (cmd, args) => {
         calls.push({ cmd, args });
         if (args[0] === 'diagnostics') {
           assert.equal(args[args.indexOf('--preset') + 1], 'work');
@@ -357,7 +367,7 @@ test('runCodexWork: invokes codex-sidecar work with scoped config and validates 
           }),
           stderr: '',
         };
-      },
+      }),
     });
 
     assert.equal(calls.length, 2);
@@ -421,7 +431,7 @@ test('runCodexWork: changed files outside approved scope become structured error
       cleanup: 'preserve',
       save: false,
       gitStatusFn: cleanGitStatus,
-      execFileFn: async (_cmd, args) => {
+      execFileFn: withWindowsUnwrap(async (_cmd, args) => {
         if (args[0] === 'diagnostics') {
           return {
             stdout: JSON.stringify({
@@ -444,7 +454,7 @@ test('runCodexWork: changed files outside approved scope become structured error
           }),
           stderr: '',
         };
-      },
+      }),
     });
 
     assert.equal(record.status, 'error');

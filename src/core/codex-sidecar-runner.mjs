@@ -468,7 +468,7 @@ function execPortable(execFileFn, cmd, args, spawnOptions) {
     windowsHide: true,
     maxBuffer: 10 * 1024 * 1024,
   };
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' && cmd !== process.execPath) {
     return execFileFn('cmd.exe', ['/c', cmd, ...args], options);
   }
   return execFileFn(cmd, args, options);

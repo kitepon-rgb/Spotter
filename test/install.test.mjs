@@ -89,8 +89,9 @@ test('install: re-run rewrites existing spotter hook commands to this package pa
     const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
     const hook = settings.hooks.SessionStart[0].hooks[0];
 
-    assert.ok(hook.command.includes('/bin/spotter.mjs'));
+    assert.match(hook.command, /[/\\]bin[/\\]spotter\.mjs/);
     assert.ok(!hook.command.includes('/old/bin/spotter.mjs'));
+    assert.ok(!hook.command.includes('\\old\\bin\\spotter.mjs'));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
