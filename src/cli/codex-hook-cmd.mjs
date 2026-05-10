@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuditorBackend } from '../core/auditor-backend.mjs';
 import { codexLastAssistantMessage, readCodexUsedTools } from '../core/codex-transcript.mjs';
@@ -315,7 +315,7 @@ export async function runCodexHookDiagnosticsCommand({
   writeOutput(JSON.stringify(result, null, 2) + '\n');
 }
 
-export async function installCodexHooks({ codexHome = defaultCodexHome(), nodePath = process.execPath, spotterBin = SPOTTER_BIN } = {}) {
+export async function installCodexHooks({ codexHome = defaultCodexHome(), nodePath = resolveCodexHookNodePath(), spotterBin = SPOTTER_BIN } = {}) {
   const hooksPath = join(codexHome, 'hooks.json');
   const configPath = join(codexHome, 'config.toml');
   const current = await loadJson(hooksPath);
@@ -338,6 +338,41 @@ export async function installCodexHooks({ codexHome = defaultCodexHome(), nodePa
     hooksChanged,
     feature,
   };
+}
+
+function safeRealpath(path, realpath = realpathSync.native) {
+  try {
+    return realpath(path);
+  } catch {
+    return null;
+  }
+}
+
+export function resolveCodexHookNodePath({
+  env = process.env,
+  execPath = process.execPath,
+  platform = process.platform,
+  exists = existsSync,
+  realpath = realpathSync.native,
+} = {}) {
+  const execRealpath = safeRealpath(execPath, realpath);
+  const pathEnv = env.PATH || env.Path || '';
+  const names = platform === 'win32'
+    ? ['node.exe', 'node.cmd', 'node.bat', 'node']
+    : ['node'];
+
+  for (const dir of pathEnv.split(delimiter).filter(Boolean)) {
+    for (const name of names) {
+      const candidate = join(dir, name);
+      if (!exists(candidate)) continue;
+      const candidateRealpath = safeRealpath(candidate, realpath);
+      if (execRealpath && candidateRealpath && candidateRealpath === execRealpath) {
+        return candidate;
+      }
+    }
+  }
+
+  return execPath;
 }
 
 export async function uninstallCodexHooks({ codexHome = defaultCodexHome() } = {}) {

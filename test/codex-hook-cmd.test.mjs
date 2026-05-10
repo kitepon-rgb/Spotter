@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   codexHookDiagnostics,
   installCodexHooks,
+  resolveCodexHookNodePath,
   runCodexHookInstallCommand,
   runCodexSessionStartHook,
   runCodexStopHook,
@@ -74,6 +75,65 @@ test('installCodexHooks: adds current hooks feature even when legacy codex_hooks
     assert.equal(result.feature, 'enabled');
     assert.match(config, /^hooks = true$/m);
     assert.match(config, /^codex_hooks = true$/m);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('installCodexHooks: default node path prefers stable Homebrew symlink', async () => {
+  const stableNode = join('/opt/homebrew/bin', process.platform === 'win32' ? 'node.exe' : 'node');
+  const cellarNode = join('/opt/homebrew/Cellar/node/26.0.0/bin', process.platform === 'win32' ? 'node.exe' : 'node');
+  const result = resolveCodexHookNodePath({
+    env: { PATH: '/opt/homebrew/bin' },
+    execPath: cellarNode,
+    exists: (path) => path === stableNode,
+    realpath: (path) => {
+      if (path === stableNode || path === cellarNode) {
+        return '/opt/homebrew/Cellar/node/26.0.0/bin/node';
+      }
+      throw new Error(`unexpected path: ${path}`);
+    },
+  });
+  assert.equal(result, stableNode);
+});
+
+test('installCodexHooks: re-run rewrites old Cellar Node hook command', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-node-rewrite-'));
+  try {
+    await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: 'command',
+                command: '/opt/homebrew/Cellar/node/26.0.0/bin/node /opt/homebrew/lib/node_modules/claude-spotter/bin/spotter.mjs codex-hook user-prompt-submit',
+                timeoutSec: 60,
+                async: false,
+                statusMessage: null,
+              },
+            ],
+          },
+          { hooks: [{ type: 'command', command: 'node caveat.js codex-hook user-prompt-submit' }] },
+        ],
+      },
+    }), 'utf8');
+
+    await installCodexHooks({
+      codexHome,
+      nodePath: '/opt/homebrew/bin/node',
+      spotterBin: '/opt/homebrew/lib/node_modules/claude-spotter/bin/spotter.mjs',
+    });
+    const hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
+
+    assert.equal(
+      hooks.hooks.UserPromptSubmit[0].hooks[0].command,
+      '"/opt/homebrew/bin/node" "/opt/homebrew/lib/node_modules/claude-spotter/bin/spotter.mjs" codex-hook user-prompt-submit',
+    );
+    assert.equal(
+      hooks.hooks.UserPromptSubmit[1].hooks[0].command,
+      'node caveat.js codex-hook user-prompt-submit',
+    );
   } finally {
     await rm(codexHome, { recursive: true, force: true });
   }
