@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.4.12
+
+**macOS/Homebrew install verification docs**。npm registry からの clean global install 後に
+`spotter install` と `spotter codex-hook install` が通ること、Codex hook が versioned
+Homebrew Cellar Node path ではなく安定 symlink を使うことを README に明記した。
+
+### 変更点
+
+- **編集 [README.md](README.md) / [README.ja.md](README.ja.md)**:
+  macOS Homebrew Node 環境では Codex hook command が `/opt/homebrew/bin/node` を使うこと、
+  release install smoke 手順 (`npm uninstall -g`, `npm install -g`, `spotter install -y`,
+  `spotter codex-hook install`) を追加。
+
+### 検証
+
+- npm registry からの実インストールで確認:
+  `npm uninstall -g claude-spotter`, `npm install -g claude-spotter`,
+  `spotter --version`, `spotter install -y`, `spotter codex-hook install` が exit 0。
+
+## 1.4.11
+
+**macOS Homebrew Node の versioned Cellar path を Codex hook に残さない修正**。
+`spotter codex-hook install` が `/opt/homebrew/Cellar/node/<version>/bin/node` を hook command に
+書くと、Homebrew の Node 更新後に Codex hook が古い Node を指したまま壊れるため、現在の
+Node 実体と一致する PATH 上の安定 symlink を優先するようにした。
+
+### 変更点
+
+- **編集 [src/cli/codex-hook-cmd.mjs](src/cli/codex-hook-cmd.mjs)**:
+  `resolveCodexHookNodePath()` を追加。PATH 上の `node` が `process.execPath` と同じ realpath を
+  指す場合は、その安定パスを hook command に使う。該当しない環境では従来通り
+  `process.execPath` に fallback するため、Windows / WSL2 の挙動は維持される。
+- 既存の Spotter-owned Codex hook が古い Cellar Node path を指している場合、再実行で現在の
+  stable Node path と npm global package path に書き換える。Caveat など他 tool の hook は保持する。
+
+### 検証
+
+- `node --test` 334 tests / 333 pass / 1 skip 緑。
+- npm registry からの実インストールで確認:
+  `npm uninstall -g claude-spotter`, `npm install -g claude-spotter`,
+  `spotter --version`, `spotter install -y`, `spotter codex-hook install` が exit 0。
+
 ## 1.4.10
 
 **Claude host primary auditor: Codex CLI 検出で自動採用、なければ Haiku の 2 段選択へ**。

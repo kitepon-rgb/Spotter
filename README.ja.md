@@ -43,6 +43,11 @@ cd your-project
 spotter install
 ```
 
+macOS の Homebrew Node 環境では、Codex hook command の Node パスに現在の実体と一致する
+安定 symlink (`/opt/homebrew/bin/node`) を使います。
+`/opt/homebrew/Cellar/node/<version>/...` のような version 固定パスを書かないため、
+Homebrew で Node が更新されても Codex hook が古い Node パスに取り残されません。
+
 `v0.3.0` 以降は**プロジェクト単位の明示的 install** を採用しています (v0.2 までの `postinstall` 自動登録はデーモン増殖の主因だったため撤回)。各プロジェクトの `.claude/settings.json` に hook を登録し、そのプロジェクトでの Claude Code セッションのみで有効になります。
 Codex CLI が使える環境では、同じ `spotter install` が user-level の Codex native hooks も登録します。実際に動くプロジェクトは `spotter install` が作る `.spotter/marker.json` で制限されるため、無関係な Codex セッションでは Spotter は起動しません。
 Codex 側では現行の `[features].hooks = true` を有効化し、互換のため旧 `codex_hooks` diagnostics output も認識します。
@@ -51,6 +56,16 @@ Spotter を upgrade した後、release note で hook 設定変更が案内さ�
 
 ```bash
 spotter uninstall        # このプロジェクトの hook 登録を解除
+```
+
+リリース時の npm install smoke:
+
+```bash
+npm uninstall -g claude-spotter
+npm install -g claude-spotter
+spotter --version
+spotter install -y
+spotter codex-hook install
 ```
 
 ## 動作要件

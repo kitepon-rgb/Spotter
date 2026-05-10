@@ -43,6 +43,11 @@ cd your-project
 spotter install
 ```
 
+On macOS with Homebrew Node, Codex hook commands use the stable
+`/opt/homebrew/bin/node` symlink when it resolves to the current Node binary,
+instead of a versioned `/opt/homebrew/Cellar/node/<version>/...` path. That keeps
+Codex hooks working across Homebrew Node upgrades.
+
 Since `v0.3.0`, Spotter requires **explicit per-project install** (the earlier `postinstall` auto-registration was the leading cause of orphan daemons). `spotter install` writes hooks into the project's `.claude/settings.json`; the audit is then active only in Claude Code sessions for that project.
 When the Codex CLI is available, the same `spotter install` also registers user-level Codex native hooks. Project activation still depends on the same per-project `.spotter/marker.json`, so unrelated Codex sessions do not trigger Spotter.
 For Codex, install enables the current `[features].hooks = true` flag and still recognizes older `codex_hooks` diagnostics output for compatibility.
@@ -51,6 +56,16 @@ After upgrading Spotter, re-run `spotter install` in each installed project when
 
 ```bash
 spotter uninstall        # remove hooks from this project
+```
+
+Release install smoke:
+
+```bash
+npm uninstall -g claude-spotter
+npm install -g claude-spotter
+spotter --version
+spotter install -y
+spotter codex-hook install
 ```
 
 ## Requirements
