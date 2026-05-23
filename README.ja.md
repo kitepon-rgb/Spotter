@@ -11,25 +11,25 @@
 
 **[English](README.md) · 日本語**
 
-> **気づく役と実行する役を分離する。** Claude Code の横で並走し、Bell (主役の Claude) が**ツールを呼び忘れたとき**だけ静かに指摘する監査役。
+> **気づく役と実行する役を分離する。** Claude Code の横で並走し、主役の Claude が**ツールを呼び忘れたとき**だけ静かに指摘する監査役。
 
 Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。記録すべき決定を memory / caveat MCP に残さない、docs lookup MCP を呼ばずに古い知識で応答する、ブラウザ自動化 MCP で確認せず UI 状態を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
 
-Spotter はツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎に常駐させ、Bell の発話予定と応答を並走監査します。見落としを検出すると透明化された指摘として Bell に届け、補正応答を促します。**Bell が自覚して呼ぶ**設計は本プロダクトの存在意義を破壊するため、Bell から呼ぶのではなく hook 経由で Bell の意思と独立に検出する構造を取っています。
+Spotter はツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎に常駐させ、Claude の発話予定と応答を並走監査します。見落としを検出すると透明化された指摘として Claude に届け、補正応答を促します。**Claude が自覚して呼ぶ**設計は本プロダクトの存在意義を破壊するため、Claude から呼ぶのではなく hook 経由で Claude の意思と独立に検出する構造を取っています。
 
 <p align="center">
-  <img src=".github/concept.svg" alt="Bell が答え、Spotter が見ている" width="80%">
+  <img src=".github/concept.svg" alt="Claude が答え、Spotter が見ている" width="80%">
 </p>
 
 <p align="center">
-  <sub><b>Bell</b> が答える（実行する役） &nbsp;·&nbsp; <b>Spotter</b> が見ている（気づく役・沈黙監査）</sub>
+  <sub><b>Claude</b> が答える（実行する役） &nbsp;·&nbsp; <b>Spotter</b> が見ている（気づく役・沈黙監査）</sub>
 </p>
 
 ## 30 秒で見るポイント
 
 Spotter が拾うのは、たとえばこういう瞬間です。
 
-| 状況 | Bell の応答 | Spotter の指摘 |
+| 状況 | Claude の応答 | Spotter の指摘 |
 |---|---|---|
 | 「この OAuth の落とし穴を覚えて」 | 了解だけして進める | memory / caveat MCP の使用機会 |
 | 「このパッケージの最新版 API は？」 | 学習時点の知識で答える | docs lookup MCP の照会機会 |
@@ -41,7 +41,7 @@ Spotter が拾うのは、たとえばこういう瞬間です。
 判定軸は 2 段階:
 
 - **入力時 (`stage=user_input`)**: ユーザー要請に対し、ローカルカタログの description から用途が明確に該当するツールを列挙する **要請充足チェック**
-- **応答後 (`stage=turn_end`)**: Bell の最終応答に対し、事実の断定 / 記録すべき新情報 / 既知情報の参照それぞれに、カタログ上のツール (検証 / 登録 / 照会) を差し込める余地がないかを問う **ツール適用機会の監査**
+- **応答後 (`stage=turn_end`)**: Claude の最終応答に対し、事実の断定 / 記録すべき新情報 / 既知情報の参照それぞれに、カタログ上のツール (検証 / 登録 / 照会) を差し込める余地がないかを問う **ツール適用機会の監査**
 
 ## インストール
 
@@ -94,8 +94,8 @@ Codex native `Stop` は遅延配送で、不足ツールの指摘を queue し�
 ```mermaid
 flowchart TD
     U([User 発話]) --> UPH[UserPromptSubmit hook<br/>Spotter が発話とカタログから一次判定]
-    UPH --> BT[Bell Thinking<br/>Spotter の推奨を<br/>additionalContext で受信]
-    BT --> BA([Bell の最初の応答])
+    UPH --> BT[Claude Thinking<br/>Spotter の推奨を<br/>additionalContext で受信]
+    BT --> BA([Claude の最初の応答])
     BA --> SH[Stop hook<br/>応答と使用済みツールから最終チェック]
     SH --> DEC{見落とし<br/>あり?}
     DEC -->|なし| DONE([完了])
@@ -143,7 +143,7 @@ flowchart LR
 | 対象 | コンテキスト肥大化 | ツール取りこぼし |
 | 仕組み | hook で記憶退避 | hook でサブエージェント並走 |
 
-両者に共通するのは **「主体 (Bell) に頼らない仕組み」**。併用できます。
+両者に共通するのは **「主体に頼らない仕組み」**。併用できます。
 
 ## よく使うコマンド
 
@@ -204,16 +204,16 @@ Codex CLI auditor の子プロセスは、hook 判定を安く速く保つため
 
 - v1.4.8 以降、Claude / Codex 両 host で `Stop` hook は **遅延配送 (deferred delivery)** に統一されました。`Stop` で見落としツールを検出した場合、Spotter は `<projectRoot>/.spotter/pending/<sessionId>.json` に指摘を積み、次の same-session `UserPromptSubmit` で `additionalContext` として配信します。当ターンの最初の応答は transcript にそのまま残るため、`decision:"block"` で補正サイクルを回す方式の「最終応答が補正中心になって元の文脈が迷子」問題が解消します (Codex 側は `Stop Blocked` / exit code 1 回避も兼ねる)
 - pending ファイルは Claude / Codex が同じパス (`.spotter/pending/`) を共有します。host-neutral 設計です
-- **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Bell に届かない症状として顕在化します (timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
+- **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Claude に届かない症状として顕在化します (timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
 
 <details>
 <summary><strong>📋 最近のハイライト</strong></summary>
 
-- **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Bell の監査から silent に脱落させていた)
+- **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Claude の監査から silent に脱落させていた)
 - **プロジェクト単位の監査隔離** — daemon が監査に使うのはローカル DB のみ。グローバル DB は description 再利用キャッシュに役割限定。**他プロジェクト**でインストールしたツールが現プロジェクトの監査に混入することはない
 - **手放しでカタログ維持** — `spotter install` が Claude DB を自動 seed、Claude / Codex それぞれの SessionStart が host-local DB を bg refresh する。手書き管理は一切不要
 - **Codex native hooks** — Codex host は primary auditor backend として Codex CLI を使い、`.spotter/tool-db.codex.json` を Claude DB と分離し、backend failure は Haiku fallback ではなく明示 error として扱う
-- **監査対象** — ユーザー追加分 (MCP / スキル / サブエージェント) のみ。Claude Code 本体側のツールは意図的に対象外 (Bell は元から自発率が高いため)
+- **監査対象** — ユーザー追加分 (MCP / スキル / サブエージェント) のみ。Claude Code 本体側のツールは意図的に対象外 (Claude は元から自発率が高いため)
 - **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([CLAUDE.md §0](CLAUDE.md))
 
 リリース履歴の全文は [CHANGELOG](CHANGELOG.md) を参照。

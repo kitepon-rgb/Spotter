@@ -11,25 +11,25 @@
 
 **English · [日本語](README.ja.md)**
 
-> **Separate the spotter from the doer.** Spotter runs alongside Claude Code and quietly flags the moments when Bell (your primary Claude) **forgets to use a tool it has access to**.
+> **Separate the spotter from the doer.** Spotter runs alongside Claude Code and quietly flags the moments when your primary Claude **forgets to use a tool it has access to**.
 
 Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It may skip a project memory MCP when a decision should be recorded, answer from stale memory instead of a docs-lookup MCP, or reason about UI state without a browser-automation MCP. The model can't always tell when it doesn't know — so the tool stays unused.
 
-Spotter pins a second agent (Claude Haiku 4.5) next to Bell. The second agent has the full tool catalog memorized and audits both the user's prompt and Bell's reply in parallel. When it spots a missed tool, it injects a transparent recommendation into Bell's context and, if needed, asks Bell to amend its answer. **Bell is never asked to self-audit** — that would defeat the entire premise. Detection happens through hooks, independent of Bell's intent.
+Spotter pins a second agent (Claude Haiku 4.5) next to Claude. The second agent has the full tool catalog memorized and audits both the user's prompt and Claude's reply in parallel. When it spots a missed tool, it injects a transparent recommendation into Claude's context and, if needed, asks Claude to amend its answer. **Claude is never asked to self-audit** — that would defeat the entire premise. Detection happens through hooks, independent of Claude's intent.
 
 <p align="center">
-  <img src=".github/concept.svg" alt="Bell answers · Spotter watches" width="80%">
+  <img src=".github/concept.svg" alt="Claude answers · Spotter watches" width="80%">
 </p>
 
 <p align="center">
-  <sub><b>Bell</b> answers (the doer) &nbsp;·&nbsp; <b>Spotter</b> watches (the auditor, silent)</sub>
+  <sub><b>Claude</b> answers (the doer) &nbsp;·&nbsp; <b>Spotter</b> watches (the auditor, silent)</sub>
 </p>
 
 ## See it in 30 seconds
 
 Examples of what Spotter catches:
 
-| Situation | What Bell would do | What Spotter flags |
+| Situation | What Claude would do | What Spotter flags |
 |---|---|---|
 | "Please remember this OAuth gotcha" | Acknowledge and move on | Missed call to a memory / caveat MCP |
 | "How does this package API work in the latest version?" | Answer from training-time knowledge | Missed call to a docs-lookup MCP |
@@ -41,7 +41,7 @@ Examples of what Spotter catches:
 Spotter audits in two stages:
 
 - **`stage=user_input`** — given the user's prompt, list any local catalog tools whose description clearly applies. A *prompt-fulfillment* check
-- **`stage=turn_end`** — given Bell's final reply, look for places where a catalog tool (verification / recording / lookup) could plug in. A *missed-opportunity* audit. Zero findings is fine; tools already used in this turn are not re-flagged
+- **`stage=turn_end`** — given Claude's final reply, look for places where a catalog tool (verification / recording / lookup) could plug in. A *missed-opportunity* audit. Zero findings is fine; tools already used in this turn are not re-flagged
 
 ## Install
 
@@ -94,8 +94,8 @@ the next same-session `UserPromptSubmit`.
 ```mermaid
 flowchart TD
     U([User prompt]) --> UPH[UserPromptSubmit hook<br/>Spotter audits prompt against catalog]
-    UPH --> BT[Bell thinking<br/>receives Spotter's recommendations<br/>as additionalContext]
-    BT --> BA([Bell's first answer])
+    UPH --> BT[Claude thinking<br/>receives Spotter's recommendations<br/>as additionalContext]
+    BT --> BA([Claude's first answer])
     BA --> SH[Stop hook<br/>Spotter re-audits answer + tools used]
     SH --> DEC{Missed<br/>tool?}
     DEC -->|No| DONE([Done])
@@ -143,7 +143,7 @@ The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`
 | Target | Context bloat | Missed tool calls |
 | Mechanism | Hook-driven memory eviction | Hook-driven sub-agent in parallel |
 
-Both share the principle of **"don't rely on the primary agent (Bell) to do it itself."** They compose well — you can run them together.
+Both share the principle of **"don't rely on the primary agent to do it itself."** They compose well — you can run them together.
 
 ## Common commands
 
@@ -205,18 +205,18 @@ those values for smoke tests or controlled experiments.
 
 ## Known limitations
 
-- The `Stop` hook fires **after** Bell's first answer has already been streamed to the user. When Spotter sends Bell back, the user sees both the original answer and the corrected one. Detection accuracy in `UserPromptSubmit` (the *pre-response* stage) is therefore Spotter's primary axis of quality
+- The `Stop` hook fires **after** Claude's first answer has already been streamed to the user. When Spotter sends Claude back, the user sees both the original answer and the corrected one. Detection accuracy in `UserPromptSubmit` (the *pre-response* stage) is therefore Spotter's primary axis of quality
 - `Stop` hook is **deferred** for both Claude and Codex hosts as of v1.4.8. When Spotter finds a missed tool at `Stop`, it appends the finding to `<projectRoot>/.spotter/pending/<sessionId>.json` and surfaces it on the next same-session `UserPromptSubmit` as `additionalContext`. The original assistant message stays as the turn's final transcript entry — no `decision:"block"` re-generation cycle. The same pending file is shared by Claude and Codex (host-neutral path)
-- **Since v0.5.0, JSON schema violations from Haiku are treated as expected-anomalies** (silent pass + session renew, logged as `role_collapse_reset`) — this is the role-collapse recovery path. **Haiku timeouts still throw**, which surfaces as `UserPromptSubmit` blocking the user's prompt from reaching Bell. Timeouts have been raised twice (30s in v0.5.0, 45s in v0.13.1); making timeouts fail-open is deferred until §0 is revisited
+- **Since v0.5.0, JSON schema violations from Haiku are treated as expected-anomalies** (silent pass + session renew, logged as `role_collapse_reset`) — this is the role-collapse recovery path. **Haiku timeouts still throw**, which surfaces as `UserPromptSubmit` blocking the user's prompt from reaching Claude. Timeouts have been raised twice (30s in v0.5.0, 45s in v0.13.1); making timeouts fail-open is deferred until §0 is revisited
 
 <details>
 <summary><strong>📋 Recent highlights</strong></summary>
 
-- **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Bell's audit
+- **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Claude's audit
 - **Per-project / per-host audit isolation** — the daemon audits against the local DB only; global DBs are host-specific description caches. Tools discovered in *other* projects or another host can never bleed into this project's audit set
 - **Zero-touch catalog** — `spotter install` seeds the Claude DB automatically; Claude and Codex SessionStart hooks keep their host-local DBs fresh in the background. You never have to maintain the tool list by hand
 - **Codex native hooks** — Codex host uses Codex CLI as the primary auditor backend, keeps a separate `.spotter/tool-db.codex.json`, and surfaces backend failures explicitly instead of falling back to Haiku
-- **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Bell already uses those reliably
+- **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Claude already uses those reliably
 - **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in CLAUDE.md](CLAUDE.md))
 
 Full release history: [CHANGELOG](CHANGELOG.md).

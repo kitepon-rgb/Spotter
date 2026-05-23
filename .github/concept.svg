@@ -21,7 +21,7 @@
   <!-- Background -->
   <rect width="1200" height="480" fill="url(#bg)"/>
 
-  <!-- Bell side (left) — the doer, solid -->
+  <!-- Primary Claude side (left) — the doer, solid -->
   <circle cx="340" cy="240" r="180" fill="url(#bellGlow)"/>
   <g transform="translate(280, 180)">
     <!-- Solid blue cube representing "executes / answers" -->

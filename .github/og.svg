@@ -37,7 +37,7 @@
   <g transform="translate(80, 420)" font-size="22" fill="#cbd5e1">
     <g>
       <circle cx="8" cy="-7" r="4" fill="#f59e0b"/>
-      <text x="28" y="0" font-weight="500">Bell answers, Spotter watches in parallel</text>
+      <text x="28" y="0" font-weight="500">Your Claude answers, Spotter watches in parallel</text>
     </g>
     <g transform="translate(0, 38)">
       <circle cx="8" cy="-7" r="4" fill="#f59e0b"/>
@@ -45,7 +45,7 @@
     </g>
     <g transform="translate(0, 76)">
       <circle cx="8" cy="-7" r="4" fill="#f59e0b"/>
-      <text x="28" y="0" font-weight="500">Hooks-driven, no Bell awareness needed</text>
+      <text x="28" y="0" font-weight="500">Hooks-driven, no Claude awareness needed</text>
     </g>
   </g>
 
