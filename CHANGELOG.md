@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4.13
+
+**Spotter 監査文面の末尾「監査役を明示してください」念押し行を削除**。
+`additionalContext` / pending text の末尾に入っていた 2 行 (UserPromptSubmit:
+「使う場合は『Spotter の推奨に従い〜』のように監査役の指摘を明示してください。」、
+Stop deferred delivery:「応答には『Spotter からの指摘を受けて〜』のように
+監査役の介入を明示してください。」) が、毎ターン主役 AI の文脈に積もって邪魔になる
+という運用上のフィードバックを反映。ヘッダー `[Spotter からの推奨ツール]` /
+`[Spotter からの指摘]` 自体が出典明示を担っているため、§12.2 / §12.3 の透明化原則は
+ヘッダーで維持し、念押し行のみを落とす。Claude / Codex 両 host が同じ
+`formatTransparentContext` / `formatTransparentBlockReason` を共有しているので
+hook parity は自動的に維持される。
+
+### 変更点
+
+- **編集 [src/hooks/lib.mjs](src/hooks/lib.mjs)**:
+  `formatTransparentContext` / `formatTransparentBlockReason` から末尾の空行 +
+  念押し行を削除。コメントを「header 自体が出典明示を担う」旨に書き換え。
+- **編集 [test/hooks.test.mjs](test/hooks.test.mjs)**:
+  逐語アサート 2 件を本体に追従。
+
+### 検証
+
+- `node --test` 334 tests / 333 pass / 1 skip 緑。
+- Codex hook 側の expected (`test/codex-hook-cmd.test.mjs`) はヘッダー文字列
+  `Spotter からの指摘` だけを正規表現マッチしているため無変更で pass。
+
 ## 1.4.12
 
 **macOS/Homebrew install verification docs**。npm registry からの clean global install 後に

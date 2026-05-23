@@ -12,6 +12,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.13** (2026-05-23): **Spotter 監査文面の末尾「監査役を明示してください」念押し行を削除**。
+`formatTransparentContext` / `formatTransparentBlockReason` の末尾 2 行
+(UserPromptSubmit:「使う場合は『Spotter の推奨に従い〜』のように監査役の指摘を明示してください。」、
+Stop deferred delivery:「応答には『Spotter からの指摘を受けて〜』のように監査役の介入を明示してください。」)
+が、毎ターン主役 AI の文脈に積もって邪魔という運用上のフィードバックを反映して削除。
+ヘッダー `[Spotter からの推奨ツール]` / `[Spotter からの指摘]` 自体が出典明示を担うため、
+§12.2 / §12.3 の透明化原則はヘッダーで維持。Claude / Codex 両 host が同じフォーマッタを
+共有しているので hook parity は自動的に維持される。`node --test` 334 / 333 pass / 1 skip 緑。
+
 **v1.4.10** (2026-05-08): **Claude host primary auditor を availability-based 2 段選択に変更**。
 v1.4.7 までは `SPOTTER_AUDITOR_BACKEND_POLICY=next` を立てた Claude セッションだけが Codex CLI
 primary auditor を使い、それ以外は無条件で Haiku を呼んでいた。Phase 4 matrix smoke

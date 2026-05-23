@@ -30,8 +30,6 @@ test('formatTransparentContext: mentions Spotter explicitly (§12.2)', () => {
     '[Spotter からの推奨ツール]',
     'このプロンプトに応答する前に、以下のツールを使うべきか検討してください。',
     '- `mcp__caveat__caveat_search`: 過去の罠を確認する必要がある',
-    '',
-    '使う場合は「Spotter の推奨に従い〜」のように監査役の指摘を明示してください。',
   ].join('\n'));
 });
 
@@ -43,8 +41,6 @@ test('formatTransparentBlockReason: mentions Spotter and asks for correction (§
     '[Spotter からの指摘]',
     '上記応答ではツールが不足している可能性があります。以下を検討し、必要なら呼び出した上で応答を補正してください。',
     '- `mcp__caveat__caveat_record`: 再利用すべき知見を記録する必要がある',
-    '',
-    '応答には「Spotter からの指摘を受けて〜」のように監査役の介入を明示してください。',
   ].join('\n'));
 });
 

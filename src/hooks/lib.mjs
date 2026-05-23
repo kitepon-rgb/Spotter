@@ -129,14 +129,12 @@ export function die(message, exitCode = 2) {
 }
 
 export function formatTransparentContext(missingTools) {
-  // §12.2: transparent phrasing — Bell should reference Spotter explicitly.
+  // §12.2: transparent phrasing — header `[Spotter からの推奨ツール]` 自体が出典明示を担う。
   const lines = missingTools.map((m) => `- \`${m.name}\`: ${m.reason}`);
   return [
     '[Spotter からの推奨ツール]',
     'このプロンプトに応答する前に、以下のツールを使うべきか検討してください。',
     ...lines,
-    '',
-    '使う場合は「Spotter の推奨に従い〜」のように監査役の指摘を明示してください。',
   ].join('\n');
 }
 
@@ -156,13 +154,11 @@ export async function recordClaudeHookEvent({ projectRoot, event, writeError } =
 }
 
 export function formatTransparentBlockReason(missingTools) {
-  // §12.3: transparent phrasing for Stop hook block.
+  // §12.3: transparent phrasing — header `[Spotter からの指摘]` 自体が出典明示を担う。
   const lines = missingTools.map((m) => `- \`${m.name}\`: ${m.reason}`);
   return [
     '[Spotter からの指摘]',
     '上記応答ではツールが不足している可能性があります。以下を検討し、必要なら呼び出した上で応答を補正してください。',
     ...lines,
-    '',
-    '応答には「Spotter からの指摘を受けて〜」のように監査役の介入を明示してください。',
   ].join('\n');
 }
