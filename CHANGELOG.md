@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.14
+
+**README 等の公開資産から内部コードネーム "Bell" を撤去**。Spotter の内部設計議論で使われている
+"Bell" (主役の Claude を指す呼称) は private な codename であり、README や OG banner で
+公開すべきものではないという運用判断を反映。コード・内部ドキュメント (CLAUDE.md / docs/) には
+影響なし。npm tarball 同梱の README を新版で配るため patch bump。
+
+### 変更点
+
+- **編集 [README.md](README.md) / [README.ja.md](README.ja.md)**:
+  "Bell" を文脈に応じて `Claude` / `your primary Claude` / `the primary Claude` に置換、
+  `(Bell)` 括弧書きは削除。日本語版の `主体 (Bell) に` は `主体に` に整形。
+- **編集 [.github/og.svg](.github/og.svg) と再生成された [.github/og.png](.github/og.png)**:
+  OG banner の bullet text 2 件を Claude 表記に。`svgexport` で 1280×640 PNG を再レンダリング。
+- **編集 [.github/concept.svg](.github/concept.svg)**:
+  内部 HTML コメント `Bell side` を `Primary Claude side` に。
+
+### 検証
+
+- `grep -rn "Bell" README.md README.ja.md .github/` で公開資産に Bell 残存なしを確認。
+- `node --test` 334 tests / 333 pass / 1 skip 緑 (README / asset 変更のみで test には影響しない)。
+
 ## 1.4.13
 
 **Spotter 監査文面の末尾「監査役を明示してください」念押し行を削除**。
