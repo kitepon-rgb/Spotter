@@ -17,6 +17,14 @@ Claude has a structural blind spot: **it can't reach for a tool it doesn't reali
 
 Spotter pins a second agent (Claude Haiku 4.5) next to Bell. The second agent has the full tool catalog memorized and audits both the user's prompt and Bell's reply in parallel. When it spots a missed tool, it injects a transparent recommendation into Bell's context and, if needed, asks Bell to amend its answer. **Bell is never asked to self-audit** — that would defeat the entire premise. Detection happens through hooks, independent of Bell's intent.
 
+<p align="center">
+  <img src=".github/concept.svg" alt="Bell answers · Spotter watches" width="80%">
+</p>
+
+<p align="center">
+  <sub><b>Bell</b> answers (the doer) &nbsp;·&nbsp; <b>Spotter</b> watches (the auditor, silent)</sub>
+</p>
+
 ## See it in 30 seconds
 
 Examples of what Spotter catches:

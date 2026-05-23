@@ -17,6 +17,14 @@ Claude には「使えるツールがあるのに、使うべきタイミング�
 
 Spotter はツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎に常駐させ、Bell の発話予定と応答を並走監査します。見落としを検出すると透明化された指摘として Bell に届け、補正応答を促します。**Bell が自覚して呼ぶ**設計は本プロダクトの存在意義を破壊するため、Bell から呼ぶのではなく hook 経由で Bell の意思と独立に検出する構造を取っています。
 
+<p align="center">
+  <img src=".github/concept.svg" alt="Bell が答え、Spotter が見ている" width="80%">
+</p>
+
+<p align="center">
+  <sub><b>Bell</b> が答える（実行する役） &nbsp;·&nbsp; <b>Spotter</b> が見ている（気づく役・沈黙監査）</sub>
+</p>
+
 ## 30 秒で見るポイント
 
 Spotter が拾うのは、たとえばこういう瞬間です。
