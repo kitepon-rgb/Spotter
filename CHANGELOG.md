@@ -1066,7 +1066,7 @@ Haiku 突然死 (shutdown ログなしで daemon 再起動する事象、v0.12.0
 
 ### 事の発端
 
-v0.8.0 の `spotter db refresh` 実測で x-api (HTTP MCP) が 401 Unauthorized で落ちていた。`claude mcp list` では `x-api: https://kitepon.dynv6.net/mcp (HTTP)` と表示され URL は拾えるが、Spotter の refresh プロセスから叩くと認証情報がないため拒否。ユーザーの指摘で `.mcp.json` を直接 cat したところ、実態は **stdio** で `env: {X_BEARER_TOKEN: "..."}` を持つ設定だった。CLI 表示と actual config が食い違っていた (CLI の cache の古さと思われる)。
+v0.8.0 の `spotter db refresh` 実測で x-api (HTTP MCP) が 401 Unauthorized で落ちていた。`claude mcp list` では `x-api: https://kitepon.dev/mcp (HTTP)` と表示され URL は拾えるが、Spotter の refresh プロセスから叩くと認証情報がないため拒否。ユーザーの指摘で `.mcp.json` を直接 cat したところ、実態は **stdio** で `env: {X_BEARER_TOKEN: "..."}` を持つ設定だった。CLI 表示と actual config が食い違っていた (CLI の cache の古さと思われる)。
 
 判明した設計上の転換点:
 
