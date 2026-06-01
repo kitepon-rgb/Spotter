@@ -204,11 +204,12 @@ Codex CLI auditor の子プロセスは、hook 判定を安く速く保つため
 
 - v1.4.8 以降、Claude / Codex 両 host で `Stop` hook は **遅延配送 (deferred delivery)** に統一されました。`Stop` で見落としツールを検出した場合、Spotter は `<projectRoot>/.spotter/pending/<sessionId>.json` に指摘を積み、次の same-session `UserPromptSubmit` で `additionalContext` として配信します。当ターンの最初の応答は transcript にそのまま残るため、`decision:"block"` で補正サイクルを回す方式の「最終応答が補正中心になって元の文脈が迷子」問題が解消します (Codex 側は `Stop Blocked` / exit code 1 回避も兼ねる)
 - pending ファイルは Claude / Codex が同じパス (`.spotter/pending/`) を共有します。host-neutral 設計です
-- **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。一方 **Haiku timeout は引き続き throw** され、UserPromptSubmit がブロックされてユーザー入力が Claude に届かない症状として顕在化します (timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張)。timeout の fail-open 化 (pass 扱い) は §0 改訂とセットで今後検討
+- **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。**v1.4.15 以降、auditor/daemon の失敗 (Haiku timeout / codex ログイン失効 / transport エラー) はプロンプトをブロックしません**: `UserPromptSubmit` hook が `[Spotter からの警告]` を `additionalContext` で出して exit 0 するため、Claude はプロンプトを受け取れます — 当ターンが未監査になるだけで、その事実は伝えられます (codex ログイン失効時は `codex login` を案内)。timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張済み
 
 <details>
 <summary><strong>📋 最近のハイライト</strong></summary>
 
+- **失敗は声に出して縮退、host を固めない** (v1.4.15) — auditor backend が失敗したとき (例: codex のログイン失効) も、`UserPromptSubmit` hook はプロンプトを黙って消さずに `[Spotter からの警告]` を出して通す。codex ログイン失効時は直し方 (`codex login`) を明示する
 - **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Claude の監査から silent に脱落させていた)
 - **プロジェクト単位の監査隔離** — daemon が監査に使うのはローカル DB のみ。グローバル DB は description 再利用キャッシュに役割限定。**他プロジェクト**でインストールしたツールが現プロジェクトの監査に混入することはない
 - **手放しでカタログ維持** — `spotter install` が Claude DB を自動 seed、Claude / Codex それぞれの SessionStart が host-local DB を bg refresh する。手書き管理は一切不要
