@@ -10,6 +10,7 @@ import {
   buildCodexExecArgs,
   CODEX_AUDITOR_SCHEMA,
   createCodexCliAuditorBackend,
+  isCodexAuthFailure,
 } from '../src/core/codex-cli-backend.mjs';
 import { AuditorBackendError, createAuditorBackend } from '../src/core/auditor-backend.mjs';
 
@@ -213,6 +214,40 @@ test('createCodexCliAuditorBackend: non-zero exit is a structured error with bou
       err.diagnostics.stderr.length === 32 * 1024 &&
       err.diagnostics.stderrTruncated === true
   );
+});
+
+test('createCodexCliAuditorBackend: non-zero exit carrying an auth marker is classified as E_CODEX_CLI_AUTH', async () => {
+  // codex prints "401 Unauthorized ... token_revoked" to stderr when the login is revoked. The
+  // backend must surface this as the distinct, actionable E_CODEX_CLI_AUTH (run `codex login`)
+  // instead of the generic E_CODEX_CLI_EXIT, so the hook can warn the user precisely.
+  const spawnFn = (_cmd, _args, _opts) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stderr.write('ERROR codex_login::auth::manager: Failed to refresh token: 401 Unauthorized: token_revoked');
+      child.emit('close', 1);
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({ catalog, projectRoot: '/repo', spawnFn });
+  await assert.rejects(
+    backend.judge({ stage: 'user_input', userInput: 'x' }),
+    (err) =>
+      err instanceof AuditorBackendError &&
+      err.code === 'E_CODEX_CLI_AUTH' &&
+      /codex login/.test(err.message)
+  );
+});
+
+test('isCodexAuthFailure: matches codex login-expiry wording, not generic failures', () => {
+  assert.equal(isCodexAuthFailure('stuff ... 401 Unauthorized ... token_revoked'), true);
+  assert.equal(isCodexAuthFailure('Please log out and sign in again.'), true);
+  assert.equal(isCodexAuthFailure('error: refresh_token_reused'), true);
+  assert.equal(isCodexAuthFailure('sandbox denied write to /etc/hosts'), false);
+  assert.equal(isCodexAuthFailure(''), false);
+  assert.equal(isCodexAuthFailure(undefined), false);
 });
 
 test('createCodexCliAuditorBackend: timeout kills child and returns structured error', async () => {

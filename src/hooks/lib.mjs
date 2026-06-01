@@ -1,11 +1,18 @@
 // Shared hook plumbing — stdin read, error → exit-code mapping per §14.3 / §14.4.
 //
 // Exit code contract (§14.3 / §14.4):
-//   0 = success (normal flow)
-//   1 = expected abnormal (daemon unreachable; user should restart daemon)
-//   2 = unexpected (propagate to Claude Code transcript)
+//   0 = success (normal flow), OR a LOUD degradation: the audit could not run but the failure
+//       is surfaced in-band via a `[Spotter からの警告]` additionalContext block, so the host
+//       stays responsive and the user's prompt is never erased. UserPromptSubmit uses this for
+//       any daemon / auditor-backend failure (e.g. codex login expired) — see user-prompt.mjs.
+//   1 = expected abnormal, non-blocking (Claude Code proceeds; first stderr line shown to user).
+//   2 = unexpected protocol/contract violation (malformed Claude Code envelope, missing required
+//       field). Reserved for cases where there is no real user prompt worth preserving — a
+//       UserPromptSubmit exit 2 BLOCKS and erases the prompt, so audit failures must NOT use it.
 //
-// Silent fallback (exit 0 with missing behaviour) is forbidden. See §14.1.
+// A loud degradation (visible warning naming the cause + remedy) is NOT a silent fallback: the
+// user is explicitly told the audit did not run. The forbidden pattern (§14.1) is the SILENT
+// exit-0 that leaves the user believing they are protected when they are not.
 //
 // v0.2 gate helpers (plan §18 / C:\Users\kite_\.claude\plans\10-cuddly-codd.md):
 // - isChildCall(): env-var gate for Spotter's own child backend invocations
@@ -114,15 +121,6 @@ export function optionalString(input, key) {
   return value;
 }
 
-// Map a TransportError / HaikuError into an exit code.
-export function exitCodeFor(err) {
-  if (err && typeof err.code === 'string') {
-    if (err.code === 'E_UNREACHABLE') return 1;
-    return 2;
-  }
-  return 2;
-}
-
 export function die(message, exitCode = 2) {
   process.stderr.write(`spotter-hook: ${message}\n`);
   process.exit(exitCode);
@@ -161,4 +159,26 @@ export function formatTransparentBlockReason(missingTools) {
     '上記応答ではツールが不足している可能性があります。以下を検討し、必要なら呼び出した上で応答を補正してください。',
     ...lines,
   ].join('\n');
+}
+
+// Loud degradation notice (§0 / §14.1): the auditor could not run this turn. Surfaced via the
+// same additionalContext channel as findings so the host stays responsive AND the user is told
+// they are temporarily unprotected (and, for an expired codex login, exactly how to recover).
+// This is the opposite of a silent fallback.
+export function formatSpotterWarning({ code, message } = {}) {
+  const header = '[Spotter からの警告]';
+  if (code === 'E_CODEX_CLI_AUTH') {
+    return [
+      header,
+      'Spotter の監査エンジン (codex) のログインが失効しているため、今回の入力は監査できませんでした。',
+      'この応答を続ける前に、ユーザーに「端末で `codex login` を実行して再ログインすれば Spotter の監査が復旧する」ことを伝えてください。',
+    ].join('\n');
+  }
+  const lines = [
+    header,
+    `Spotter は今回の入力を監査できませんでした (理由コード: ${code ?? 'unknown'})。この応答は監査されていません。`,
+    'この応答を続ける前に、ユーザーに Spotter の監査が一時的に無効になっていることを伝えてください。',
+  ];
+  if (typeof message === 'string' && message.length > 0) lines.push(`詳細: ${message}`);
+  return lines.join('\n');
 }

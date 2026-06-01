@@ -10,8 +10,11 @@
 // queue and folds the entries into `additionalContext`, so Bell receives the audit finding
 // alongside the next user input. The original A reply stays as the turn's final message.
 //
-// `decision:"block"` is no longer emitted from this hook. Backend / transport errors still
-// exit with code 1 + stderr (silent fallback is forbidden — see lib.mjs).
+// `decision:"block"` is no longer emitted from this hook. Backend / transport errors do NOT
+// force a continuation (a Stop exit 2 would block stopping = harmful noise on a Spotter-side
+// failure); they are recorded as `degraded` and exit 0. The next UserPromptSubmit surfaces the
+// loud `[Spotter からの警告]`. No verdict is produced on failure, so nothing is queued — this is
+// still not a silent "all clear" (the surfacing just moves to the next turn — see lib.mjs).
 // `stop_hook_active:true` is still observed: the daemon early-passes on it, so we just
 // receive `pass:true` and return without writing pending context.
 //
@@ -20,7 +23,6 @@
 import {
   readStdinJson,
   requireString,
-  exitCodeFor,
   die,
   findSpotterMarker,
   formatTransparentBlockReason,
@@ -41,7 +43,6 @@ export async function runStop({
   appendPendingContextFn = appendPendingContext,
   getLastAssistantTextFn = getLastAssistantText,
   recordHookEventFn = recordClaudeHookEvent,
-  dieFn = die,
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -71,30 +72,36 @@ export async function runStop({
       timeoutMs: TIMEOUT_MS,
     });
   } catch (err) {
+    // Spotter-side failure (daemon unreachable, etc.): record + exit 0. Do NOT force the model to
+    // continue (a Stop exit 2 blocks stopping). The next UserPromptSubmit surfaces the loud
+    // warning; no pending is written, so this is not a silent "all clear" — there was no verdict.
     await recordHookEventFn({
       projectRoot,
       event: {
         hook: 'Stop',
-        status: 'error',
+        status: 'degraded',
         code: err?.code ?? 'E_INTERNAL',
+        reason: 'transport',
         durationMs: Date.now() - startedAt,
       },
     });
-    dieFn(`stop transport failure: ${err.code ?? '?'}: ${err.message}`, exitCodeFor(err));
     return;
   }
 
   if (response.ok !== true) {
+    // Auditor backend failed (e.g. codex login expired): record + exit 0. Forcing a continuation
+    // (exit 2) on a Spotter-side failure is harmful; the loud warning is delivered by the next
+    // UserPromptSubmit. No verdict was produced, so nothing is queued.
     await recordHookEventFn({
       projectRoot,
       event: {
         hook: 'Stop',
-        status: 'error',
+        status: 'degraded',
         code: response.error?.code ?? 'E_INTERNAL',
+        reason: 'daemon_error',
         durationMs: Date.now() - startedAt,
       },
     });
-    dieFn(`daemon error on turn_end: ${response.error?.code ?? '?'}: ${response.error?.message ?? ''}`, 2);
     return;
   }
 
@@ -117,9 +124,10 @@ export async function runStop({
   // decision:"block". Using the same transparent block-reason wording keeps the user-facing
   // text identical to the prior block flow.
   if (!projectRoot) {
-    // Marker walk-up returns null only when isOutsideSpotterProject would have early-returned
-    // above. Reaching here implies the marker disappeared mid-turn; treat as unexpected.
-    dieFn(`stop: cannot queue pending context — no .spotter/marker.json above cwd=${input.cwd}`, 2);
+    // TOCTOU: the marker disappeared between the isOutsideSpotterProject guard and now. We cannot
+    // persist the finding (no project dir to write into), but a Stop exit 2 would force the model
+    // to continue — the harmful pattern this hook avoids. Drop the unpersistable finding and exit
+    // 0; the next UserPromptSubmit re-audits from a fresh marker walk.
     return;
   }
   const text = formatTransparentBlockReason(result.missing_tools);

@@ -12,6 +12,37 @@ const DEFAULT_CODEX_CLI_REASONING_EFFORT = 'low';
 const STDERR_LIMIT = 32 * 1024;
 const STDOUT_LIMIT = 64 * 1024;
 
+// codex prints auth/login failures to BOTH stdout (the JSON error stream, e.g.
+// {"type":"error","message":"...sign in again..."}) and stderr (codex_login::auth::manager,
+// e.g. "401 Unauthorized ... token_revoked"). We scan the combined text for these markers so a
+// revoked/expired login is classified as the distinct, actionable E_CODEX_CLI_AUTH instead of
+// being collapsed into the generic E_CODEX_CLI_EXIT. Conservative case-insensitive substring
+// match keyed on the wording codex actually emits; if codex changes its wording the generic
+// path still degrades loudly (the hook no longer freezes the host on either code). Classification
+// runs only on the nonzero-exit path below — auth failures are observed to exit immediately
+// (<1s), so the timeout path is not expected to see them; if codex ever starts hanging on auth,
+// the timeout would surface as the generic E_CODEX_CLI_TIMEOUT rather than E_CODEX_CLI_AUTH.
+const CODEX_AUTH_FAILURE_MARKERS = [
+  'token_revoked',
+  'refresh_token_reused',
+  'refresh token was already used',
+  'refresh token has already been used',
+  'invalidated oauth token',
+  '401 unauthorized',
+  'sign in again',
+  'sign back in',
+  'log out and sign in',
+  'not logged in',
+  'please log in',
+  'please login',
+];
+
+export function isCodexAuthFailure(text) {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  const haystack = text.toLowerCase();
+  return CODEX_AUTH_FAILURE_MARKERS.some((marker) => haystack.includes(marker));
+}
+
 export const CODEX_AUDITOR_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -295,9 +326,17 @@ async function runCodexExec({
     child.on('close', (code) => {
       settle(() => {
         if (code !== 0) {
+          const diag = { ...diagnostics(), exitCode: code };
+          if (isCodexAuthFailure(`${diag.stdout}\n${diag.stderr}`)) {
+            reject(new AuditorBackendError('E_CODEX_CLI_AUTH', 'codex-cli auth failed — codex login required (run `codex login`)', {
+              backend: 'codex-cli',
+              diagnostics: diag,
+            }));
+            return;
+          }
           reject(new AuditorBackendError('E_CODEX_CLI_EXIT', `codex-cli exited with code ${code}`, {
             backend: 'codex-cli',
-            diagnostics: { ...diagnostics(), exitCode: code },
+            diagnostics: diag,
           }));
           return;
         }

@@ -237,12 +237,21 @@ Codex native `Stop` は現状 immediate block ではなく deferred delivery。`
 
 **次アクション**: P2 (機会があれば)。対処するなら (a) file lock (`~/.spotter/runtime/tool-db.lock`) で refresh を mutex、(b) saveDb 層で既存ファイルとの merge 差分書き込み、のどちらか。現状は実害観測なしなので放置で可。
 
+### Stop 失敗がセッション最終ターンだとサイレント非監査 (2026-06-02 v1.4.15 review で発見)
+
+**背景**: v1.4.15 で `Stop` hook の backend/transport 失敗を `die(exit 2 = 継続強制)` から `degraded` 記録 + exit 0 に変えた。loud な警告は次の `UserPromptSubmit` が `[Spotter からの警告]` で配信する設計だが、これは v1.4.8 の deferred-delivery と同じ性質を持つ: セッションがその後の `UserPromptSubmit` を迎えずに終わると、その最終ターンの Stop 失敗 (= 監査できなかった事実) は永久に surface されない。codex ログイン失効のような永続失敗なら同ターンの `UserPromptSubmit` 冒頭で既に警告済みなので実害は限定的だが、「backend が UserPromptSubmit では生きていて Stop までの間に落ち、かつそれが最終ターン」の窓では未通知になる。
+
+**影響**: 最終ターン 1 回分の「監査できなかった」通知欠落のみ。pass を偽装する silent fallback ではない (verdict は生成されていない)。§12.4 の「応答後に surface する手段がない」限界と同じクラス。
+
+**次アクション**: P2 (機会があれば)。Claude Code が `Stop` で non-blocking な additionalContext / user-visible notice を正式提供したら、Stop 失敗時にその場で警告を出すよう再評価する。それまでは deferred であることを contract に明記 (済) で許容。
+
 ---
 
 ## 解決済み (参照用)
 
 | 課題 | 解決版 |
 |---|---|
+| codex auditor のログイン失効 (`token_revoked` / `refresh_token_reused` / `401`) で codex が異常終了すると、(A) 失効痕跡を捨てて全部 `E_CODEX_CLI_EXIT` に潰し auth を区別せず、(B) `UserPromptSubmit` hook が daemon エラーを `die(exit 2)` していたため、Claude Code が入力時 hook の exit 2 を **プロンプト消去** 扱いして毎ターン入力が消え「Claude が一切反応しない」状態になっていた bug。codex 非ゼロ終了の stdout+stderr をスキャンして `E_CODEX_CLI_AUTH` (`codex login` 案内) に分類 + hook 失敗を `die(exit 2)` から `[Spotter からの警告]` additionalContext + exit 0 の loud degradation に転換 (UserPromptSubmit / Stop / PreToolUse) | v1.4.15 |
 | Codex hooks 登録後の初回 Codex セッションが、`SessionStart` の detached refresh 完了前に `UserPromptSubmit` を走らせると空 / 未作成の `.spotter/tool-db.codex.json` で監査し得た問題。Codex CLI が見える `spotter install` で Codex hooks 登録後に `refresh({hostAgent:"codex"})` も同期 seed し、SessionStart refresh は以後の drift 追従に限定 | v1.4.6 |
 | Codex native hooks が npm 未配布で、Codex host では Codex CLI primary auditor / host-local `.spotter/tool-db.codex.json` / SessionStart refresh / structured backend error / recursion guard が使えなかった問題。Codex host default を Codex CLI にし、Codex CLI がある環境では `spotter install` が Codex hooks も登録する。既存 hook command path も npm global 版へ更新する。`codex-sidecar` は explicit primary auditor と second-pass / work workflow として残した | v1.4.2 |
 | MCP initialize の `clientInfo.version` が `0.10.0` hardcode のまま package.json と drift していた cosmetic issue。`src/version.mjs` の package version を stdio / HTTP MCP investigate の `clientInfo.version` に使うよう修正 | v1.4.2 |

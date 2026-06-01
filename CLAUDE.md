@@ -12,6 +12,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.15** (2026-06-02): **codex ログイン失効でサイレントに死に host が無反応になるバグを根治 +
+hook 失敗を die(exit 2) から loud degradation (exit 0 + 警告) に転換**。codex auditor のログイン失効
+(`token_revoked` / `refresh_token_reused` / `401`) 時、codex の異常終了を一律 `E_CODEX_CLI_EXIT` に潰して
+auth を区別せず、かつ `UserPromptSubmit` hook が daemon エラーを `die(exit 2)` していた。Claude Code は
+入力時 hook の exit 2 を **プロンプト消去** として扱うため、失効が続く限り毎ターン入力が消え「Claude が
+一切反応しない」状態になっていた。修正: (A) [codex-cli-backend.mjs](src/core/codex-cli-backend.mjs) で
+非ゼロ終了時に stdout+stderr をスキャンし、失効痕跡があれば新コード `E_CODEX_CLI_AUTH` (`codex login` を
+案内) を投げる (新 export `isCodexAuthFailure`、分類は非ゼロ終了経路のみ)。(B) [user-prompt.mjs](src/hooks/user-prompt.mjs)
+は daemon/transport/resurrect 失敗で `die(exit 2)` をやめ、`formatSpotterWarning` ([lib.mjs](src/hooks/lib.mjs)
+新設) を `additionalContext` で出して **exit 0 でプロンプトを通す** `degrade()` に置換。失効に限らず全監査
+失敗で host が固まらない。(C) [stop.mjs](src/hooks/stop.mjs) は backend エラー / marker 消失で継続強制
+(exit 2) をやめ `degraded` 記録 + exit 0。(D) [pre-tool-use.mjs](src/hooks/pre-tool-use.mjs) は記録失敗で
+ツール拒否 (exit 2) をやめ exit 0 (許可)。exit 2 は malformed envelope 専用に限定。loud degradation は
+§0 の silent-fallback 禁止に抵触しない (黙って pass せず、毎ターン警告を出し対処法を示す)。残課題: Stop
+失敗がセッション最終ターンだと deferred-delivery の性質上サイレント (open-issues.md P2)。`node --test`
+344 pass / 1 skip 緑。詳細は [CHANGELOG.md](CHANGELOG.md)。
+
 **v1.4.13** (2026-05-23): **Spotter 監査文面の末尾「監査役を明示してください」念押し行を削除**。
 `formatTransparentContext` / `formatTransparentBlockReason` の末尾 2 行
 (UserPromptSubmit:「使う場合は『Spotter の推奨に従い〜』のように監査役の指摘を明示してください。」、

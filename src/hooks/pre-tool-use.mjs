@@ -7,7 +7,6 @@
 import {
   readStdinJson,
   requireString,
-  exitCodeFor,
   die,
   isChildCall,
   isSubagentCall,
@@ -23,7 +22,6 @@ export async function runPreToolUse({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
   recordHookEventFn = recordClaudeHookEvent,
-  dieFn = die,
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -43,17 +41,21 @@ export async function runPreToolUse({
       timeoutMs: TIMEOUT_MS,
     });
     if (response.ok !== true) {
+      // Recording is best-effort telemetry, not an audit verdict. On a daemon-side error, allow
+      // the tool (exit 0) — a PreToolUse exit 2 would DENY the tool, which must never happen
+      // just because Spotter could not record it. The audit at user_input/turn_end still warns
+      // loudly if the backend is down.
       await recordHookEventFn({
         projectRoot,
         event: {
           hook: 'PreToolUse',
-          status: 'error',
+          status: 'degraded',
           toolName,
           code: response.error?.code ?? 'E_INTERNAL',
+          reason: 'daemon_error',
           durationMs: Date.now() - startedAt,
         },
       });
-      dieFn(`daemon error on tool_used: ${response.error?.code ?? '?'}: ${response.error?.message ?? ''}`, 2);
       return;
     }
     await recordHookEventFn({
@@ -66,17 +68,18 @@ export async function runPreToolUse({
       },
     });
   } catch (err) {
+    // Transport failure during best-effort recording: allow the tool (no exit 2 deny).
     await recordHookEventFn({
       projectRoot,
       event: {
         hook: 'PreToolUse',
-        status: 'error',
+        status: 'degraded',
         toolName,
         code: err?.code ?? 'E_INTERNAL',
+        reason: 'transport',
         durationMs: Date.now() - startedAt,
       },
     });
-    dieFn(`pre-tool-use transport failure: ${err.code ?? '?'}: ${err.message}`, exitCodeFor(err));
   }
 }
 

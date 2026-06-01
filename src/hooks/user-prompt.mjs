@@ -16,9 +16,9 @@
 import {
   readStdinJson,
   requireString,
-  exitCodeFor,
   die,
   formatTransparentContext,
+  formatSpotterWarning,
   isChildCall,
   isSubagentCall,
   isOutsideSpotterProject,
@@ -39,7 +39,6 @@ export async function runUserPrompt({
   drainPendingContextsFn = drainPendingContexts,
   recordHookEventFn = recordClaudeHookEvent,
   writeOutput = (text) => process.stdout.write(text),
-  dieFn = die,
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -57,6 +56,26 @@ export async function runUserPrompt({
   const pendingContexts = projectRoot
     ? await drainPendingContextsFn({ projectRoot, sessionId })
     : [];
+
+  // Loud degradation (§0 / §14.1): the audit could not run, but the user's prompt is valid.
+  // Surface a visible [Spotter からの警告] (merged with any drained pending context) and exit 0
+  // so the prompt reaches the host — never erase it with a blocking exit 2.
+  const degrade = async ({ code, message, reason }) => {
+    const contexts = pendingContexts.slice();
+    contexts.push(formatSpotterWarning({ code, message }));
+    emitAdditionalContext(writeOutput, contexts);
+    await recordHookEventFn({
+      projectRoot,
+      event: {
+        hook: 'UserPromptSubmit',
+        status: 'degraded',
+        code: code ?? 'E_INTERNAL',
+        reason,
+        pendingContextCount: pendingContexts.length,
+        durationMs: Date.now() - startedAt,
+      },
+    });
+  };
 
   if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
     if (pendingContexts.length > 0) {
@@ -88,67 +107,31 @@ export async function runUserPrompt({
     response = await sendUserInput();
   } catch (err) {
     if (err instanceof TransportError && err.code === 'E_UNREACHABLE') {
-      // v0.12.0: daemon is gone (heartbeat shutdown, crash, missing). Resurrect and retry.
-      if (!projectRoot) {
-        dieFn(`user-prompt: cannot resurrect daemon — no .spotter/marker.json above cwd=${input.cwd}`, 2);
-        return;
-      }
+      // v0.12.0: daemon is gone (heartbeat shutdown, crash, missing). Resurrect and retry once.
+      // projectRoot is guaranteed non-null here (isOutsideSpotterProject early-returned otherwise).
       try {
         await spawnDaemonAndWaitReadyFn({ sessionId, projectRoot });
-      } catch (spawnErr) {
-        await recordHookEventFn({
-          projectRoot,
-          event: {
-            hook: 'UserPromptSubmit',
-            status: 'error',
-            code: spawnErr?.code ?? 'E_RESURRECT_FAILED',
-            durationMs: Date.now() - startedAt,
-          },
-        });
-        dieFn(`user-prompt: daemon resurrect failed: ${spawnErr.message}`, spawnErr.exitCode ?? 2);
-        return;
-      }
-      try {
         response = await sendUserInput();
-      } catch (retryErr) {
-        await recordHookEventFn({
-          projectRoot,
-          event: {
-            hook: 'UserPromptSubmit',
-            status: 'error',
-            code: retryErr?.code ?? 'E_INTERNAL',
-            durationMs: Date.now() - startedAt,
-          },
+      } catch (recoverErr) {
+        await degrade({
+          code: recoverErr?.code ?? 'E_RESURRECT_FAILED',
+          message: recoverErr?.message ?? '',
+          reason: 'resurrect_failed',
         });
-        dieFn(`user-prompt transport failure after resurrect: ${retryErr.code ?? '?'}: ${retryErr.message}`, exitCodeFor(retryErr));
         return;
       }
     } else {
-      await recordHookEventFn({
-        projectRoot,
-        event: {
-          hook: 'UserPromptSubmit',
-          status: 'error',
-          code: err?.code ?? 'E_INTERNAL',
-          durationMs: Date.now() - startedAt,
-        },
-      });
-      dieFn(`user-prompt transport failure: ${err.code ?? '?'}: ${err.message}`, exitCodeFor(err));
+      await degrade({ code: err?.code ?? 'E_INTERNAL', message: err?.message ?? '', reason: 'transport' });
       return;
     }
   }
 
   if (response.ok !== true) {
-    await recordHookEventFn({
-      projectRoot,
-      event: {
-        hook: 'UserPromptSubmit',
-        status: 'error',
-        code: response.error?.code ?? 'E_INTERNAL',
-        durationMs: Date.now() - startedAt,
-      },
+    await degrade({
+      code: response.error?.code ?? 'E_INTERNAL',
+      message: response.error?.message ?? '',
+      reason: 'daemon_error',
     });
-    dieFn(`daemon error on user_input: ${response.error?.code ?? '?'}: ${response.error?.message ?? ''}`, 2);
     return;
   }
 

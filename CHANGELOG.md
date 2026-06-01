@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.4.15
+
+**codex ログイン失効でサイレントに死に、host の Claude が無反応になる実害バグを根治**。codex auditor の
+ログインが失効 (`token_revoked` / `refresh_token_reused` / `401 Unauthorized`) すると、`spotter install`
+済みプロジェクトで毎ターン入力が消えて「Claude が一切反応しない」状態になっていた。実セッションの daemon
+ログ (`handler error on user_input/turn_end: E_CODEX_CLI_EXIT`) + コード監査 + 公式 hook 仕様の裏取りで
+根本原因を 2 点に特定: (A) codex 異常終了時、stderr/stdout に入っているログイン失効の痕跡を捨てて全部
+`E_CODEX_CLI_EXIT` に潰しており、auth 失敗を区別できていなかった。(B) `UserPromptSubmit` hook が daemon
+エラーを一律 `die(exit 2)` で処理しており、Claude Code は入力時 hook の exit 2 を **ブロッキング扱い =
+プロンプト消去** とするため、失効が永続する限り毎ターン入力が消えていた。
+
+### 変更点
+
+- **編集 [src/core/codex-cli-backend.mjs](src/core/codex-cli-backend.mjs)**: codex の非ゼロ終了時に
+  stdout+stderr をスキャンし、ログイン失効の痕跡があれば新コード `E_CODEX_CLI_AUTH` (対処法
+  「`codex login`」を含むメッセージ) を投げる。痕跡が無ければ従来通り `E_CODEX_CLI_EXIT`。新規 export
+  `isCodexAuthFailure`。分類は非ゼロ終了経路のみ (auth 失敗は <1s で即終了するため timeout 経路は対象外)。
+- **編集 [src/hooks/lib.mjs](src/hooks/lib.mjs)**: `formatSpotterWarning({code,message})` を新設
+  (`[Spotter からの警告]` ブロック、`E_CODEX_CLI_AUTH` は `codex login` を案内、他は理由コード入りの汎用
+  文面)。exit-code 契約コメントを「audit 失敗は loud degradation = exit 0 + additionalContext、exit 2 は
+  malformed envelope 専用」に更新。
+- **編集 [src/hooks/user-prompt.mjs](src/hooks/user-prompt.mjs)**: daemon/transport/resurrect 失敗で
+  `die(exit 2)` する代わりに `degrade()` — 警告を `additionalContext` (drain 済み pending と merge) で出して
+  **exit 0 でプロンプトを通す**。失効に限らずあらゆる監査失敗で host が固まらない。throw 値の `.message`
+  アクセスを optional chaining 化し、非 Error throw が top-level catch (exit 2) に抜ける穴も塞いだ。
+- **編集 [src/hooks/stop.mjs](src/hooks/stop.mjs)**: backend/transport エラーと marker 消失 (TOCTOU) で
+  `die(exit 2 = 継続強制)` をやめ、`status:"degraded"` 記録 + exit 0。pending は積まない (verdict 未生成)。
+  loud な警告は次の `UserPromptSubmit` が配信。
+- **編集 [src/hooks/pre-tool-use.mjs](src/hooks/pre-tool-use.mjs)**: daemon/transport エラーで
+  `die(exit 2 = ツール拒否)` をやめ、`status:"degraded"` 記録 + exit 0 (ツール許可)。記録は best-effort
+  telemetry でありツールを止める理由にならない。
+- **更新 [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md)**: `UserPromptSubmit` /
+  `PreToolUse` / `Stop` の失敗時 exit-code 契約を新挙動に追従。
+- **追記 [docs/open-issues.md](docs/open-issues.md)**: auth-freeze バグの解決を記録。`Stop` 失敗が
+  セッション最終ターンだと deferred-delivery の性質上サイレントになる残課題を P2 に追記。
+- **テスト 11 件追加** ([test/hooks.test.mjs](test/hooks.test.mjs) /
+  [test/codex-cli-backend.test.mjs](test/codex-cli-backend.test.mjs)): auth 分類 / `formatSpotterWarning` /
+  UserPromptSubmit の loud degrade (auth/汎用/pending merge/resurrect 失敗/非 Error throw) / Stop degrade /
+  PreToolUse degrade。`node --test` 344 pass / 1 skip 緑。
+
+### 検証
+
+実プロジェクトの監査経路 (`createCodexCliAuditorBackend.judge` を実コードで起動) で、再ログイン後に
+`pass` verdict が返ること、および fake spawn でログイン失効 stderr → `E_CODEX_CLI_AUTH` 分類 → hook が
+`[Spotter からの警告]` を additionalContext に出して exit 0 することを確認。多エージェントの敵対的レビュー
+(host-freeze 完全性 / §0 silent-fallback / 分類器精度+docs) で HIGH 2 / MEDIUM 3 を検出し全て反映。
+
 ## 1.4.14
 
 **README 等の公開資産から内部コードネーム "Bell" を撤去**。Spotter の内部設計議論で使われている

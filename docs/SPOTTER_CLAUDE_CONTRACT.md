@@ -102,10 +102,18 @@ no used tools are skipped to avoid duplicate post-answer latency.
   - sends `event:"user_input"` to the daemon for non-short prompts.
   - on `E_UNREACHABLE`, respawns daemon once and retries.
   - merges drained pending context with daemon `pass:false` finding into one `additionalContext`.
+  - **on any auditor/daemon failure that is not a malformed Claude Code envelope** (daemon error
+    `response.ok !== true`, transport failure, or resurrect failure), emits a `[Spotter からの警告]`
+    `additionalContext` block (merged with any drained pending) and **exits 0** — the user's prompt
+    is never erased (a UserPromptSubmit exit 2 would block/erase it). `E_CODEX_CLI_AUTH` produces an
+    actionable message naming `codex login`; all other codes produce a generic warning including the
+    code. Recorded as `status:"degraded"`. This is a LOUD degradation, not a silent pass.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
 - `PreToolUse`
   - records `tool_name` as `event:"tool_used"`.
   - never calls Haiku.
+  - on a daemon/transport error, records `status:"degraded"` and **exits 0 (allows the tool)** —
+    recording is best-effort telemetry; a PreToolUse exit 2 would wrongly DENY the tool.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
 - `Stop` (Phase B / v1.4.8 — deferred delivery)
   - sends visible assistant text as `event:"turn_end"`.
@@ -116,7 +124,11 @@ no used tools are skipped to avoid duplicate post-answer latency.
     de-duplicated) and exits 0 with no stdout. Pending entries surface on the next same-session
     UserPromptSubmit's `additionalContext`.
   - `stop_hook_active:true` triggers daemon early-pass; nothing is queued.
-  - backend / transport errors still exit 1 + stderr (silent fallback forbidden).
+  - backend / transport errors record `status:"degraded"` and **exit 0** (no continuation forced —
+    a Stop exit 2 would block the model from stopping). No pending is queued (no verdict was
+    produced); the loud `[Spotter からの警告]` is surfaced by the next UserPromptSubmit. This is not
+    a silent pass — but note the inherent deferred-delivery limit: if the session ends before any
+    next UserPromptSubmit, that last turn's Stop failure is never surfaced (tracked in open-issues).
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
 - `SessionEnd`
   - requests daemon shutdown for the session.

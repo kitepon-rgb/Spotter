@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
 import { runUserPrompt } from '../src/hooks/user-prompt.mjs';
 import { runStop } from '../src/hooks/stop.mjs';
+import { runPreToolUse } from '../src/hooks/pre-tool-use.mjs';
 import { TransportError } from '../src/daemon/transport.mjs';
 import {
   appendPendingContext,
@@ -16,6 +17,7 @@ import {
 import {
   formatTransparentContext,
   formatTransparentBlockReason,
+  formatSpotterWarning,
   isChildCall,
   isSubagentCall,
   findSpotterMarker,
@@ -494,12 +496,16 @@ test('runStop: stop_hook_active=true is observed (daemon early-passes; no pendin
   }
 });
 
-test('runStop: transport failure exits with stderr (no silent fallback to pending)', async () => {
+test('runStop: transport failure records degraded and exits 0 (no continuation, no pending)', async () => {
+  // v1.4.x: a Stop-side Spotter failure must NOT force a continuation (exit 2 would block the
+  // stop) nor die with exit 1. It records `degraded` and returns 0; the loud warning is delivered
+  // by the next UserPromptSubmit. No pending is written (no verdict was produced).
   const project = await mkdtemp(join(tmpdir(), 'spotter-stop-transport-'));
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
     await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
-    const dieCalls = [];
+    const events = [];
+    let died = false;
     await runStop({
       readInput: async () => ({
         session_id: 's-transport',
@@ -513,11 +519,48 @@ test('runStop: transport failure exits with stderr (no silent fallback to pendin
         throw new Error('appendPendingContext must NOT be called on transport failure');
       },
       getLastAssistantTextFn: () => 'reply',
-      dieFn: (msg, code) => { dieCalls.push({ msg, code }); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      dieFn: () => { died = true; },
     });
-    assert.equal(dieCalls.length, 1);
-    assert.equal(dieCalls[0].code, 1); // E_UNREACHABLE → exit 1 per exitCodeFor
-    assert.match(dieCalls[0].msg, /E_UNREACHABLE/);
+    assert.equal(died, false);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'degraded');
+    assert.equal(events[0].code, 'E_UNREACHABLE');
+    assert.equal(events[0].reason, 'transport');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: daemon error (auditor backend) records degraded and exits 0 (no continuation)', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-daemon-error-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    const events = [];
+    let died = false;
+    await runStop({
+      readInput: async () => ({
+        session_id: 's-daemon-err',
+        cwd: project,
+        transcript_path: '/tmp/transcript.jsonl',
+      }),
+      sendRequestFn: async () => ({
+        ok: false,
+        error: { code: 'E_CODEX_CLI_AUTH', message: 'codex login required' },
+      }),
+      appendPendingContextFn: async () => {
+        throw new Error('appendPendingContext must NOT be called on daemon error');
+      },
+      getLastAssistantTextFn: () => 'reply',
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      dieFn: () => { died = true; },
+    });
+    assert.equal(died, false);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'degraded');
+    assert.equal(events[0].code, 'E_CODEX_CLI_AUTH');
+    assert.equal(events[0].reason, 'daemon_error');
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -638,6 +681,190 @@ test('runUserPrompt: no pending and daemon pass:true emits no output (existing b
       writeOutput: () => { writeCount += 1; },
     });
     assert.equal(writeCount, 0);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+// v1.4.x: loud degradation on auditor/daemon failure — the host must stay responsive (the
+// user's prompt is never erased) and the failure must be surfaced via a [Spotter からの警告]
+// additionalContext block. Codex login expiry (E_CODEX_CLI_AUTH) gets an actionable message.
+
+test('formatSpotterWarning: auth failure names the codex login remedy', () => {
+  const text = formatSpotterWarning({ code: 'E_CODEX_CLI_AUTH', message: 'ignored detail' });
+  assert.match(text, /\[Spotter からの警告\]/);
+  assert.match(text, /codex login/);
+});
+
+test('formatSpotterWarning: generic failure includes the reason code, not codex login', () => {
+  const text = formatSpotterWarning({ code: 'E_HAIKU_TIMEOUT', message: 'timed out' });
+  assert.match(text, /\[Spotter からの警告\]/);
+  assert.match(text, /E_HAIKU_TIMEOUT/);
+  assert.match(text, /timed out/);
+  assert.doesNotMatch(text, /codex login/);
+});
+
+test('runUserPrompt: codex auth failure emits a loud warning and does NOT erase the prompt', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-auth-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let output = '';
+    const events = [];
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-auth',
+        cwd: project,
+        prompt: '長めのユーザー入力をここに置く',
+      }),
+      sendRequestFn: async () => ({
+        ok: false,
+        error: { code: 'E_CODEX_CLI_AUTH', message: 'codex login required' },
+      }),
+      writeOutput: (text) => { output += text; },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+    });
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\[Spotter からの警告\]/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /codex login/);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'degraded');
+    assert.equal(events[0].code, 'E_CODEX_CLI_AUTH');
+    assert.equal(events[0].reason, 'daemon_error');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: generic daemon error emits a generic warning and does NOT erase the prompt', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-generic-err-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let output = '';
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-generic',
+        cwd: project,
+        prompt: '長めのユーザー入力をここに置く',
+      }),
+      sendRequestFn: async () => ({ ok: false, error: { code: 'E_INTERNAL', message: 'boom' } }),
+      writeOutput: (text) => { output += text; },
+    });
+    const ctx = JSON.parse(output).hookSpecificOutput.additionalContext;
+    assert.match(ctx, /\[Spotter からの警告\]/);
+    assert.match(ctx, /E_INTERNAL/);
+    assert.doesNotMatch(ctx, /codex login/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: daemon error still drains and merges pending context with the warning', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-degrade-merge-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await appendPendingContext({
+      projectRoot: project,
+      sessionId: 's-degrade-merge',
+      text: '[Spotter からの指摘]\n前ターンの指摘テキスト',
+    });
+    let output = '';
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-degrade-merge',
+        cwd: project,
+        prompt: '次のターンの長いユーザー入力',
+      }),
+      sendRequestFn: async () => ({
+        ok: false,
+        error: { code: 'E_CODEX_CLI_AUTH', message: 'codex login required' },
+      }),
+      writeOutput: (text) => { output += text; },
+    });
+    const ctx = JSON.parse(output).hookSpecificOutput.additionalContext;
+    assert.match(ctx, /前ターンの指摘テキスト/);
+    assert.match(ctx, /\[Spotter からの警告\]/);
+    assert.match(ctx, /codex login/);
+    const drained = await drainPendingContexts({ projectRoot: project, sessionId: 's-degrade-merge' });
+    assert.deepEqual(drained, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: resurrect failure degrades loudly instead of erasing the prompt', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-resurrect-fail-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let output = '';
+    const events = [];
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-resurrect-fail',
+        cwd: project,
+        prompt: '長めのユーザー入力をここに置く',
+      }),
+      sendRequestFn: async () => { throw new TransportError('E_UNREACHABLE', 'daemon missing'); },
+      spawnDaemonAndWaitReadyFn: async () => { throw new Error('spawn failed'); },
+      writeOutput: (text) => { output += text; },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+    });
+    assert.match(JSON.parse(output).hookSpecificOutput.additionalContext, /\[Spotter からの警告\]/);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'degraded');
+    assert.equal(events[0].reason, 'resurrect_failed');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: resurrect throwing a non-Error value still degrades (no TypeError → exit 2)', async () => {
+  // Regression: degrade() must not access `.message` on a thrown null/undefined. Otherwise the
+  // TypeError escapes to the top-level catch → die(exit 2) → erases the prompt — the exact bug.
+  const project = await mkdtemp(join(tmpdir(), 'spotter-prompt-nonerror-throw-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let output = '';
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-nonerror',
+        cwd: project,
+        prompt: '長めのユーザー入力をここに置く',
+      }),
+      sendRequestFn: async () => { throw new TransportError('E_UNREACHABLE', 'daemon missing'); },
+      spawnDaemonAndWaitReadyFn: async () => { throw null; }, // non-Error rejection
+      writeOutput: (text) => { output += text; },
+    });
+    assert.match(JSON.parse(output).hookSpecificOutput.additionalContext, /\[Spotter からの警告\]/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runPreToolUse: daemon error records degraded and allows the tool (no exit-2 deny)', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-pretool-degrade-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    const events = [];
+    await runPreToolUse({
+      readInput: async () => ({
+        session_id: 's-pretool',
+        cwd: project,
+        tool_name: 'Bash',
+      }),
+      sendRequestFn: async () => ({ ok: false, error: { code: 'E_INTERNAL', message: 'boom' } }),
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+    });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'degraded');
+    assert.equal(events[0].toolName, 'Bash');
+    assert.equal(events[0].reason, 'daemon_error');
   } finally {
     await rm(project, { recursive: true, force: true });
   }
