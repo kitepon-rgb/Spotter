@@ -212,6 +212,7 @@ those values for smoke tests or controlled experiments.
 <details>
 <summary><strong>📋 Recent highlights</strong></summary>
 
+- **Daemon recovers after an ungraceful death** (v1.4.16) — if the daemon dies without graceful shutdown (machine sleep, force-quit, crash before `SessionEnd`), the Unix socket it leaves behind no longer bricks every restart. `startDaemon` removes the orphaned socket before binding, so the next `UserPromptSubmit` auto-resurrect succeeds instead of crash-looping on `EADDRINUSE` and leaving the session permanently unaudited
 - **Failures degrade loudly, never freeze the host** (v1.4.15) — when the auditor backend fails (e.g. codex login expired), the `UserPromptSubmit` hook surfaces a `[Spotter からの警告]` and lets your prompt through instead of silently erasing it. codex login expiry names the one-line fix (`codex login`)
 - **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Claude's audit
 - **Per-project / per-host audit isolation** — the daemon audits against the local DB only; global DBs are host-specific description caches. Tools discovered in *other* projects or another host can never bleed into this project's audit set

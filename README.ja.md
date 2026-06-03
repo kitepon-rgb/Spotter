@@ -209,6 +209,7 @@ Codex CLI auditor の子プロセスは、hook 判定を安く速く保つため
 <details>
 <summary><strong>📋 最近のハイライト</strong></summary>
 
+- **daemon は異常死しても復活する** (v1.4.16) — daemon が graceful shutdown を経ず死んでも (マシンスリープ / 強制終了 / `SessionEnd` 前の crash)、残った Unix socket が以後の起動を塞がなくなった。`startDaemon` が bind 前に orphan socket を除去するので、次の `UserPromptSubmit` の auto-resurrect が `EADDRINUSE` で crash-loop せずに成功し、「そのセッションが永久に未監査」になる事態を防ぐ
 - **失敗は声に出して縮退、host を固めない** (v1.4.15) — auditor backend が失敗したとき (例: codex のログイン失効) も、`UserPromptSubmit` hook はプロンプトを黙って消さずに `[Spotter からの警告]` を出して通す。codex ログイン失効時は直し方 (`codex login`) を明示する
 - **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Claude の監査から silent に脱落させていた)
 - **プロジェクト単位の監査隔離** — daemon が監査に使うのはローカル DB のみ。グローバル DB は description 再利用キャッシュに役割限定。**他プロジェクト**でインストールしたツールが現プロジェクトの監査に混入することはない
