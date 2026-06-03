@@ -32,7 +32,7 @@
 //     the env-var gate)
 
 import { readFile } from 'node:fs/promises';
-import { createServer, ensureRuntimeDir, secureSocketFile, socketPath } from './transport.mjs';
+import { createServer, ensureRuntimeDir, removeStaleSocketFile, secureSocketFile, socketPath } from './transport.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
 import { legacyResultFromJudgment } from '../core/judgment.mjs';
 import {
@@ -349,6 +349,13 @@ export async function startDaemon({
   };
 
   const { server, path } = createServer({ sessionId, handler, onError: onErrorFn });
+
+  // assertNoLiveDaemon() above confirmed no live process owns this session_id. Any socket file at
+  // `path` is therefore an orphan from a prior daemon that died ungracefully (stop()'s unlink runs
+  // only on graceful shutdown). Remove it so listen() doesn't fail with EADDRINUSE — otherwise the
+  // daemon dies before "daemon listening" and every resurrect crash-loops, leaving the session
+  // permanently unaudited.
+  await removeStaleSocketFile(path);
 
   await new Promise((resolve, reject) => {
     server.on('error', (err) => reject(err));

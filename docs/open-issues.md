@@ -45,6 +45,8 @@ v0.12.0 の UserPromptSubmit auto-resurrect が次のユーザー入力で `E_UN
 
 **残: v1.3.0 後の再観測**。実運用で daemon 突然死頻度が下がるかを daemon ログで集計。`spotter diagnostics logs --json` の `daemon.restartSignals` / `daemon.toolDbLoaded` / `daemon.stops` を見て、1 セッションあたり何回再起動が起きるかを観測する。下がっていなければ別の真因 (Node 内部例外 / WSL 仮想化レイヤ等) を疑う。
 
+**2026-06-04 更新 (回復経路の修正)**: 突然死の「頻度」とは別に、**死んだ後に二度と起動できなくなる**回復経路のバグを発見・修正した (解決済みテーブル v1.4.16 参照)。異常死で stale socket が残ると `server.listen` が `EADDRINUSE` で crash-loop し、auto-resurrect しても永久に未監査になっていた。`startDaemon` が listen 前に stale socket を unlink するようにしたので、突然死が起きても**次の resurrect で確実に復活する**ようになった。突然死の根因 (なぜ死ぬか) の観測は引き続き本項目で継続。実測の異常死は MacBook スリープ / Claude Code 強制終了で SessionEnd が走らなかったケース (graceful shutdown ログなし) が `83d7aa04` で確認された。
+
 ---
 
 ## P0 — 実運用観測タスク
@@ -251,6 +253,7 @@ Codex native `Stop` は現状 immediate block ではなく deferred delivery。`
 
 | 課題 | 解決版 |
 |---|---|
+| daemon が異常死 (SIGKILL / crash / マシンスリープで SessionEnd 未発火) すると graceful `stop()` の socket unlink が走らず、`~/.spotter/runtime/session-<id>.sock` が orphan として残留。以後の resurrect / SessionStart は `assertNoLiveDaemon` (PID 死亡を確認) を通過して `server.listen(path)` に進むが、stale socket で `EADDRINUSE` → `daemon listening` 到達前に die → **auto-resurrect しても毎回同じ socket で crash-loop = そのセッションが永久に未監査**。実測: Kikoeru session `83d7aa04` が 16:26 起動後に異常死、18:43–19:14 の 5 回 restart が全部 backend 選択直後で停止、hook は毎ターン `E_UNREACHABLE` / `E_RESURRECT_FAILED` で degraded (「一時無効のまま」)。修正: `transport.mjs` に `removeStaleSocketFile` を新設し、`startDaemon` が `assertNoLiveDaemon` 通過後・`listen` 前に stale socket を unlink (Unix only、ENOENT は no-op、Windows named pipe は owner 終了で自動消滅するので no-op)。回帰テスト 3 件 (EADDRINUSE 再現→解消 / ENOENT no-op / Windows no-op) | v1.4.16 (実装済・未リリース) |
 | codex auditor のログイン失効 (`token_revoked` / `refresh_token_reused` / `401`) で codex が異常終了すると、(A) 失効痕跡を捨てて全部 `E_CODEX_CLI_EXIT` に潰し auth を区別せず、(B) `UserPromptSubmit` hook が daemon エラーを `die(exit 2)` していたため、Claude Code が入力時 hook の exit 2 を **プロンプト消去** 扱いして毎ターン入力が消え「Claude が一切反応しない」状態になっていた bug。codex 非ゼロ終了の stdout+stderr をスキャンして `E_CODEX_CLI_AUTH` (`codex login` 案内) に分類 + hook 失敗を `die(exit 2)` から `[Spotter からの警告]` additionalContext + exit 0 の loud degradation に転換 (UserPromptSubmit / Stop / PreToolUse) | v1.4.15 |
 | Codex hooks 登録後の初回 Codex セッションが、`SessionStart` の detached refresh 完了前に `UserPromptSubmit` を走らせると空 / 未作成の `.spotter/tool-db.codex.json` で監査し得た問題。Codex CLI が見える `spotter install` で Codex hooks 登録後に `refresh({hostAgent:"codex"})` も同期 seed し、SessionStart refresh は以後の drift 追従に限定 | v1.4.6 |
 | Codex native hooks が npm 未配布で、Codex host では Codex CLI primary auditor / host-local `.spotter/tool-db.codex.json` / SessionStart refresh / structured backend error / recursion guard が使えなかった問題。Codex host default を Codex CLI にし、Codex CLI がある環境では `spotter install` が Codex hooks も登録する。既存 hook command path も npm global 版へ更新する。`codex-sidecar` は explicit primary auditor と second-pass / work workflow として残した | v1.4.2 |

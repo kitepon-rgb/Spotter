@@ -12,6 +12,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.16** (2026-06-04): **daemon 異常死後の stale socket で永久に起動不能になる回復経路バグを根治**。
+daemon が graceful shutdown を経ず死ぬ (SIGKILL / crash / マシンスリープで SessionEnd 未発火) と
+`stop()` の socket unlink が走らず `~/.spotter/runtime/session-<id>.sock` が orphan として残り、以後の
+auto-resurrect (v0.12.0) / SessionStart は `assertNoLiveDaemon` (PID 死亡確認) 通過後の `server.listen` で
+`EADDRINUSE` 死 → `daemon listening` 未到達 → 毎 resurrect crash-loop = そのセッションが永久に未監査
+(「Spotter 監査は一時無効のまま」) になっていた。実セッション (Kikoeru `83d7aa04`) で異常死後 5 回の
+restart が listen 未到達で停止、hook が毎ターン `E_UNREACHABLE` / `E_RESURRECT_FAILED` で degraded する
+のを daemon ログで確認。修正: [transport.mjs](src/daemon/transport.mjs) に `removeStaleSocketFile`
+(Unix のみ unlink、ENOENT no-op、Windows named pipe は no-op、§0 準拠で他エラーは rethrow) を新設し、
+[daemon.mjs](src/daemon/daemon.mjs) の `startDaemon` が `assertNoLiveDaemon` 通過後・`listen` 前に呼ぶ。
+異常死は避けられない前提で「死んでも次の resurrect で確実に復活」を保証 (auto-resurrect v0.12.0 が stale
+socket に対しても初めて機能)。回帰テスト 3 件 (EADDRINUSE 再現→解消 / ENOENT no-op / Windows no-op)、
+付随で `package-lock.json` の 1.4.14 drift を 1.4.16 に同期。`node --test` 348 pass / 2 skip 緑。詳細は
+[CHANGELOG.md](CHANGELOG.md)。
+
 **v1.4.15** (2026-06-02): **codex ログイン失効でサイレントに死に host が無反応になるバグを根治 +
 hook 失敗を die(exit 2) から loud degradation (exit 0 + 警告) に転換**。codex auditor のログイン失効
 (`token_revoked` / `refresh_token_reused` / `401`) 時、codex の異常終了を一律 `E_CODEX_CLI_EXIT` に潰して

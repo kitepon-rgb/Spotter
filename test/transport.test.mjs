@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { socketPath, sendRequest, createServer, TransportError, ensureRuntimeDir, secureSocketFile } from '../src/daemon/transport.mjs';
+import { socketPath, sendRequest, createServer, TransportError, ensureRuntimeDir, secureSocketFile, removeStaleSocketFile } from '../src/daemon/transport.mjs';
 import { randomUUID } from 'node:crypto';
-import { stat, unlink } from 'node:fs/promises';
+import { stat, unlink, writeFile } from 'node:fs/promises';
 
 test('socketPath: Windows uses Named Pipe namespace', { skip: process.platform !== 'win32' }, () => {
   assert.equal(socketPath('abc'), '\\\\.\\pipe\\spotter-abc');
@@ -51,6 +51,58 @@ test('secureSocketFile: Unix socket is owner-only', { skip: process.platform ===
       if (err.code !== 'ENOENT') throw err;
     });
   }
+});
+
+test('removeStaleSocketFile: a fresh daemon can rebind after an ungraceful death left a stale socket', { skip: process.platform === 'win32' }, async () => {
+  await ensureRuntimeDir();
+  const sessionId = `stale-${randomUUID()}`;
+  const path = socketPath(sessionId);
+
+  // Simulate the socket file an ungracefully-killed daemon leaves behind (its stop() never ran).
+  // Any pre-existing file at the bind path makes the Unix bind() fail with EADDRINUSE.
+  await writeFile(path, '');
+
+  // Reproduce the bug: without cleanup, listen() fails with EADDRINUSE — this is exactly why the
+  // daemon never reached "daemon listening" and every resurrect crash-looped.
+  const blocked = createServer({ sessionId, handler: async () => ({ ok: true }) });
+  await assert.rejects(
+    new Promise((resolve, reject) => {
+      blocked.server.on('error', reject);
+      blocked.server.listen(path, resolve);
+    }),
+    (err) => err.code === 'EADDRINUSE',
+  );
+
+  // The fix: drop the stale socket, then a fresh daemon binds and actually serves.
+  await removeStaleSocketFile(path);
+  const fresh = createServer({ sessionId, handler: async (envelope) => ({ echoed_id: envelope.id }) });
+  await new Promise((resolve, reject) => {
+    fresh.server.on('error', reject);
+    fresh.server.listen(path, resolve);
+  });
+  try {
+    const resp = await sendRequest({ sessionId, event: 'readiness', timeoutMs: 2_000 });
+    assert.equal(resp.ok, true);
+  } finally {
+    await new Promise((r) => fresh.server.close(r));
+    await unlink(path).catch((err) => {
+      if (err.code !== 'ENOENT') throw err;
+    });
+  }
+});
+
+test('removeStaleSocketFile: absent file (ENOENT) is a no-op, not an error', { skip: process.platform === 'win32' }, async () => {
+  await ensureRuntimeDir();
+  const path = socketPath(`noent-${randomUUID()}`);
+  await unlink(path).catch(() => {});
+  await removeStaleSocketFile(path); // must not throw
+  await assert.rejects(stat(path), (err) => err.code === 'ENOENT');
+});
+
+test('removeStaleSocketFile: no-op on Windows Named Pipe path', { skip: process.platform !== 'win32' }, async () => {
+  // Named pipes are not filesystem files; there is nothing to unlink and it must not throw.
+  await removeStaleSocketFile(socketPath(`win-${randomUUID()}`));
+  assert.ok(true);
 });
 
 test('round-trip: server echoes result through envelope', async () => {

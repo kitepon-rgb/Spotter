@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.4.16
+
+**daemon が異常死した後、残った Unix socket で二度と起動できなくなり、そのセッションが永久に未監査になる
+回復経路バグを根治**。daemon が graceful shutdown を経ずに死ぬ (SIGKILL / crash / マシンスリープで
+SessionEnd 未発火) と、`stop()` の socket unlink が走らず `~/.spotter/runtime/session-<id>.sock` が orphan
+として残る。以後の auto-resurrect (v0.12.0) / SessionStart は `assertNoLiveDaemon` (PID 死亡を確認) を通過
+して `server.listen(path)` に進むが、stale socket が残っているため `EADDRINUSE` で reject され、
+`daemon listening` ログに到達する前に die。auto-resurrect は同じ socket パスへの再 bind を試みて毎回同じ
+`EADDRINUSE` で crash-loop するため、そのセッションは会話を続けても永久に復活せず「Spotter 監査は一時無効
+のまま」になっていた。実セッション (Kikoeru `83d7aa04`) の daemon ログで根本原因を確定: 16:26 正常起動 →
+graceful shutdown ログなしの異常死 → 18:43–19:14 の 5 回 restart が全部 `tool-db loaded` /
+`auditor backend selected` 直後で停止 (listen 未到達)、hook-events は毎ターン `E_UNREACHABLE` /
+`E_RESURRECT_FAILED` の degraded。
+
+### 変更点
+
+- **編集 [src/daemon/transport.mjs](src/daemon/transport.mjs)**: `removeStaleSocketFile(path)` を新設・
+  export。Unix domain socket の orphan ファイルを unlink する。ENOENT (stale ファイルなし = 通常の初回起動)
+  は no-op、それ以外のエラーは rethrow (§0: silent swallow 禁止)。Windows は Named Pipe が owner プロセス
+  終了で自動消滅するため no-op。
+- **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `startDaemon` が `assertNoLiveDaemon`
+  (no-live 確認) 通過後・`server.listen(path)` 前に `removeStaleSocketFile(path)` を呼ぶ。liveness 確認後
+  なので socket は確実に orphan であり安全に消せる。
+- **テスト 3 件追加 [test/transport.test.mjs](test/transport.test.mjs)**: (1) stale socket で `listen` が
+  `EADDRINUSE` で落ちる挙動を実再現 → `removeStaleSocketFile` 後に fresh daemon が bind & round-trip 成功、
+  (2) ENOENT は throw せず no-op、(3) Windows Named Pipe path は no-op (CI Windows matrix で実行)。
+- **追記 [docs/open-issues.md](docs/open-issues.md)**: 解決済みテーブルに本バグを記録 + P0「daemon 突然死」
+  節に回復経路修正の相互参照を追加。
+- **付随**: `package-lock.json` の version が 1.4.14 のまま drift していたのを 1.4.16 に同期。
+- `node --test` 348 / 346 pass / 0 fail / 2 skip 緑。
+
+設計の主旨: 異常死 (スリープ / 強制終了) は構造的に避けられない前提で、「死なせない」ではなく「死んでも次の
+resurrect で確実に復活する」ことを保証する。これで auto-resurrect (v0.12.0) が stale socket に対しても
+初めて機能する。突然死の根因 (なぜ死ぬか) の観測は open-issues.md P0 で引き続き継続。
+
 ## 1.4.15
 
 **codex ログイン失効でサイレントに死に、host の Claude が無反応になる実害バグを根治**。codex auditor の
