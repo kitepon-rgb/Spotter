@@ -9,8 +9,8 @@ commands, hooks, error handling, and release workflow.
 1. Read `CLAUDE.md` before changing code.
 2. Read `docs/open-issues.md` before starting new work.
 3. For Claude / Codex dual-support work, also read
-   `docs/SPOTTER_CLAUDE_CONTRACT.md`.
-4. For catalog / tool-db behavior, read `docs/catalog-design.md`.
+   `docs/02_spotter-claude-contract.md`.
+4. For catalog / tool-db behavior, read `docs/01_catalog-design.md`.
 
 Completed plans and historical design snapshots live under `docs/archive/` and
 are reference material, not required reading for normal work.
@@ -60,7 +60,7 @@ which failure path it covers, and adds regression coverage.
   provisional implementation in the mainline.
 - Treat `codex-sidecar` unavailable behavior as an explicit second-pass skip /
   compatibility mode only when the design says so. Primary auditor backend
-  unavailability follows `docs/SPOTTER_CLAUDE_CONTRACT.md`; do not invent a
+  unavailability follows `docs/02_spotter-claude-contract.md`; do not invent a
   hidden Haiku fallback.
 - Avoid recursive Codex-on-Codex delegation unless there is a concrete boundary:
   isolated worktree execution, durable structured result, raw diagnostics, a

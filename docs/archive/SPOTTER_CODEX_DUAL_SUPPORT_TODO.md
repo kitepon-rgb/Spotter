@@ -1,7 +1,7 @@
 # Spotter Claude / Codex Dual Support TODO
 
 > Archived: この文書は完了済み dual-support phase gate の記録です。
-> 現行仕様は [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)、
+> 現行仕様は [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)、
 > 現行課題は [`../open-issues.md`](../open-issues.md) を参照してください。
 
 この文書は `docs/archive/SPOTTER_CODEX_DUAL_SUPPORT.md` に基づく作業計画書兼 TODO。
@@ -11,7 +11,7 @@ adapter を追加する。
 ## Source Of Truth
 
 - 正本: [`../../CLAUDE.md`](../../CLAUDE.md)
-- Claude contract: [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)
+- Claude contract: [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)
 - 現状課題: [`../open-issues.md`](../open-issues.md)
 - Dual-support 方針: [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md)
 - 次段階の primary auditor backend migration: [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md)
@@ -140,7 +140,7 @@ Deliverable:
 
 - `AGENTS.md`
 - この TODO
-- `docs/SPOTTER_CLAUDE_CONTRACT.md`
+- `docs/02_spotter-claude-contract.md`
 - README design docs への導線
 - `.codex-sidecar.yml`
 

@@ -80,7 +80,7 @@ v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件
 
 **関連計画**: Claude 環境での Spotter 遅延は UX に影響しているため、backend / latency tuning は
 Codex native に Spotter を適用して先に最適化し、実測できた改善だけを Claude host に移植する方針。
-現行 backend policy は [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md) を正とし、
+現行 backend policy は [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md) を正とし、
 完了済みの primary backend migration ログは
 [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md) に保持する。
 

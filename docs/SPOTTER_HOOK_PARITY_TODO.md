@@ -9,7 +9,7 @@ backend の取り扱いは [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/S
 
 - 正本: [`../CLAUDE.md`](../CLAUDE.md)
 - 現状課題: [`open-issues.md`](open-issues.md)
-- Claude hook / daemon / Haiku contract: [`SPOTTER_CLAUDE_CONTRACT.md`](SPOTTER_CLAUDE_CONTRACT.md)
+- Claude hook / daemon / Haiku contract: [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md)
 - Backend port (完了済み): [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
 
 ## Goal
@@ -159,7 +159,7 @@ Gate:
 - [x] [CHANGELOG.md](../CHANGELOG.md) v1.4.8 エントリ。
 - [x] [package.json](../package.json) `1.4.7` → `1.4.8`。
 - [x] [CLAUDE.md](../CLAUDE.md) Repository Status v1.4.8。
-- [x] [SPOTTER_CLAUDE_CONTRACT.md](SPOTTER_CLAUDE_CONTRACT.md):
+- [x] [02_spotter-claude-contract.md](02_spotter-claude-contract.md):
   Stop hook 契約を deferred delivery に書き換え、JSONL log と pending host-neutral 化を追記。
 - [x] [open-issues.md](open-issues.md):
   Hook parity 進行中エントリを完了状態に更新、§12.4 (CLAUDE.md) を deferred 化で部分解消した

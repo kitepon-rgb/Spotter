@@ -197,9 +197,9 @@ those values for smoke tests or controlled experiments.
 
 ## Design docs
 
-- **Current design** (catalog, discovery, classification axes): [docs/catalog-design.md](docs/catalog-design.md) — source of truth from v1.0.0
+- **Current design** (catalog, discovery, classification axes): [docs/01_catalog-design.md](docs/01_catalog-design.md) — source of truth from v1.0.0
 - **Open issues + unverified concerns**: [docs/open-issues.md](docs/open-issues.md) — read this before starting new work
-- **Runtime contract**: [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) — Claude hook / daemon / Haiku contract plus Codex native hook policy
+- **Runtime contract**: [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku contract plus Codex native hook policy
 - **Implementation invariants (§0)**: [CLAUDE.md](CLAUDE.md) — no fallbacks, no silent failures, no provisional code
 - **Archived plans and history**: [docs/archive/](docs/archive/) — completed Codex rollout plans, primary backend smoke logs, and the frozen v0.1 design discussion
 

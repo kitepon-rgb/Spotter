@@ -194,9 +194,9 @@ Codex CLI auditor の子プロセスは、hook 判定を安く速く保つため
 
 ## 設計ドキュメント
 
-- **現行設計 (カタログ / 収集経路 / 分類軸)**: [docs/catalog-design.md](docs/catalog-design.md) — v1.0.0 以降の真実源
+- **現行設計 (カタログ / 収集経路 / 分類軸)**: [docs/01_catalog-design.md](docs/01_catalog-design.md) — v1.0.0 以降の真実源
 - **現時点で塞がっていない穴 + 実測未検証の懸念**: [docs/open-issues.md](docs/open-issues.md) — 新規作業に入る前に必読
-- **Runtime contract**: [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md) — Claude hook / daemon / Haiku 契約と Codex native hook policy
+- **Runtime contract**: [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku 契約と Codex native hook policy
 - **実装規範と不変条件 (§0)**: [CLAUDE.md](CLAUDE.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止
 - **Archive**: [docs/archive/](docs/archive/) — 完了済み Codex rollout 計画、primary backend smoke log、v0.1 設計議事録
 

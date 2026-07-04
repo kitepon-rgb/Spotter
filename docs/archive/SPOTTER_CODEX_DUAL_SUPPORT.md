@@ -1,7 +1,7 @@
 # Spotter: Claude / Codex 両対応計画
 
 > Archived: この文書は second-pass `codex-sidecar` workflow 実装時のブリーフです。
-> 現行仕様は [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)、
+> 現行仕様は [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)、
 > 現行課題は [`../open-issues.md`](../open-issues.md) を参照してください。
 
 この文書は Spotter repository に貼り付けるための実装ブリーフです。目的は、Spotter を Claude Code と Codex の両方から安全に使える形へ育てることです。
@@ -11,7 +11,7 @@
 v1.4.3 で npm docs まで整合した Codex host primary auditor rollout は
 [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md) にアーカイブ済みです。
 実装済み phase と完了条件は [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)、
-維持すべき Claude 側 contract は [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md) にあります。
+維持すべき Claude 側 contract は [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md) にあります。
 
 ## 目標
 

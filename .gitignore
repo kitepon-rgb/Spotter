@@ -4,7 +4,12 @@ node_modules/
 .env
 .env.local
 coverage/
+build/
 dist/
+.venv/
+.obsidian/
+*.pem
+*.key
 .vscode/
 .claude/
 .spotter/

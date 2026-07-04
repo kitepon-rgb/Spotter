@@ -8,7 +8,7 @@
 現役文書:
 
 - 現状課題と観測タスク: [`open-issues.md`](open-issues.md)
-- カタログ / tool-db 設計: [`catalog-design.md`](catalog-design.md)
+- カタログ / tool-db 設計: [`01_catalog-design.md`](01_catalog-design.md)
 - 進行中の hook parity 移植 TODO: [`SPOTTER_HOOK_PARITY_TODO.md`](SPOTTER_HOOK_PARITY_TODO.md)
 
 完了済み計画と歴史記録:

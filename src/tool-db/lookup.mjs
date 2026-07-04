@@ -1,6 +1,6 @@
 // tool-db: 3-tier lookup with write-through and drift correction.
 //
-// Per docs/catalog-design.md:
+// Per docs/01_catalog-design.md:
 //   1. local DB hit       → use it
 //   2. local miss, global hit → use it AND write-through to local
 //   3. both miss          → investigate, write to BOTH

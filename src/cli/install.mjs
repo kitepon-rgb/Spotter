@@ -8,7 +8,7 @@
 // silently exit otherwise (prevents Throughline-style proliferation).
 //
 // v0.7.0: tool catalog (the old YAML) is replaced by tool-db.json (auto-discovered MCP
-// servers, skills, sub-agents — see docs/catalog-design.md for v1.0.0 scope).
+// servers, skills, sub-agents — see docs/01_catalog-design.md for v1.0.0 scope).
 // Install seeds the DB automatically via `refresh` (project-mode only — user-mode
 // has no projectRoot so DB seeding is skipped there).
 

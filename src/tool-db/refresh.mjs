@@ -1,6 +1,6 @@
 // Discover available tools and ensure the tool-db has descriptions for all of them.
 //
-// Flow per docs/catalog-design.md:
+// Flow per docs/01_catalog-design.md:
 //   1. enumerate available tool names (MCP + skills + sub-agents, user-addable only)
 //   2. for each, look up local → global → investigate (write-through; drift-correct)
 //   3. write back any updates atomically

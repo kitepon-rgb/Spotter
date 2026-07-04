@@ -66,7 +66,7 @@ resurrect で確実に復活する」ことを保証する。これで auto-resu
 - **編集 [src/hooks/pre-tool-use.mjs](src/hooks/pre-tool-use.mjs)**: daemon/transport エラーで
   `die(exit 2 = ツール拒否)` をやめ、`status:"degraded"` 記録 + exit 0 (ツール許可)。記録は best-effort
   telemetry でありツールを止める理由にならない。
-- **更新 [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md)**: `UserPromptSubmit` /
+- **更新 [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md)**: `UserPromptSubmit` /
   `PreToolUse` / `Stop` の失敗時 exit-code 契約を新挙動に追従。
 - **追記 [docs/open-issues.md](docs/open-issues.md)**: auth-freeze バグの解決を記録。`Stop` 失敗が
   セッション最終ターンだと deferred-delivery の性質上サイレントになる残課題を P2 に追記。
@@ -355,7 +355,7 @@ v1.4.6 までは `SPOTTER_AUDITOR_BACKEND_POLICY=next` を Claude host で立て
   test、Claude+`next` で `SPOTTER_AUDITOR_BACKEND=haiku` 明示が依然として Haiku を選ぶ
   互換 test、`createAuditorBackend` factory が `auto` + Claude + `next` で Codex CLI backend を
   返す factory-level test を追加。
-- **編集 [docs/SPOTTER_CLAUDE_CONTRACT.md](docs/SPOTTER_CLAUDE_CONTRACT.md)** /
+- **編集 [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md)** /
   [docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md) /
   [docs/open-issues.md](docs/open-issues.md):
   Claude host の `current` / `next` policy 表と Phase 5 ゲート、Haiku compatibility が
@@ -875,11 +875,11 @@ v0.8.0 で claude.ai OAuth 系 MCP (Gmail / Calendar / Drive) を手書き basel
   - コマンド表の `spotter db refresh` コメント更新 (「組込み 遅延ツール」削除、v1.1.0 以降は通常不要な旨追記)、`spotter db rebuild` の挙動を local+global wipe に訂正
   - 設計ドキュメント節を 4 本立て (catalog-design / open-issues / CLAUDE.md §0 / spotter-plan 歴史記録) に再編
   - Haiku timeout 表記を v0.5.0 (30s) → v0.13.1 (45s) に訂正
-- **編集 [docs/catalog-design.md](docs/catalog-design.md)**:
+- **編集 [docs/01_catalog-design.md](docs/01_catalog-design.md)**:
   - 新節「収集タイミング (v1.1.0 以降)」追加 — install 同期 seed / SessionStart bg refresh / db refresh / db rebuild の 4 経路を整理
   - 歴史節に v1.1.x の「収集タイミング自動化」を追記
 - **編集 [docs/archive/spotter-plan.md](docs/archive/spotter-plan.md)**:
-  - 冒頭に「v0.1 時点の設計議事録」である旨のブリッジ追加、現行設計の真実源 (catalog-design.md / open-issues.md / CLAUDE.md) へのリンクを明示
+  - 冒頭に「v0.1 時点の設計議事録」である旨のブリッジ追加、現行設計の真実源 (01_catalog-design.md / open-issues.md / CLAUDE.md) へのリンクを明示
 
 ## 1.1.2
 
@@ -950,14 +950,14 @@ Spotter の役割は「Bell にとって**言われないと思い出さない**
 
 ### 変更点
 
-- **削除 [src/tool-db/deferred-baseline.mjs](src/tool-db/deferred-baseline.mjs)**: 手書き 17 件の baseline を撤去。`DEFERRED_TOOL_BASELINE` / `getDeferredDescription` / `listDeferredNames` の export も削除 (破壊変更)
+- **削除 `src/tool-db/deferred-baseline.mjs`**: 手書き 17 件の baseline を撤去。`DEFERRED_TOOL_BASELINE` / `getDeferredDescription` / `listDeferredNames` の export も削除 (破壊変更)
 - **新規 [src/tool-db/frontmatter.mjs](src/tool-db/frontmatter.mjs)**: SKILL.md / agent .md の YAML frontmatter から `name` + `description` を抽出する最小パーサー (ゼロ依存)
 - **新規 [src/tool-db/investigate-skills.mjs](src/tool-db/investigate-skills.mjs)**: スキルを 3 scope (user / project / 有効化プラグイン) から収集。プラグイン由来は `<plugin>:<skill>` に名前空間化、ユーザー / プロジェクト由来は素の名前。`enabledPlugins` の有効化判定は user scope + project scope の union、`~/.claude/plugins/installed_plugins.json` の `installPath` から実体にアクセス
 - **新規 [src/tool-db/investigate-agents.mjs](src/tool-db/investigate-agents.mjs)**: サブエージェントを同じく 3 scope から収集。名前は素の名前、衝突は project > user > plugin の優先順で解決
 - **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `buildInvestigationSnapshot` から deferred 経路を削除、スキル / サブエージェント経路を追加。MCP live fetch + `claude.ai` baseline (Gmail / Calendar / Drive) は維持
 - **編集 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs)**: `spotter db rebuild` が local DB に加えて **global DB も wipe** するように仕様変更。旧バージョンから上がってきたユーザーが古い deferred エントリを抱えたままにならないため
 - **編集 [src/index.mjs](src/index.mjs)**: `listSkillsAll` / `listActivePlugins` / `listAgentsAll` の export 追加
-- **リネーム [docs/catalog-design-deferred-mcp.md](docs/catalog-design.md) → [docs/catalog-design.md](docs/catalog-design.md)**: 大幅書き直し。対象範囲・分類軸・収集経路を v1.0.0 仕様で更新
+- **リネーム [docs/catalog-design-deferred-mcp.md](docs/01_catalog-design.md) → [docs/01_catalog-design.md](docs/01_catalog-design.md)**: 大幅書き直し。対象範囲・分類軸・収集経路を v1.0.0 仕様で更新
 - **テスト更新 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: deferred baseline テスト 3 件削除、frontmatter テスト 3 件 + skill テスト 2 件 + agent テスト 2 件を追加。計 32 件全通過
 
 ### 結果
@@ -985,7 +985,7 @@ preamble 初回送信サイズ推定 15-25K tokens (Haiku 4.5 の 200K コンテ
 
 ## 0.13.3
 
-**カタログ外ツール名の推奨を遮断 (prompt 明示 + 事後 filter の二重防御)**。v0.13.2 リリース直後の実セッション ([daemon-f047521c.log](../../.spotter/logs/daemon-f047521c-9cce-4822-9555-90b206b8341e.log) line 9) で `turn_end: pass=false, missing=Skill(tl)` を観測。**`Skill(tl)` はカタログ (tool-db.json 57 件) に存在しない**。Haiku が training 記憶 or few-shot の `current_time` / `Skill` 表記から cargo-cult してカタログ外名を提案していた。これが恒常化するとユーザーが無効な推奨に混乱する + /tl など description を直しても Haiku は参照していないため修正が届かない、という構造問題になる。
+**カタログ外ツール名の推奨を遮断 (prompt 明示 + 事後 filter の二重防御)**。v0.13.2 リリース直後の実セッション (`daemon-f047521c.log` line 9) で `turn_end: pass=false, missing=Skill(tl)` を観測。**`Skill(tl)` はカタログ (tool-db.json 57 件) に存在しない**。Haiku が training 記憶 or few-shot の `current_time` / `Skill` 表記から cargo-cult してカタログ外名を提案していた。これが恒常化するとユーザーが無効な推奨に混乱する + /tl など description を直しても Haiku は参照していないため修正が届かない、という構造問題になる。
 
 ### 変更点
 
@@ -1007,7 +1007,7 @@ preamble 初回送信サイズ推定 15-25K tokens (Haiku 4.5 の 200K コンテ
 
 ## 0.13.2
 
-**Daemon の死因を必ずログに残す診断インフラ + Haiku 子プロセス stdio の防御的 error listener**。v0.13.1 までは daemon が `uncaughtException` / `unhandledRejection` で死ぬと痕跡ゼロで消えていた ([daemon-80b5c0af.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15 → line 16 で shutdown ログなしに再起動)。次に同じことが起きた時に真因を必ず捕まえられるよう、診断 handler を導入。
+**Daemon の死因を必ずログに残す診断インフラ + Haiku 子プロセス stdio の防御的 error listener**。v0.13.1 までは daemon が `uncaughtException` / `unhandledRejection` で死ぬと痕跡ゼロで消えていた (`daemon-80b5c0af.log` line 15 → line 16 で shutdown ログなしに再起動)。次に同じことが起きた時に真因を必ず捕まえられるよう、診断 handler を導入。
 
 ### 監査の経過と結論
 
@@ -1023,11 +1023,11 @@ preamble 初回送信サイズ推定 15-25K tokens (Haiku 4.5 の 200K コンテ
 ### 残課題
 
 - daemon 突然死の真因特定: **次回再現を待つ**。診断 handler が入ったので、次に死亡した時はログに必ず痕跡が残る。それを見て対処する
-- v0.13.1 で 30s → 45s 緩和した Haiku timeout の効果観測は継続: 現セッション [daemon-69bd2b93.log](../../.spotter/logs/daemon-69bd2b93-ffbe-43bc-94e7-1d0ba2bd9e74.log) line 5 で `mode=first, duration_ms=32703` を観測 (30s 設定なら timeout していた値が 45s で生存)。サンプル 1 件で結論はまだ早い
+- v0.13.1 で 30s → 45s 緩和した Haiku timeout の効果観測は継続: 現セッション `daemon-69bd2b93.log` line 5 で `mode=first, duration_ms=32703` を観測 (30s 設定なら timeout していた値が 45s で生存)。サンプル 1 件で結論はまだ早い
 
 ## 0.13.1
 
-**Haiku timeout 30s → 45s 緩和 + hook 側 IPC timeout を整合**。v0.13.0 以前の実セッション ([daemon-80b5c0af.log](../../.spotter/logs/daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log) line 15) で `E_HAIKU_TIMEOUT: haiku did not respond within 30000ms` を観測。同ログ line 20 でも `mode=first, duration_ms=20948` と 30s の 70% 域まで達しており、timeout が実測レイテンシに対して狭すぎた。合わせて [src/hooks/stop.mjs](src/hooks/stop.mjs) の IPC timeout が元々 15s で Haiku 側 30s と整合していなかった既存バグ (turn_end で Haiku が 16s 超かかると hook 側が先に諦めていた) も同時解消。
+**Haiku timeout 30s → 45s 緩和 + hook 側 IPC timeout を整合**。v0.13.0 以前の実セッション (`daemon-80b5c0af.log` line 15) で `E_HAIKU_TIMEOUT: haiku did not respond within 30000ms` を観測。同ログ line 20 でも `mode=first, duration_ms=20948` と 30s の 70% 域まで達しており、timeout が実測レイテンシに対して狭すぎた。合わせて [src/hooks/stop.mjs](src/hooks/stop.mjs) の IPC timeout が元々 15s で Haiku 側 30s と整合していなかった既存バグ (turn_end で Haiku が 16s 超かかると hook 側が先に諦めていた) も同時解消。
 
 ### 調査で判明した Haiku 4.5 の高速化ダイヤル不在
 
@@ -1216,7 +1216,7 @@ v0.7.0 リリース直後、新規セッションで `spotter db refresh` を打
 
 Haiku が「Bell が呼び忘れているツール」を判定するには、Bell が今のセッションで実際に呼べるツールを知っている必要がある。v0.6.x までのカタログは `current_time` / `web_search` / `read_file` のような **抽象的な汎用ツール 5 件** を手書きしていただけで、Caveat や Gmail のような MCP ツール、TodoWrite や WebSearch のような Claude Code 組込みの遅延ツールは Haiku の視野に入っていなかった。結果、ユーザーが「過去に解決したナレッジを残したい」と言っても Spotter は Caveat を推奨できないという的外れな状態だった。
 
-設計思想は [docs/catalog-design-deferred-mcp.md](docs/catalog-design-deferred-mcp.md) に集約。要点:
+設計思想は現行の [docs/01_catalog-design.md](docs/01_catalog-design.md) に引き継ぎ。要点:
 
 - **Haiku に渡すのは name + description のペアだけ**。schema は不要 — どう呼ぶかは Bell が ToolSearch で解決する責任 (役割分業)
 - **MCP ツールの description は MCP サーバーから直接取得**。Spotter は中継者に徹し、手書きで言い換えない (single source of truth = MCP server)
@@ -1229,7 +1229,7 @@ Haiku が「Bell が呼び忘れているツール」を判定するには、Bel
 - **新規 [src/tool-db/loader.mjs](src/tool-db/loader.mjs)**: JSON DB の atomic 読み書き、`{version, tools: {name → description}}` スキーマ検証
 - **新規 [src/tool-db/lookup.mjs](src/tool-db/lookup.mjs)**: 3 段階 lookup + write-through + drift 補正
 - **新規 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `claude mcp list` / `claude mcp get` で MCP サーバー列挙、stdio サーバーに JSON-RPC で `initialize` + `tools/list` を実行して description 取得
-- **新規 [src/tool-db/deferred-baseline.mjs](src/tool-db/deferred-baseline.mjs)**: Claude Code 組込み 遅延ツール (WebSearch / TodoWrite / 等 17 件) の手書き description ベースライン (Claude Code 自体は MCP 経由で query できないため)
+- **新規 `src/tool-db/deferred-baseline.mjs`**: Claude Code 組込み 遅延ツール (WebSearch / TodoWrite / 等 17 件) の手書き description ベースライン (Claude Code 自体は MCP 経由で query できないため)
 - **新規 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: 投資 = 利用可能ツール一覧取得 + 各ツールを 3 段階解決 + DB 書き戻し
 - **新規 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs)**: `spotter db list` / `refresh` / `rebuild`
 - **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `loadCatalog` 廃止、`startDaemon({ projectRoot })` で tool-db を読み込み (テスト用に `tools` 直接指定も可)
@@ -1238,7 +1238,7 @@ Haiku が「Bell が呼び忘れているツール」を判定するには、Bel
 - **編集 [src/cli/install.mjs](src/cli/install.mjs)**: `tool-catalog/` 作成と template コピー削除、install 完了時に `spotter db refresh` 実行を案内
 - **編集 [src/cli/doctor.mjs](src/cli/doctor.mjs)**: catalog チェック → tool-db (global + local) のチェック
 - **編集 [bin/spotter.mjs](bin/spotter.mjs)**: `spotter catalog edit/lint` を `spotter db list/refresh/rebuild` に置換
-- **削除**: [src/catalog/](src/catalog/), [src/cli/catalog.mjs](src/cli/catalog.mjs), `templates/tools.yaml`, `test/catalog.test.mjs`, `test/loader.test.mjs`
+- **削除**: `src/catalog/`, `src/cli/catalog.mjs`, `templates/tools.yaml`, `test/catalog.test.mjs`, `test/loader.test.mjs`
 - **新規 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 21 件 (loader/lookup/investigate-mcp/deferred-baseline)
 
 ### Breaking

@@ -1,7 +1,7 @@
 # Spotter Primary Backend Migration TODO
 
 > Archived: この文書は完了済み primary backend migration の作業ログと smoke 記録です。
-> 現行 backend policy は [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)、
+> 現行 backend policy は [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)、
 > 現行課題は [`../open-issues.md`](../open-issues.md) を参照してください。
 
 この文書は、Spotter の auditor backend を host agent ごとに切り替えるための
@@ -12,7 +12,7 @@ daemon proliferation safety を壊さない。
 
 - 正本: [`../../CLAUDE.md`](../../CLAUDE.md)
 - 現状課題: [`../open-issues.md`](../open-issues.md)
-- Claude hook / daemon / Haiku contract: [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md)
+- Claude hook / daemon / Haiku contract: [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)
 - 完了済みの Claude / Codex second-pass workflow 計画: [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md)
 - second-pass workflow の設計ブリーフ: [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md)
 - 歴史的な daemon 増殖事故: [`spotter-plan.md`](spotter-plan.md) §18
@@ -158,7 +158,7 @@ Codex backend の不在は structured error にする。
 
 ### Phase 0. Terminology And Contract
 
-- [x] `docs/SPOTTER_CLAUDE_CONTRACT.md` に "primary auditor backend" と
+- [x] `docs/02_spotter-claude-contract.md` に "primary auditor backend" と
   "second-pass sidecar workflow" の違いを追記する。
 - [x] `docs/archive/SPOTTER_CODEX_DUAL_SUPPORT.md` に、現状は second-pass 完了であり
   primary backend migration はこの文書の対象である、と明記する。
@@ -558,7 +558,7 @@ Gate:
 2026-05-06 に計画書と関連 docs を再監査した。
 
 - README / README.ja / Claude contract / dual-support docs / open issues から、この文書への導線を確認済み。
-- `SPOTTER_CLAUDE_CONTRACT.md` に primary auditor backend と second-pass workflow の境界を追記済み。
+- `02_spotter-claude-contract.md` に primary auditor backend と second-pass workflow の境界を追記済み。
 - local `codex-cli 0.128.0-alpha.1` で `codex exec --json --output-schema --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --cd` が存在することを確認済み。
 - Phase 4 の matrix evaluation と矛盾しないよう、Claude host の default は `codex-sidecar` 固定ではなく
   `codex-sidecar` / Codex CLI の実測結果で決める表現に統一済み。

@@ -6,8 +6,8 @@
 現役ドキュメント:
 
 - [`../open-issues.md`](../open-issues.md): 今ある課題と観測タスク
-- [`../catalog-design.md`](../catalog-design.md): tool-db / catalog 設計
-- [`../SPOTTER_CLAUDE_CONTRACT.md`](../SPOTTER_CLAUDE_CONTRACT.md): hook / daemon / backend contract
+- [`../01_catalog-design.md`](../01_catalog-design.md): tool-db / catalog 設計
+- [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md): hook / daemon / backend contract
 
 Archived:
 
