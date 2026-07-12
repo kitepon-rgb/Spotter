@@ -9,7 +9,8 @@
 
 - 現状課題と観測タスク: [`open-issues.md`](open-issues.md)
 - カタログ / tool-db 設計: [`01_catalog-design.md`](01_catalog-design.md)
-- 現在の復旧・配布・model 評価 TODO: [`03_current-state-recovery-plan.md`](03_current-state-recovery-plan.md)
+- 運用SLO: [`04_operational-slo.md`](04_operational-slo.md)
+- 完了済み復旧・配布・model評価計画: [`archive/03_current-state-recovery-plan.md`](archive/03_current-state-recovery-plan.md)
 
 [`archive/SPOTTER_HOOK_PARITY_TODO.md`](archive/SPOTTER_HOOK_PARITY_TODO.md) は実装済みの履歴台帳で、
 現行 contract の正本ではない。

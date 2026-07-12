@@ -1,7 +1,7 @@
 # Spotter Hook Behavior Parity TODO
 
 > 完了済みの履歴台帳。現行仕様は [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)、
-> 現在の作業は [`../03_current-state-recovery-plan.md`](../03_current-state-recovery-plan.md) を参照。
+> 現在の課題は [`../open-issues.md`](../open-issues.md) を参照。
 
 Codex host で改修した hook 挙動 (deferred delivery / short-skip / hook event JSONL) を Claude host
 にも移植して、3 hook (UserPromptSubmit / PreToolUse / Stop) の挙動思想を揃える計画書兼進捗 TODO。

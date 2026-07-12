@@ -8,7 +8,7 @@ contracts, error handling, and release workflow.
 ## Naming Convention
 
 - `00_` is the documentation entry point.
-- Numbered files are ordered canonical designs or the single active execution plan.
+- Numbered files are ordered canonical designs, operational contracts, or the single active execution plan.
 - Stable operational ledgers such as `open-issues.md` keep semantic names without numbers.
 - Completed plans move to `archive/`; they do not remain beside active documents.
 
@@ -17,8 +17,8 @@ contracts, error handling, and release workflow.
 - [`01_catalog-design.md`](01_catalog-design.md): tool-db and catalog discovery design.
 - [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md): Claude hook,
   daemon, backend, and Codex adapter contract.
-- [`03_current-state-recovery-plan.md`](03_current-state-recovery-plan.md): active
-  recovery, release, and model-evaluation plan.
+- [`04_operational-slo.md`](04_operational-slo.md): latency, failure-rate, quality,
+  and recommendation-acceptance objectives.
 - [`adr/0001-hook-driven-parallel-auditor.md`](adr/0001-hook-driven-parallel-auditor.md):
   root architectural decision.
 
@@ -30,3 +30,5 @@ contracts, error handling, and release workflow.
 
 - [`archive/`](archive/): completed plans, historical design snapshots, rollout logs,
   and smoke notes. These are reference material rather than current contract.
+- [`archive/03_current-state-recovery-plan.md`](archive/03_current-state-recovery-plan.md):
+  completed recovery, v1.4.17/1.4.18 release, and model-evaluation plan.

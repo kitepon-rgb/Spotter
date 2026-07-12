@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.18 (unreleased development)
+## 1.4.18
 
 auditor model の更新を model 名の場当たり的な置換から切り離し、versioned policy と再現可能な比較 eval を
 導入する。反復評価24/24 exactの `gpt-5.6-terra × medium` をowner裁定でproductionへ昇格した。

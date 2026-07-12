@@ -8,13 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 課題を解決したら open-issues.md から項目を消し、CHANGELOG にリリース番号とともに記録する運用。
 
-現行の復旧・配布・model 評価 TODO は
-[docs/03_current-state-recovery-plan.md](docs/03_current-state-recovery-plan.md) で管理する。
+復旧・配布・model評価計画は完了し、
+[docs/archive/03_current-state-recovery-plan.md](docs/archive/03_current-state-recovery-plan.md) へ退避した。
+現行の運用基準は [docs/04_operational-slo.md](docs/04_operational-slo.md)、残課題は
+[docs/open-issues.md](docs/open-issues.md) を正とする。
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
 
-**v1.4.18 (unreleased)**: Codex auditor model を versioned policy に集約し、production default を
+**v1.4.18 (released 2026-07-12)**: Codex auditor model を versioned policy に集約し、production default を
 反復 fixture 評価で24/24 exact・FP/FN 0・timeout 0だった `gpt-5.6-terra × medium` へ昇格した。
 `gpt-5.6-luna × low` / `gpt-5.6-terra × low` は比較 profile として残す。backend は model selection を生成時に一度だけ解決し、
 成功・失敗・diagnostics に effective
@@ -24,8 +26,9 @@ version、schema / exact、FP/FN、p50/p95、timeout、anomaly を bounded artif
 usage limitで全12 runが失敗したが、Pro20回復後のrepeat=3を2回実行し、Terra lowが合算23/24 exactで
 baseline 18/24、Luna low 17/24より最良だった。2回目でTerraも1件見逃したためmediumを追加評価する。
 Codex JSONL token usageは取得済み。Terra mediumは追加検証で24/24 exact・FP/FN 0・timeout 0となり、
-owner裁定でproductionへ採用した。ChatGPTプランの金額costは取得不能として明示し、backend/stage別の
-実運用SLO策定は別課題として残す。詳細は
+owner裁定でproductionへ採用した。ChatGPTプランの金額costは取得不能として明示した。backend/stage別の
+実運用SLOは `docs/04_operational-slo.md` に固定した。非対応model専用エラーと公式2-source更新監視も追加し、
+provider本文のredactと評価なしの自動昇格禁止を維持する。詳細は
 [RAG](rag/openai-model-policy/spotter-auditor-model-policy.md)。Codex CLI利用上限は
 `E_CODEX_CLI_USAGE_LIMIT` として認証失効・generic exitから分離し、リセット待ち／プラン確認を案内する。
 
