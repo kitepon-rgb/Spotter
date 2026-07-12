@@ -31,12 +31,13 @@ repo の generator が直っていても、global package update と再 install 
 **影響**: Codex `UserPromptSubmit` / `Stop` は旧 global entry で動き得るが、`SessionStart` refresh は停止し、
 Codex tool-db drift が自動追従しない。v1.4.16 の永久 resurrect 不能修正も通常利用者へ届いていない。
 
-**次アクション**: v1.4.17 RC code boundary `1c67698` から release branch を作り、v1.4.17 専用の
-README / CHANGELOG を作る。現 main の `auditor model-matrix` / v1.4.18 model profile 記述をそのまま
-backport せず、release SHA に実在する公開 CLI だけを記載する。pack / temp install で README と
-`spotter --help` / subcommand help の一致を確認し、model policy / eval commit を含まない SHA を固定する。その SHA で OS CI
-matrix を通し、owner の明示承認後に npm / GitHub Release / remote へ同期する。main HEAD は既に
-v1.4.18 development なので v1.4.17 の CI / tag 対象にしない。実機 `~/.codex/` を backup して global package を更新し、各 project で `spotter install` を
+**現在地**: v1.4.17 RC code boundary `1c67698` から `codex/release-v1.4.17` を作り、v1.4.17 専用
+README / CHANGELOG を `6ea6a2b` に commit した。現 main の `auditor model-matrix` / v1.4.18 model profile
+記述は含まない。CLI help、package=1.4.17、58-entry pack、383 tests / 381 pass / 2 skip / 0 fail を確認済み。
+
+**次アクション**: `6ea6a2b` で OS CI matrix を通す。green と owner の明示承認後、CHANGELOG の
+unreleased marker を外す最終 metadata commit の SHA を tag / npm / GitHub Release 対象に固定する。
+main HEAD は既に v1.4.18 development なので v1.4.17 の CI / tag 対象にしない。実機 `~/.codex/` を backup して global package を更新し、各 project で `spotter install` を
 再実行、`/hooks` review、新 session で `SessionStart: refresh_spawned` が1件だけ記録されることを確認する。
 既存 Throughline / Caveat / Callout hook を保持する。publish / push / global 書換えは未承認。
 

@@ -53,7 +53,9 @@ daemon 異常死後の orphan socket を次回起動前に安全に除去する�
 
 `1c67698` の clean worktree から npm pack / temp prefix install / CLI version / Hook install・reinstall を
 smoke し、`node --test` は 383 / 381 pass / 0 fail / 2 skip。targeted test と adversarial review も
-blocker 0。OS CI matrix と publish 後の三者一致確認は release 前後に残る。
+blocker 0。v1.4.17-only README / CHANGELOG を載せた local release candidate は `6ea6a2b`。
+CLI help、58-entry pack、同じ full suite を再確認した。OS CI matrix と publish 後の三者一致確認は
+release 前後に残る。
 
 ## 1.4.16
 

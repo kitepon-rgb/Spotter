@@ -69,7 +69,8 @@ Codex CLI の usage limit であり、model 品質・model slug availability・s
 Hook activation と未配布の stale-socket 修正を届ける v1.4.17 の RC code boundary は `1c67698`。
 model policy / backend / eval commits はその後に置き、v1.4.18 development 境界を `e34fb49` で明示した。
 ただし model commits 時点では package version がまだ 1.4.17 だったため、version 文字列だけでは分離できない。
-v1.4.17 は `1c67698` 起点の release branch で v1.4.17 専用 README / CHANGELOG を作る。現 main の
-`auditor model-matrix` / v1.4.18 profile 記述は backport せず、release SHA に実在する CLI と照合する。
-model commits を含めずに release SHA を固定する。live 評価と production 昇格もさらに分離し、quota 回復・SLO 合意・token/cost
-観測前に既定 model を変更しない。
+v1.4.17 は `1c67698` 起点の `codex/release-v1.4.17` に v1.4.17 専用 README / CHANGELOG を置き、
+candidate `6ea6a2b` を作成した。現 main の `auditor model-matrix` / v1.4.18 profile 記述は含めず、
+candidate に実在する CLI / package / pack と照合済み。OS CI 後の最終 metadata SHA にも model commits を
+含めない。live 評価と production 昇格もさらに分離し、quota 回復・SLO 合意・token/cost 観測前に
+既定 model を変更しない。

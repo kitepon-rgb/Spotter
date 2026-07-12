@@ -28,10 +28,10 @@ handler へ修正し、upgrade normalization と readiness diagnostics を追加
 failure は warning pending を次の same-session prompt へ1回配送する。Codex used-tools は current-turn の
 shell / MCP / agent call を bounded に認識し、未知 transcript を anomaly にする。clean pack / temp install
 smoke は RC boundary `1c67698` で green。main HEAD は既に v1.4.18 development なので、v1.4.17 は
-`1c67698` 起点の release branch で **v1.4.17 専用** README / CHANGELOG を作る。main の
-`auditor model-matrix` / v1.4.18 profile 記述を backport せず、release SHA に実在する CLI と照合する。
-model commits を含まない SHA を CI / tag / publish 対象にする。npm publish / GitHub Release /
-global install / `/hooks` review は未実施。
+`1c67698` 起点の `codex/release-v1.4.17` に **v1.4.17 専用** README / CHANGELOG を置き、candidate
+`6ea6a2b` を作成済み。main の `auditor model-matrix` / v1.4.18 profile 記述は含まず、CLI help /
+58-entry pack / 383 tests と照合済み。OS CI 後に unreleased marker を外す最終 metadata SHA を
+CI / tag / publish 対象にする。npm publish / GitHub Release / global install / `/hooks` review は未実施。
 
 **v1.4.16** (2026-06-04): **daemon 異常死後の stale socket で永久に起動不能になる回復経路バグを根治**。
 daemon が graceful shutdown を経ず死ぬ (SIGKILL / crash / マシンスリープで SessionEnd 未発火) と

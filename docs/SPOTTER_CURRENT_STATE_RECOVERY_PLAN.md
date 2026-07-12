@@ -284,12 +284,15 @@ Gate (isolated Codex project):
 - [x] model policy より前の v1.4.17 RC code boundary を `1c67698` に固定する
 - [x] `npm pack --dry-run` と temp prefix install で tarball 内容・CLI version・hook generator を smoke する
 - [x] `node --test` を green にする
-- [ ] `1c67698` から release branch を作り、**v1.4.17 専用**の最終 README / CHANGELOG だけを作る。
+- [x] `1c67698` から `codex/release-v1.4.17` を作り、**v1.4.17 専用** README / CHANGELOG だけを
+  `6ea6a2b` に固定する。
   v1.4.18 の model policy / profile / `auditor model-matrix` 記述と実装 commit を含めず、release SHA 上の
-  CLI / backend contract と逐語照合して最終 release SHA を固定する
-- [ ] 最終 v1.4.17 SHA の `npm pack` / temp install で、README が列挙する公開 command が tarball 内
-  `spotter --help` / subcommand help に全て存在し、v1.4.18-only command を広告しないことを smoke する
-- [ ] 上記の最終 v1.4.17 release SHA で OS matrix CI を green にする（main HEAD 1.4.18 の結果を流用しない）
+  CLI / backend contract と逐語照合した
+- [x] `6ea6a2b` の `npm pack --dry-run` と CLI help で、README が v1.4.18-only command を広告しないこと、
+  package=1.4.17、58 entries、`node --test`=383 / 381 pass / 2 skip / 0 fail を確認する
+- [ ] `6ea6a2b` で OS matrix CI を green にする（main HEAD 1.4.18 の結果を流用しない）
+- [ ] CI green と owner 承認後、CHANGELOG の unreleased marker を外す最終 metadata commit を作り、
+  tag / publish 対象の最終 SHA を固定する
 - [ ] 明示承認後に npm publish / GitHub Release / push を行う
 - [ ] `npm view claude-spotter version`、GitHub Release、fresh global install の三者一致を確認する
 - [ ] 実機 global package 更新後、各 project で `spotter install` を再実行し `/hooks` review を行う
@@ -297,7 +300,8 @@ Gate (isolated Codex project):
 Rollback: 実機 `~/.codex/` を事前 backup し、問題時は新 Spotter hook entry だけ uninstall、backup から
 hooks 定義を戻す。既存 Throughline / Caveat / Callout hooks を巻き戻さない。
 
-Release boundary note: model policy commits `e611a25` / `4c64933` と eval commit `cdf33ae` は
+Release boundary note: candidate branch `codex/release-v1.4.17` は `6ea6a2b`、model policy commits
+`e611a25` / `4c64933` と eval commit `cdf33ae` は
 `1c67698` より後。package version の 1.4.18 bump はさらに後の `e34fb49` なので、version 文字列だけで
 release scope を判定しない。v1.4.17 tag / publish 対象は release branch の固定 SHA とし、main HEAD を
 直接 tag しない。現在の main README も v1.4.18-only surface を含むため、そのまま backport しない。
