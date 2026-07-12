@@ -15,6 +15,8 @@ const DEFAULT_CODEX_CLI_MODEL = CODEX_AUDITOR_MODEL_POLICY.production.model;
 const DEFAULT_CODEX_CLI_REASONING_EFFORT = CODEX_AUDITOR_MODEL_POLICY.production.reasoningEffort;
 const STDERR_LIMIT = 32 * 1024;
 const STDOUT_LIMIT = 64 * 1024;
+const JSONL_LINE_LIMIT = 16 * 1024;
+const MAX_RECORDED_TOKEN_COUNT = 100_000_000;
 
 // codex prints auth/login failures to BOTH stdout (the JSON error stream, e.g.
 // {"type":"error","message":"...sign in again..."}) and stderr (codex_login::auth::manager,
@@ -59,6 +61,27 @@ export function isCodexUsageLimitFailure(text) {
   if (typeof text !== 'string' || text.length === 0) return false;
   const haystack = text.toLowerCase();
   return CODEX_USAGE_LIMIT_FAILURE_MARKERS.some((marker) => haystack.includes(marker));
+}
+
+export function parseCodexTurnUsageLine(line) {
+  if (typeof line !== 'string' || line.length === 0 || line.length > JSONL_LINE_LIMIT) return null;
+  let event;
+  try {
+    event = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (event?.type !== 'turn.completed') return null;
+  const usage = event.usage;
+  const keys = ['input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_output_tokens'];
+  if (!usage || typeof usage !== 'object' || keys.some((key) => !Number.isSafeInteger(usage[key]) || usage[key] < 0 || usage[key] > MAX_RECORDED_TOKEN_COUNT)) return null;
+  return Object.freeze({
+    inputTokens: usage.input_tokens,
+    cachedInputTokens: usage.cached_input_tokens,
+    outputTokens: usage.output_tokens,
+    reasoningOutputTokens: usage.reasoning_output_tokens,
+    totalTokens: usage.input_tokens + usage.output_tokens,
+  });
 }
 
 export const CODEX_AUDITOR_SCHEMA = {
@@ -304,6 +327,7 @@ async function runCodexExec({
   let stderr = '';
   let stdoutTruncated = false;
   let stderrTruncated = false;
+  const usageTracker = createCodexUsageTracker();
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -341,6 +365,7 @@ async function runCodexExec({
 
     child.stdout?.on('data', (chunk) => {
       const next = chunk.toString('utf8');
+      usageTracker.observe(next);
       if (stdout.length + next.length > STDOUT_LIMIT) {
         stdout = (stdout + next).slice(0, STDOUT_LIMIT);
         stdoutTruncated = true;
@@ -408,9 +433,33 @@ async function runCodexExec({
       stderrTruncated,
       modelSelection,
     };
+    const tokenUsage = usageTracker.current();
+    if (tokenUsage) out.tokenUsage = tokenUsage;
     if (Number.isInteger(child?.pid)) out.childPid = child.pid;
     return out;
   }
+}
+
+function createCodexUsageTracker() {
+  let pending = '';
+  let latest = null;
+  const parse = (line) => {
+    const usage = parseCodexTurnUsageLine(line.trim());
+    if (usage) latest = usage;
+  };
+  return {
+    observe(text) {
+      if (typeof text !== 'string' || text.length === 0) return;
+      const lines = (pending + text).split(/\r?\n/);
+      pending = lines.pop() ?? '';
+      for (const line of lines) parse(line);
+      if (pending.length > JSONL_LINE_LIMIT) pending = '';
+    },
+    current() {
+      if (pending) parse(pending);
+      return latest;
+    },
+  };
 }
 
 function attachModelSelectionDiagnostics(error, { modelSelection, diagnostics = null } = {}) {

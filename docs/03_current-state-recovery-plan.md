@@ -89,14 +89,14 @@ transcript で shell tool call を数えない問題は実データで確認で�
 
 | 領域 | 判定 | 根拠 |
 |---|---|---|
-| Node unit / integration test | green | 現在 424 tests、422 pass、2 platform skip、0 fail |
+| Node unit / integration test | green | 現在 428 tests、426 pass、2 platform skip、0 fail |
 | Claude daemon safety | 実装・回帰あり | 再帰 guard、heartbeat、auto-resurrect、stale socket test |
 | Codex `UserPromptSubmit` / `Stop` | 稼働あり | project hook-event 14 件中両 event を観測 |
 | Codex `SessionStart` refresh | 設定修復済み / 新規 task 確認待ち | global entry はcanonical・`async`なし、runtime 1回観測待ち |
 | Codex diagnostics | green / trust確認待ち | 3 hooks 各1件、compatible / canonical、readiness=`configured-unverified` |
 | 配布 | **同期済み** | tag / npm latest / GitHub Release / global install = v1.4.17 |
 | 応答性能 | 要改善 | Codex UserPromptSubmit p50 5.8s、平均 7.4s、最大 20.0s |
-| model 評価 | **外部 blocker** | 通常 CLI は回復、isolated CLI は usage limit 継続、token/cost 不明、昇格なし |
+| model 評価 | **評価継続** | isolated CLI回復、Terra lowが最良、token取得済み、medium・cost/SLO未完了 |
 | 文書 | 主要正典同期済み | Hook parity TODO の archive 移動と本計画 archive は承認 / 完了待ち |
 
 ## 初回監査で確認した P0
@@ -337,7 +337,7 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 
 - [x] 現行 `gpt-5.4-mini × low` を代表 fixture で測り、移行 baseline を固定する
 - [x] 第一候補 `gpt-5.6-luna × low` と比較対象 `gpt-5.6-terra × low` を同じ fixture で測る
-- [x] `medium` は low に品質不足の実測がある場合だけ評価へ追加する（Terra lowが12/12 exactのため追加なし）
+- [ ] `medium` は low に品質不足の実測がある場合だけ評価へ追加する（2回目でTerra lowが11/12のため追加評価する）
 - [x] model slug を各所に散らさず、auditor policy manifest/module を単一の正本にする
 - [x] policy に version、意味論的 role、具体 model、effort、`verifiedAt`、必要な互換条件を持たせる
 - [x] 選択優先順位を「明示 override（env / 将来の project config） > 製品 policy」で固定する
@@ -353,12 +353,13 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 - [x] generic `E_CODEX_CLI_EXIT` から usage limit を bounded actionable code に分類する（model 昇格とは別 commit）
 - [x] `--ignore-user-config` を維持した isolated CLI の quota 回復を確認する（通常 CLI の成功だけで代用しない）
 - [x] isolated CLI quota 回復後に同一 fixture SHA / ordering で live 比較を再実行する
+- [x] Codex JSONL `turn.completed.usage` をboundedに抽出し、profile別token usageをartifactへ記録する
 - [ ] 合格した model / effort だけを独立 commit で昇格し、変更理由と評価結果を記録する
 
-2026-07-12 Pro20回復後のrepeat=3（36 run）では、Terra lowが12/12 exact・FP/FN 0・
-p50 3528 ms・p95 4992 msで最良。baselineは10/12、Luna lowは8/12 exactだったため、
-Lunaの初期第一候補を棄却してTerra lowを次候補とする。token/cost未取得・SLO未合意のため昇格は保留。
-詳細は [`rag/openai-model-policy/evals/2026-07-12-pro20-repeat3.md`](../rag/openai-model-policy/evals/2026-07-12-pro20-repeat3.md)。
+2026-07-12 Pro20回復後の1回目repeat=3ではTerra lowが12/12 exact、usage抽出後の2回目は11/12。
+合算23/24でbaseline 18/24、Luna low 17/24より最良だが、lowの品質不足が再現したためTerra mediumを
+追加評価する。token usageは36/36取得済み。ChatGPTプラン上の金額costとSLOは未確定なので昇格は保留。
+詳細は [`rag/openai-model-policy/evals/2026-07-12-pro20-repeat3-usage.md`](../rag/openai-model-policy/evals/2026-07-12-pro20-repeat3-usage.md)。
 
 Gate: schema / JSON 遵守が 100%、既存 fixture の指摘品質が非劣化で、p50 / p95 / timeout rate /
 token・cost が合意 SLO 内にあること。diagnostics が effective 値と選択元を正確に表示し、非対応 model が

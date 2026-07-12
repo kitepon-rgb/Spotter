@@ -40,8 +40,9 @@ OpenAI の現行仕様では `gpt-5.6` alias は flagship の `gpt-5.6-sol` へ�
 8. `spotter auditor model-matrix` が versioned fixture の SHA-256、Codex CLI version、effective selection、
    schema/JSON 遵守、exact match、FP/FN、p50/p95、timeout rate、filtered name / anomaly を bounded JSON に
    記録する。raw stdout / stderr / malformed object は保存しない。
-9. artifact は常に `promotionEligible:false`。token / cost を取得できない間は `not-available` と明示し、
-   コマンド単独では production policy を書き換えない。
+9. artifact は常に `promotionEligible:false`。Codex JSONL `turn.completed.usage` からtoken usageをboundedに
+   抽出する。ChatGPTプラン利用の金額costはAPI価格で代用せず、取得不能を明示する。コマンド単独では
+   production policyを書き換えない。
 
 ## 最初の評価候補
 
@@ -72,9 +73,12 @@ orderingでrepeat=3、計36 runを実行した。詳細artifactは
 [`evals/2026-07-12-pro20-repeat3.json`](evals/2026-07-12-pro20-repeat3.json)、解釈は
 [`evals/2026-07-12-pro20-repeat3.md`](evals/2026-07-12-pro20-repeat3.md) に固定した。
 
-`terra × low` は12/12 exact、FP/FN 0、p50 3528 ms、p95 4992 ms。baselineは10/12 exact、
-`luna × low` は8/12 exactだった。この実測によりLunaの初期第一候補を棄却し、Terraを次候補とする。
-ただしtoken/cost未取得・SLO未合意のためproduction defaultは変更しない。
+1回目は`terra × low`が12/12 exact、baseline 10/12、Luna 8/12。usage抽出後の2回目はTerra 11/12、
+baseline 8/12、Luna 9/12だった。合算でTerra 23/24が最良のためLunaの初期第一候補を棄却し、Terraを
+次候補とする。ただしlowの見逃しが再現したためmediumを追加評価する。token usageは36/36取得できたが、
+ChatGPTプラン上の金額costとSLOは未合意なのでproduction defaultは変更しない。usage対応artifactは
+[`evals/2026-07-12-pro20-repeat3-usage.json`](evals/2026-07-12-pro20-repeat3-usage.json)、解釈は
+[`evals/2026-07-12-pro20-repeat3-usage.md`](evals/2026-07-12-pro20-repeat3-usage.md)。
 
 ## リリース境界
 

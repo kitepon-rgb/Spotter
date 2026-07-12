@@ -15,8 +15,9 @@ Codex CLI の暗黙既定、失敗時 fallback では自動昇格しない。
   model invocation が失敗しても別 model へ retry しない。
 - **比較 eval**: `spotter auditor model-matrix` を追加した。同じ versioned fixture を固定順序で実行し、
   fixture hash、Codex CLI version、schema / exact match、false positive / negative、p50 / p95、timeout、
-  catalog 外 name と anomaly を bounded artifact に記録する。token / cost が取得できない間は明示的に
-  `not-available` とし、artifact 自身が model 昇格を許可することはない。
+  catalog 外 name と anomaly を bounded artifact に記録する。Codex JSONL `turn.completed.usage` から
+  token数だけを抽出し、raw event本文は保存しない。ChatGPTプランの金額costはAPI価格で代用せず
+  `not-available-chatgpt-plan` とし、artifact自身がmodel昇格を許可することはない。
 - **usage-limit diagnostics**: Codex CLIが実測済みの利用上限文言で非ゼロ終了した場合をgenericな
   `E_CODEX_CLI_EXIT` から `E_CODEX_CLI_USAGE_LIMIT` へ分離した。認証失効を先に判定し、一般的な429は
   誤分類しない。Hookはリセット時刻まで待つかCodexプランを確認する復旧案内を表示し、fallbackは行わない。
@@ -24,13 +25,13 @@ Codex CLI の暗黙既定、失敗時 fallback では自動昇格しない。
 ### 検証
 
 `auditor-model-matrix-cmd` / `auditor-cmd` / `cli` の targeted test 29 / 29 pass、全体
-427 / 425 pass / 0 fail / 2 skip。
+428 / 426 pass / 0 fail / 2 skip。
 循環・非文字列 backend 応答、model selection 不一致、version 出力の秘密混入、dirty fixture、filtered
 hallucination を敵対的に再検証し、blocker 0 を確認した。代表 fixture の repeat=1 operational smoke は
 baseline / Luna / Terra の全12件が Codex CLI usage limit で `E_CODEX_CLI_EXIT` となったため、model 品質・
-latency・availability の比較には使わなかった。Pro20回復後のrepeat=3ではTerra lowが12/12 exact・
-FP/FN 0・p50 3528 ms・p95 4992 msで最良、baselineは10/12、Luna lowは8/12 exactだった。
-token/cost未取得・SLO未合意のためproduction defaultは維持する。
+latency・availability の比較には使わなかった。Pro20回復後のrepeat=3を2回実行し、Terra lowは合算
+23/24 exactでbaseline 18/24、Luna low 17/24より最良。usage対応runではtoken usageを36/36取得した。
+Terra lowにも見逃しが1件出たためmediumを追加評価し、金額cost・SLO未合意の間はproduction defaultを維持する。
 
 ## 1.4.17
 

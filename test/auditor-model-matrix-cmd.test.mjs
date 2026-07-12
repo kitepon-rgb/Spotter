@@ -50,7 +50,7 @@ test('model-matrix runs case then repeat then profile round-robin and writes art
       createBackendFn: ({ modelProfile }) => ({ modelSelection: selection(modelProfile), judge: async (input) => {
         calls.push(`${input.meta.caseId}:${input.meta.repeat}:${modelProfile}`);
         const row = fixture.cases.find((item) => item.id === input.meta.caseId);
-        return { pass: row.expected.pass, findings: row.expected.missingTools.map((toolName) => ({ toolName })), meta: { modelSelection: selection(modelProfile) } };
+        return { pass: row.expected.pass, findings: row.expected.missingTools.map((toolName) => ({ toolName })), meta: { modelSelection: selection(modelProfile), diagnostics: { tokenUsage: { inputTokens: 100, cachedInputTokens: 40, outputTokens: 10, reasoningOutputTokens: 2, totalTokens: 110 } } } };
       } }),
       writeOutput: (text) => out.push(text),
     });
@@ -59,9 +59,12 @@ test('model-matrix runs case then repeat then profile round-robin and writes art
     assert.equal(artifact.runs.length, 16);
     assert.equal(artifact.summary.total, 16);
     assert.equal(artifact.summary.exactMatch, 16);
-    assert.equal(artifact.usageStatus, 'not-available');
+    assert.equal(artifact.usageStatus, 'complete');
+    assert.equal(artifact.tokenUsage.totals.totalTokens, 1760);
+    assert.equal(artifact.tokenUsage.byProfile.luna.observedRuns, 8);
+    assert.equal(artifact.costStatus, 'not-available-chatgpt-plan');
     assert.equal(artifact.promotionEligible, false);
-    assert.deepEqual(artifact.blockingReasons, ['usage_not_available']);
+    assert.deepEqual(artifact.blockingReasons, ['cost_not_available']);
     assert.equal(artifact.profiles.luna.model, 'gpt-5.6-luna');
     assert.equal(JSON.parse(await readFile(outputPath, 'utf8')).fixture.catalogCount, 1);
     assert.equal(artifact.executionOrdering, 'case-repeat-profile');

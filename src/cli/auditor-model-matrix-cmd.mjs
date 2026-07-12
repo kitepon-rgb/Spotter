@@ -54,6 +54,7 @@ export async function runAuditorModelMatrixCommand({
       const rawAnomalies = Array.isArray(judgment?.anomalies) ? judgment.anomalies : [];
       const droppedTools = cleanStrings(rawDroppedTools);
       const anomalyTypes = cleanStrings(rawAnomalies.map((anomaly) => anomaly?.type));
+      const tokenUsage = safeTokenUsage(judgment?.meta?.diagnostics?.tokenUsage);
       const schemaSuccess = actualPass !== null && Array.isArray(judgment?.findings)
         && invalidFindingCount === 0 && new Set(actualTools).size === actualTools.length
         && actualPass === (actualTools.length === 0);
@@ -72,13 +73,15 @@ export async function runAuditorModelMatrixCommand({
         droppedToolCount: rawDroppedTools.length,
         anomalyTypes,
         anomalyCount: rawAnomalies.length,
+        tokenUsage,
       }));
     } catch (err) {
       runs.push({ order: ++order, caseId: item.id, repeat, profile, status: 'error', durationMs: now() - startedAt,
         schemaSuccess: false, exactMatch: false, expected: item.expected, actual: { pass: null, missingTools: [], invalidFindingCount: 0, droppedCatalogExternalNames: [], droppedCatalogExternalNameCount: 0, anomalies: [], anomalyCount: 0 }, falsePositiveTools: [], falseNegativeTools: [], modelSelection,
-        error: safeError(err) });
+        tokenUsage: null, error: safeError(err) });
     }
   }
+  const usage = summarizeTokenUsage(runs, opts.profiles);
   const artifact = {
     schema: 'spotter.auditor_model_matrix.v1', generatedAt: generatedAt(), packageVersion: version,
     fixture: { schema: fixture.schema, path: safeFixturePath(opts.fixturesPath, opts.projectRoot), sha256: createHash('sha256').update(fixtureBytes).digest('hex'), cases: fixture.cases.length, catalogCount: fixture.catalog.length },
@@ -90,9 +93,10 @@ export async function runAuditorModelMatrixCommand({
       verificationScope: selection.effectiveVerificationScope ?? null,
       status: selection.effectiveStatus ?? null,
       selection,
-    }])), runs, summary: summarize(runs, opts.profiles), usageStatus: 'not-available', tokenUsage: null, cost: null,
+    }])), runs, summary: summarize(runs, opts.profiles), usageStatus: usage.status, tokenUsage: usage.summary,
+    costStatus: 'not-available-chatgpt-plan', cost: null,
     evaluation: { repeat: opts.repeat, profiles: opts.profiles, maxRuns: MAX_MODEL_MATRIX_RUNS },
-    executionOrdering: 'case-repeat-profile', promotionEligible: false, blockingReasons: blockingReasons(runs),
+    executionOrdering: 'case-repeat-profile', promotionEligible: false, blockingReasons: blockingReasons(runs, usage.status),
   };
   const json = JSON.stringify(artifact, null, 2) + '\n';
   if (opts.outputPath) await writeFileFn(opts.outputPath, json, 'utf8');
@@ -144,7 +148,7 @@ function validateInput(stage, input) { if (!input || typeof input !== 'object' |
 function toAuditorInput(item) { return item.stage === 'user_input' ? { stage: item.stage, userInput: item.input.userInput } : { stage: item.stage, finalResponse: item.input.finalResponse, usedTools: item.input.usedTools }; }
 function isCleanString(value) { return typeof value === 'string' && value.length > 0 && value.trim() === value; }
 function cleanStrings(values = []) { return [...new Set(values.filter(isCleanString))]; }
-function successRun({ order, item, repeat, profile, modelSelection, durationMs, schemaSuccess, actualPass, actualTools, invalidFindingCount, droppedTools, droppedToolCount, anomalyTypes, anomalyCount }) { const expectedTools = item.expected.missingTools; const fp = [...actualTools.filter((tool) => !expectedTools.includes(tool)), ...droppedTools.filter((tool) => !expectedTools.includes(tool))]; const fn = expectedTools.filter((tool) => !actualTools.includes(tool)); return { order, caseId: item.id, repeat, profile, status: 'success', durationMs, schemaSuccess, exactMatch: schemaSuccess && actualPass === item.expected.pass && actualTools.length === expectedTools.length && fp.length === 0 && fn.length === 0 && droppedToolCount === 0 && anomalyCount === 0, expected: item.expected, actual: { pass: actualPass, missingTools: actualTools, invalidFindingCount, droppedCatalogExternalNames: droppedTools, droppedCatalogExternalNameCount: droppedToolCount, anomalies: anomalyTypes, anomalyCount }, falsePositiveTools: fp, falseNegativeTools: fn, modelSelection }; }
+function successRun({ order, item, repeat, profile, modelSelection, durationMs, schemaSuccess, actualPass, actualTools, invalidFindingCount, droppedTools, droppedToolCount, anomalyTypes, anomalyCount, tokenUsage }) { const expectedTools = item.expected.missingTools; const fp = [...actualTools.filter((tool) => !expectedTools.includes(tool)), ...droppedTools.filter((tool) => !expectedTools.includes(tool))]; const fn = expectedTools.filter((tool) => !actualTools.includes(tool)); return { order, caseId: item.id, repeat, profile, status: 'success', durationMs, schemaSuccess, exactMatch: schemaSuccess && actualPass === item.expected.pass && actualTools.length === expectedTools.length && fp.length === 0 && fn.length === 0 && droppedToolCount === 0 && anomalyCount === 0, expected: item.expected, actual: { pass: actualPass, missingTools: actualTools, invalidFindingCount, droppedCatalogExternalNames: droppedTools, droppedCatalogExternalNameCount: droppedToolCount, anomalies: anomalyTypes, anomalyCount }, falsePositiveTools: fp, falseNegativeTools: fn, modelSelection, tokenUsage }; }
 const SAFE_RUN_ERRORS = Object.freeze({
   E_CODEX_CLI_AUTH: { name: 'AuditorBackendError', message: 'codex-cli authentication failed; run codex login' },
   E_CODEX_CLI_EXIT: { name: 'AuditorBackendError', message: 'codex-cli invocation exited unsuccessfully' },
@@ -166,7 +170,9 @@ function safeError(err) { const code = Object.hasOwn(SAFE_RUN_ERRORS, err?.code)
 function compact(value) { if (!value || typeof value !== 'object' || Array.isArray(value)) return null; const out = {}; for (const key of ['durationMs', 'processCount', 'exitCode']) if (typeof value[key] === 'number' && Number.isFinite(value[key])) out[key] = value[key]; for (const key of ['stdoutTruncated', 'stderrTruncated']) if (typeof value[key] === 'boolean') out[key] = value[key]; for (const [key, allowed] of Object.entries(SAFE_DIAGNOSTIC_ENUMS)) if (allowed.has(value[key])) out[key] = value[key]; for (const key of ['stdout', 'stderr']) if (typeof value[key] === 'string' || Buffer.isBuffer(value[key])) out[`${key}Bytes`] = Buffer.byteLength(value[key]); return Object.keys(out).length ? out : null; }
 export function percentile(values, ratio) { if (!values.length) return null; const sorted = [...values].sort((a, b) => a - b); return sorted[Math.ceil(sorted.length * ratio) - 1]; }
 function summarize(rows, profiles) { const one = (items) => { const durations = items.map((item) => item.durationMs); const timeout = items.filter((item) => item.error?.code === 'E_CODEX_CLI_TIMEOUT').length; return { total: items.length, success: items.filter((item) => item.status === 'success').length, error: items.filter((item) => item.status === 'error').length, schemaSuccess: items.filter((item) => item.schemaSuccess).length, exactMatch: items.filter((item) => item.exactMatch).length, falsePositiveTools: items.reduce((sum, item) => sum + item.falsePositiveTools.length, 0), falseNegativeTools: items.reduce((sum, item) => sum + item.falseNegativeTools.length, 0), invalidFindingCount: items.reduce((sum, item) => sum + item.actual.invalidFindingCount, 0), anomalyCount: items.reduce((sum, item) => sum + item.actual.anomalyCount, 0), droppedCatalogExternalNameCount: items.reduce((sum, item) => sum + item.actual.droppedCatalogExternalNameCount, 0), durationMs: { p50: percentile(durations, 0.5), p95: percentile(durations, 0.95) }, timeoutCount: timeout, timeoutRate: items.length ? timeout / items.length : 0 }; }; return { ...one(rows), byProfile: Object.fromEntries(profiles.map((profile) => [profile, one(rows.filter((row) => row.profile === profile))])) }; }
-function blockingReasons(runs) { const reasons = ['usage_not_available']; if (runs.some((run) => run.status === 'error')) reasons.push('run_error'); if (runs.some((run) => !run.schemaSuccess)) reasons.push('schema_failure'); if (runs.some((run) => !run.exactMatch)) reasons.push('exact_mismatch'); if (runs.some((run) => run.actual.anomalyCount > 0 || run.actual.droppedCatalogExternalNameCount > 0)) reasons.push('quality_anomaly'); return reasons; }
+function safeTokenUsage(value) { const keys = ['inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningOutputTokens', 'totalTokens']; if (!value || typeof value !== 'object' || keys.some((key) => !Number.isSafeInteger(value[key]) || value[key] < 0) || value.totalTokens !== value.inputTokens + value.outputTokens) return null; return Object.fromEntries(keys.map((key) => [key, value[key]])); }
+function summarizeTokenUsage(runs, profiles) { const observed = runs.filter((run) => run.tokenUsage); const one = (items) => { const withUsage = items.filter((item) => item.tokenUsage); const total = (key) => withUsage.reduce((sum, item) => sum + item.tokenUsage[key], 0); const totals = { inputTokens: total('inputTokens'), cachedInputTokens: total('cachedInputTokens'), outputTokens: total('outputTokens'), reasoningOutputTokens: total('reasoningOutputTokens'), totalTokens: total('totalTokens') }; return { observedRuns: withUsage.length, totalRuns: items.length, totals, totalTokensPerRun: { p50: percentile(withUsage.map((item) => item.tokenUsage.totalTokens), 0.5), p95: percentile(withUsage.map((item) => item.tokenUsage.totalTokens), 0.95) } }; }; const status = observed.length === 0 ? 'not-available' : observed.length === runs.length ? 'complete' : 'partial'; return { status, summary: observed.length === 0 ? null : { ...one(runs), byProfile: Object.fromEntries(profiles.map((profile) => [profile, one(runs.filter((run) => run.profile === profile))])) } }; }
+function blockingReasons(runs, usageStatus) { const reasons = []; if (usageStatus !== 'complete') reasons.push('usage_not_available'); reasons.push('cost_not_available'); if (runs.some((run) => run.status === 'error')) reasons.push('run_error'); if (runs.some((run) => !run.schemaSuccess)) reasons.push('schema_failure'); if (runs.some((run) => !run.exactMatch)) reasons.push('exact_mismatch'); if (runs.some((run) => run.actual.anomalyCount > 0 || run.actual.droppedCatalogExternalNameCount > 0)) reasons.push('quality_anomaly'); return reasons; }
 function sameSelection(expected, actual) { if (!expected || !actual || typeof expected !== 'object' || typeof actual !== 'object') return false; const keys = ['effectiveModel', 'effectiveReasoningEffort', 'modelSource', 'effortSource', 'policySchema', 'policyVersion', 'policyVerifiedAt', 'policyVerificationScope', 'effectiveVerifiedAt', 'effectiveStatus', 'effectiveVerificationScope', 'role', 'availability']; return keys.every((key) => expected[key] === actual[key]); }
 function byteCount(value) { return typeof value === 'string' || Buffer.isBuffer(value) ? Buffer.byteLength(value) : 0; }
 function safeVersionCode(value) { return typeof value === 'string' && /^E_[A-Z0-9_]{1,80}$/.test(value) ? value : 'E_CODEX_CLI_VERSION_INVALID'; }

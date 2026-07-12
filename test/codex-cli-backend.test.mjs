@@ -12,6 +12,7 @@ import {
   createCodexCliAuditorBackend,
   isCodexAuthFailure,
   isCodexUsageLimitFailure,
+  parseCodexTurnUsageLine,
 } from '../src/core/codex-cli-backend.mjs';
 import { AuditorBackendError, createAuditorBackend } from '../src/core/auditor-backend.mjs';
 
@@ -111,6 +112,7 @@ test('createCodexCliAuditorBackend: reads last-message JSON, filters catalog mis
     const lastPath = args[args.indexOf('--output-last-message') + 1];
     queueMicrotask(async () => {
       child.stdout.write('{"type":"event"}\n');
+      child.stdout.write('{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":80,"output_tokens":9,"reasoning_output_tokens":3}}\n');
       child.stderr.write('<html>analytics 403</html>');
       await import('node:fs/promises').then(({ writeFile }) => writeFile(lastPath, JSON.stringify({
         pass: false,
@@ -153,6 +155,13 @@ test('createCodexCliAuditorBackend: reads last-message JSON, filters catalog mis
   assert.deepEqual(judgment.meta.diagnostics.droppedCatalogExternalNames, ['ghost_tool']);
   assert.equal(judgment.meta.diagnostics.processCount, 1);
   assert.equal(judgment.meta.diagnostics.processCountMethod, 'direct_child_spawn');
+  assert.deepEqual(judgment.meta.diagnostics.tokenUsage, {
+    inputTokens: 120,
+    cachedInputTokens: 80,
+    outputTokens: 9,
+    reasoningOutputTokens: 3,
+    totalTokens: 129,
+  });
   assert.equal(judgment.meta.diagnostics.childPid, 1234);
   assert.match(judgment.meta.diagnostics.stderr, /analytics 403/);
 });
@@ -293,6 +302,17 @@ test('isCodexUsageLimitFailure: matches observed Codex exhaustion, not generic r
   assert.equal(isCodexUsageLimitFailure('429 rate limit exceeded'), false);
   assert.equal(isCodexUsageLimitFailure(''), false);
   assert.equal(isCodexUsageLimitFailure(undefined), false);
+});
+
+test('parseCodexTurnUsageLine: accepts only bounded complete turn usage', () => {
+  assert.deepEqual(parseCodexTurnUsageLine(JSON.stringify({
+    type: 'turn.completed',
+    usage: { input_tokens: 10, cached_input_tokens: 4, output_tokens: 3, reasoning_output_tokens: 1 },
+  })), { inputTokens: 10, cachedInputTokens: 4, outputTokens: 3, reasoningOutputTokens: 1, totalTokens: 13 });
+  assert.equal(parseCodexTurnUsageLine('{"type":"turn.started"}'), null);
+  assert.equal(parseCodexTurnUsageLine('{"type":"turn.completed","usage":{"input_tokens":-1}}'), null);
+  assert.equal(parseCodexTurnUsageLine(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100_000_001, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 } })), null);
+  assert.equal(parseCodexTurnUsageLine('not json'), null);
 });
 
 test('createCodexCliAuditorBackend: timeout kills child and returns structured error', async () => {
