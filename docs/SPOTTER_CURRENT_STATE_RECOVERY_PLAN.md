@@ -2,7 +2,7 @@
 
 作成日: 2026-07-12
 
-状態: **監査・独立反証済み、Phase 0〜4 完了、Phase 5 基盤完了・live 評価は quota 待ち、Phase 7 部分完了**
+状態: **監査・独立反証済み、Phase 0〜4 完了、Phase 5 基盤完了・isolated CLI quota 待ち、Phase 7 部分完了**
 
 ## 目的
 
@@ -70,6 +70,11 @@ Codex CLI usage limit で `E_CODEX_CLI_EXIT`。model 品質・availability・lat
 [`rag/openai-model-policy/evals/2026-07-12-operational-smoke.json`](../rag/openai-model-policy/evals/2026-07-12-operational-smoke.json)
 に固定した。
 
+同日 15:39〜15:41 JST に再開したところ、通常の Codex CLI と `--ignore-user-config` だけを外した
+auditor probe は成功したが、本番同条件の isolated CLI は引き続き usage limit（16:41 再試行案内）だった。
+`service_tier="default"` の明示だけでも解消しない。したがって user config を無断で再読込して得た結果を
+本番相当とは扱わず、隔離契約を維持したまま quota 境界を再確認する。
+
 したがって現状は **「テストは green だが、現在の Hook / trust / release 契約をテストできておらず、
 実配布は不完全」** と判定する。
 
@@ -89,7 +94,7 @@ transcript で shell tool call を数えない問題は実データで確認で�
 | Codex diagnostics | repo 修正済み / 実機旧版 | readiness 分離済み、global CLI は 1.4.15 |
 | 配布 | **不整合** | v1.4.17 candidate 未 publish、global=1.4.15、GitHub Release / OS CI 未完了 |
 | 応答性能 | 要改善 | Codex UserPromptSubmit p50 5.8s、平均 7.4s、最大 20.0s |
-| model 評価 | **外部 blocker** | eval 基盤 green、live 12件は usage limit、token/cost 不明、昇格なし |
+| model 評価 | **外部 blocker** | 通常 CLI は回復、isolated CLI は usage limit 継続、token/cost 不明、昇格なし |
 | 文書 | 主要正典同期済み | Hook parity TODO の archive 移動と本計画 archive は承認 / 完了待ち |
 
 ## 初回監査で確認した P0
@@ -343,7 +348,8 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
   FP/FN・anomaly・run bound を敵対的に回帰化する
 - [x] repeat=1 の operational smoke を実行し、usage limit で全12件 error だった事実を artifact 化する
 - [ ] generic `E_CODEX_CLI_EXIT` から usage limit を bounded actionable code に分類する（model 昇格とは別 commit）
-- [ ] quota 回復後に同一 fixture SHA / ordering で live 比較を再実行する
+- [ ] `--ignore-user-config` を維持した isolated CLI の quota 回復を確認する（通常 CLI の成功だけで代用しない）
+- [ ] isolated CLI quota 回復後に同一 fixture SHA / ordering で live 比較を再実行する
 - [ ] 合格した model / effort だけを独立 commit で昇格し、変更理由と評価結果を記録する
 
 Gate: schema / JSON 遵守が 100%、既存 fixture の指摘品質が非劣化で、p50 / p95 / timeout rate /

@@ -48,3 +48,14 @@ schema 能力、model slug availability の比較には使えない。token / co
 - quota 回復後、同一 fixture / profile / ordering で再実行する。
 - schema 100%、baseline 非劣化、latency / timeout / token / cost の合意 SLO を満たすまで昇格しない。
 - generic `E_CODEX_CLI_EXIT` から usage-limit を actionable code に分類する改善は、model 昇格とは別 TODO とする。
+
+## 15:39〜15:41 JST の再開結果
+
+同一 fixture の baseline 4件を本番同条件で再試行したが、4件とも `E_CODEX_CLI_EXIT` だった。安全な
+追加 probe では `--ignore-user-config` ありの isolated CLI にだけ usage-limit 文言と 16:41 の再試行案内を
+確認した。一方、通常 CLI と同フラグだけを除いた auditor probe は成功し、後者は miss case で期待した
+`mcp__caveat__caveat_search` を返した。`service_tier="default"` を isolated CLI に明示しても失敗した。
+
+この差は user config のどの設定に由来するか未確定である。`--ignore-user-config` を外すと本番の隔離条件が
+変わるため、その結果で保存 artifact を上書きせず、全12件も続行しなかった。isolated CLI の quota 回復を
+確認してから、元の条件のまま再実行する。

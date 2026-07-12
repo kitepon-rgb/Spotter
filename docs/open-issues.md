@@ -60,7 +60,13 @@ v1.4.18 の `spotter auditor model-matrix` で `gpt-5.4-mini × low`、`gpt-5.6-
 Codex CLI usage limit で全て `E_CODEX_CLI_EXIT`。model 品質・availability・latency は未測定で、
 token / cost も `not-available`。generic exit code では quota の対処が artifact だけから分からない。
 
-**次アクション**: quota 回復後に同一 fixture / hash / ordering で再実行する。schema 100%、baseline 非劣化、
+2026-07-12 15:39〜15:41 JST の再試行では、通常 CLI と `--ignore-user-config` を外した同一 auditor
+probe は成功した一方、本番同条件の isolated CLI は usage limit（16:41 再試行案内）のままだった。
+`service_tier="default"` の明示だけでは解消しない。user config 全体の再読込は auditor の品質・費用・
+再帰隔離契約を変えるため、回避策として採用しない。
+
+**次アクション**: isolated CLI の quota 回復後に同一 fixture / hash / ordering で再実行する。
+schema 100%、baseline 非劣化、
 p50/p95、timeout rate、token/cost の SLO を先に合意し、通過した selection だけを独立 commit で昇格する。
 `E_CODEX_CLI_USAGE_LIMIT` のような bounded actionable classification は model 昇格と別 commit で検討する。
 timeout 延長や別 model retry だけで解決扱いにしない。
