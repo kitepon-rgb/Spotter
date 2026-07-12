@@ -22,7 +22,7 @@ async function makeProject() {
   return dir;
 }
 
-test('installCodexHooks: merges Spotter hooks and enables hooks feature', async () => {
+test('installCodexHooks: fresh install generates only canonical Codex hook fields', async () => {
   const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-'));
   try {
     await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
@@ -43,18 +43,245 @@ test('installCodexHooks: merges Spotter hooks and enables hooks feature', async 
     assert.equal(result.hooks.userPromptSubmit, 'installed');
     assert.equal(result.hooks.sessionStart, 'installed');
     assert.equal(result.hooks.stop, 'installed');
-    assert.equal(hooks.hooks.SessionStart.length, 1);
-    assert.ok(hooks.hooks.SessionStart[0].hooks[0].command.includes('codex-hook session-start'));
-    assert.equal(hooks.hooks.SessionStart[0].hooks[0].timeoutSec, 5);
-    assert.equal(hooks.hooks.SessionStart[0].hooks[0].async, true);
+    assert.deepEqual(hooks.hooks.SessionStart[0].hooks[0], {
+      type: 'command',
+      command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook session-start',
+      timeout: 5,
+    });
     assert.equal(hooks.hooks.UserPromptSubmit.length, 2);
     assert.equal(hooks.hooks.UserPromptSubmit[0].hooks[0].command, 'keep me');
-    assert.ok(hooks.hooks.UserPromptSubmit[1].hooks[0].command.includes('codex-hook user-prompt-submit'));
-    assert.equal(hooks.hooks.UserPromptSubmit[1].hooks[0].timeoutSec, 60);
-    assert.equal(hooks.hooks.UserPromptSubmit[1].hooks[0].async, false);
+    assert.deepEqual(hooks.hooks.UserPromptSubmit[1].hooks[0], {
+      type: 'command',
+      command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook user-prompt-submit',
+      timeout: 60,
+    });
+    assert.deepEqual(hooks.hooks.Stop[0].hooks[0], {
+      type: 'command',
+      command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook stop',
+      timeout: 60,
+    });
     assert.match(config, /^\[features\]$/m);
     assert.match(config, /^hooks = true$/m);
     assert.match(config, /^other = true$/m);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('installCodexHooks: reinstall normalizes installer-owned Spotter handlers, removes duplicates, and is byte-idempotent', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-upgrade-'));
+  try {
+    await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
+      hooks: {
+        SessionStart: [{ hooks: [{
+          type: 'command',
+          command: 'node /old/spotter.mjs codex-hook session-start',
+          timeoutSec: 5,
+          async: true,
+          statusMessage: '利用者が追加した表示もinstaller所有entryでは残さない',
+          unknownField: 'remove with other legacy fields',
+        }] }, { hooks: [{
+          type: 'command',
+          command: 'node /older/spotter.mjs codex-hook session-start',
+          timeoutSec: 99,
+          async: false,
+          statusMessage: null,
+        }] }],
+        UserPromptSubmit: [{ hooks: [{
+          type: 'command',
+          command: 'node /old/spotter.mjs codex-hook user-prompt-submit',
+          timeoutSec: 60,
+          async: false,
+          statusMessage: null,
+        }] }, { hooks: [{
+          type: 'command',
+          command: 'node /older/spotter.mjs codex-hook user-prompt-submit',
+          timeoutSec: 99,
+          async: true,
+          statusMessage: null,
+        }] }],
+        Stop: [{ hooks: [{
+          type: 'command',
+          command: 'node /old/spotter.mjs codex-hook stop',
+          timeoutSec: 60,
+          async: false,
+          statusMessage: null,
+        }] }, { hooks: [{
+          type: 'command',
+          command: 'node /older/spotter.mjs codex-hook stop',
+          timeoutSec: 99,
+          async: true,
+          statusMessage: null,
+        }] }],
+      },
+    }), 'utf8');
+
+    await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    const hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
+
+    for (const [event, subcommand, timeout] of [
+      ['SessionStart', 'session-start', 5],
+      ['UserPromptSubmit', 'user-prompt-submit', 60],
+      ['Stop', 'stop', 60],
+    ]) {
+      const spotterHooks = hooks.hooks[event].flatMap((group) => group.hooks)
+        .filter((hook) => hook.command.includes(`codex-hook ${subcommand}`));
+      assert.deepEqual(spotterHooks, [{
+        type: 'command',
+        command: `"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook ${subcommand}`,
+        timeout,
+      }]);
+      assert.equal(hooks.hooks[event].length, 1, `${event} duplicate-only group is removed`);
+    }
+    const firstInstallBytes = await readFile(join(codexHome, 'hooks.json'), 'utf8');
+    const second = await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    assert.equal(second.hooksChanged, false);
+    assert.equal(await readFile(join(codexHome, 'hooks.json'), 'utf8'), firstInstallBytes);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('installCodexHooks: preserves mixed-group metadata and non-Spotter handlers while removing emptied duplicate groups', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-mixed-'));
+  const beforeEmptyGroup = { matcher: 'pre-existing-empty', hooks: [] };
+  const firstOther = { type: 'command', command: 'throughline start', timeout: 17, unknownHookField: ['keep'] };
+  const secondOther = { type: 'prompt', prompt: 'keep this hook', statusMessage: null };
+  try {
+    await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
+      hooks: {
+        SessionStart: [
+          beforeEmptyGroup,
+          {
+            matcher: 'startup',
+            unknownGroupField: { keep: true },
+            hooks: [
+              firstOther,
+              { type: 'command', command: 'node /old/spotter.mjs codex-hook session-start', timeoutSec: 5, statusMessage: 'remove', unknown: true },
+              secondOther,
+              { type: 'command', command: 'node /older/spotter.mjs codex-hook session-start', timeoutSec: 99, async: false },
+            ],
+          },
+          { matcher: 'duplicate-only', hooks: [{ type: 'command', command: 'node /third/spotter.mjs codex-hook session-start' }] },
+        ],
+      },
+    }), 'utf8');
+
+    await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    const hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
+
+    assert.deepEqual(hooks.hooks.SessionStart, [
+      beforeEmptyGroup,
+      {
+        matcher: 'startup',
+        unknownGroupField: { keep: true },
+        hooks: [
+          firstOther,
+          { type: 'command', command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook session-start', timeout: 5 },
+          secondOther,
+        ],
+      },
+    ]);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('installCodexHooks: does not clean up a known Spotter subcommand placed under a different event', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-misplaced-'));
+  const misplacedStop = { type: 'command', command: 'node /old/spotter.mjs codex-hook stop', timeoutSec: 60 };
+  try {
+    await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
+      hooks: { SessionStart: [{ matcher: 'misplaced', hooks: [misplacedStop] }] },
+    }), 'utf8');
+
+    await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    const hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
+
+    assert.deepEqual(hooks.hooks.SessionStart[0], { matcher: 'misplaced', hooks: [misplacedStop] });
+    assert.deepEqual(hooks.hooks.SessionStart[1].hooks[0], {
+      type: 'command',
+      command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook session-start',
+      timeout: 5,
+    });
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('installCodexHooks: retains near-miss commands instead of claiming installer ownership', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-near-miss-'));
+  const nearMisses = [
+    { type: 'command', command: 'node /repo/bin/notspotter.mjs codex-hook stop' },
+    { type: 'command', command: 'renode.exe /repo/bin/spotter.mjs codex-hook stop' },
+    { type: 'command', command: 'echo "node /repo/bin/spotter.mjs codex-hook stop"' },
+  ];
+  try {
+    await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
+      hooks: { Stop: [{ matcher: 'near-miss', hooks: nearMisses }] },
+    }), 'utf8');
+
+    await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    const hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
+
+    assert.deepEqual(hooks.hooks.Stop[0], { matcher: 'near-miss', hooks: nearMisses });
+    assert.deepEqual(hooks.hooks.Stop[1].hooks[0], {
+      type: 'command',
+      command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook stop',
+      timeout: 60,
+    });
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('installCodexHooks and uninstallCodexHooks: recognize quoted Windows node.cmd and escaped path separators', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-windows-node-cmd-'));
+  const nodePath = String.raw`C:\Program Files\nodejs\node.cmd`;
+  const spotterBin = String.raw`C:\Program Files\claude-spotter\bin\spotter.mjs`;
+  const legacyCommand = `"${nodePath}" "${spotterBin}" codex-hook stop`;
+  try {
+    await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: legacyCommand, timeoutSec: 60, async: false }] }] },
+    }), 'utf8');
+
+    await installCodexHooks({ codexHome, nodePath, spotterBin });
+    let hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
+    assert.deepEqual(hooks.hooks.Stop, [{ hooks: [{
+      type: 'command',
+      command: String.raw`"C:\\Program Files\\nodejs\\node.cmd" "C:\\Program Files\\claude-spotter\\bin\\spotter.mjs" codex-hook stop`,
+      timeout: 60,
+    }] }]);
+
+    const result = await uninstallCodexHooks({ codexHome });
+    hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
+    assert.equal(result.hooks.stop, 'not-installed');
+    assert.deepEqual(hooks.hooks.Stop, []);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('installCodexHooks: preserves non-Spotter hook groups exactly', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-preserve-'));
+  const otherGroups = [{
+    matcher: 'startup',
+    unknownGroupField: { keep: true },
+    hooks: [{ type: 'command', command: 'throughline start', timeout: 17, async: false, unknownHookField: ['keep'] }],
+  }, {
+    hooks: [{ type: 'prompt', prompt: 'keep this hook', statusMessage: null }],
+  }];
+  try {
+    await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
+      hooks: { SessionStart: otherGroups },
+      unrelatedTopLevel: { keep: 'value' },
+    }), 'utf8');
+
+    await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    const hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
+
+    assert.deepEqual(hooks.hooks.SessionStart.slice(0, 2), otherGroups);
+    assert.deepEqual(hooks.unrelatedTopLevel, { keep: 'value' });
   } finally {
     await rm(codexHome, { recursive: true, force: true });
   }
@@ -156,8 +383,15 @@ test('runCodexHookInstallCommand: registers SessionStart without seeding catalog
   }
 });
 
-test('uninstallCodexHooks: removes only Spotter Codex hook entries', async () => {
+test('uninstallCodexHooks: removes canonical and misplaced known Spotter handlers while preserving negative ownership cases', async () => {
   const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-uninstall-'));
+  const negativeOwnershipHooks = [
+    { type: 'command', command: 'node /repo/bin/spotter.mjs codex-hook stop-extra' },
+    { type: 'command', command: 'node /repo/bin/spotter.mjs codex-hook stop && notify' },
+    { type: 'command', command: 'node /repo/bin/other-tool.mjs codex-hook stop' },
+    { type: 'command', command: 'node /repo/bin/notspotter.mjs codex-hook stop' },
+    { type: 'command', command: 'echo "node /repo/bin/spotter.mjs codex-hook stop"' },
+  ];
   try {
     await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({
       hooks: {
@@ -167,9 +401,13 @@ test('uninstallCodexHooks: removes only Spotter Codex hook entries', async () =>
         ],
         SessionStart: [
           { hooks: [{ type: 'command', command: 'node /repo/bin/spotter.mjs codex-hook session-start' }] },
+          // Install only normalizes matching event/subcommand pairs; uninstall removes known Spotter commands from every managed event.
+          { matcher: 'misplaced', hooks: [{ type: 'command', command: 'node /repo/bin/spotter.mjs codex-hook stop' }] },
         ],
         Stop: [
           { hooks: [{ type: 'command', command: 'node /repo/bin/spotter.mjs codex-hook stop' }] },
+          { matcher: 'negative-ownership', hooks: negativeOwnershipHooks },
+          { matcher: 'pre-existing-empty', hooks: [] },
         ],
       },
     }), 'utf8');
@@ -183,7 +421,10 @@ test('uninstallCodexHooks: removes only Spotter Codex hook entries', async () =>
     assert.deepEqual(hooks.hooks.SessionStart, []);
     assert.equal(hooks.hooks.UserPromptSubmit.length, 1);
     assert.equal(hooks.hooks.UserPromptSubmit[0].hooks[0].command, 'keep me');
-    assert.deepEqual(hooks.hooks.Stop, []);
+    assert.deepEqual(hooks.hooks.Stop, [
+      { matcher: 'negative-ownership', hooks: negativeOwnershipHooks },
+      { matcher: 'pre-existing-empty', hooks: [] },
+    ]);
   } finally {
     await rm(codexHome, { recursive: true, force: true });
   }

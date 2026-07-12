@@ -331,9 +331,9 @@ export async function installCodexHooks({ codexHome = defaultCodexHome(), nodePa
     hooksPath,
     configPath,
     hooks: {
-      sessionStart: hookState(next, 'SessionStart', 'codex-hook session-start'),
-      userPromptSubmit: hookState(next, 'UserPromptSubmit', 'codex-hook user-prompt-submit'),
-      stop: hookState(next, 'Stop', 'codex-hook stop'),
+      sessionStart: hookState(next, 'SessionStart'),
+      userPromptSubmit: hookState(next, 'UserPromptSubmit'),
+      stop: hookState(next, 'Stop'),
     },
     hooksChanged,
     feature,
@@ -388,9 +388,9 @@ export async function uninstallCodexHooks({ codexHome = defaultCodexHome() } = {
     codexHome,
     hooksPath,
     hooks: {
-      sessionStart: hookState(next, 'SessionStart', 'codex-hook session-start'),
-      userPromptSubmit: hookState(next, 'UserPromptSubmit', 'codex-hook user-prompt-submit'),
-      stop: hookState(next, 'Stop', 'codex-hook stop'),
+      sessionStart: hookState(next, 'SessionStart'),
+      userPromptSubmit: hookState(next, 'UserPromptSubmit'),
+      stop: hookState(next, 'Stop'),
     },
     hooksChanged,
   };
@@ -403,9 +403,9 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), pro
   const evidence = featureOutput.split('\n').find((line) => isEnabledCodexHookFeatureLine(line)) ?? null;
   const codexHooksFeature = evidence ? 'enabled' : 'not-enabled';
   const installed = {
-    sessionStart: hookState(hooks, 'SessionStart', 'codex-hook session-start'),
-    userPromptSubmit: hookState(hooks, 'UserPromptSubmit', 'codex-hook user-prompt-submit'),
-    stop: hookState(hooks, 'Stop', 'codex-hook stop'),
+    sessionStart: hookState(hooks, 'SessionStart'),
+    userPromptSubmit: hookState(hooks, 'UserPromptSubmit'),
+    stop: hookState(hooks, 'Stop'),
   };
   const runtimeProjectRoot = projectRoot ? findSpotterMarker(projectRoot) : null;
   return {
@@ -626,37 +626,35 @@ function mergeCodexHooks(current, { nodePath, spotterBin }) {
   const next = structuredClone(current ?? {});
   next.hooks = next.hooks ?? {};
   addCodexHook(next, 'SessionStart', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook session-start`, {
-    timeoutSec: 5,
-    async: true,
+    timeout: 5,
   });
   addCodexHook(next, 'UserPromptSubmit', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook user-prompt-submit`);
   addCodexHook(next, 'Stop', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook stop`);
   return next;
 }
 
-function addCodexHook(settings, event, command, { timeoutSec = CODEX_HOOK_TIMEOUT_SEC, async = false } = {}) {
+function addCodexHook(settings, event, command, { timeout = CODEX_HOOK_TIMEOUT_SEC } = {}) {
   const groups = settings.hooks[event] = Array.isArray(settings.hooks[event]) ? settings.hooks[event] : [];
-  for (const group of groups) {
-    if (!Array.isArray(group.hooks)) continue;
-    for (const hook of group.hooks) {
-      if (hook?.type !== 'command') continue;
-      if (!String(hook.command ?? '').includes('spotter.mjs') || !String(hook.command ?? '').includes(`codex-hook ${codexHookSubcommandForEvent(event)}`)) continue;
-      hook.command = command;
-      hook.timeoutSec = timeoutSec;
-      hook.async = async;
-      hook.statusMessage = null;
-      return;
-    }
-  }
-  groups.push({
-    hooks: [{
-      type: 'command',
-      command,
-      timeoutSec,
-      async,
-      statusMessage: null,
-    }],
+  let installed = false;
+  const nextGroups = groups.flatMap((group) => {
+    if (!Array.isArray(group.hooks)) return [group];
+    const hooks = group.hooks.flatMap((hook) => {
+      if (!isSpotterCodexHookForEvent(hook, event)) return [hook];
+      if (installed) return [];
+      installed = true;
+      return [{ type: 'command', command, timeout }];
+    });
+    // Empty groups that predate Spotter are preserved; remove only a group emptied by a duplicate removal.
+    if (group.hooks.length > 0 && hooks.length === 0) return [];
+    return [{ ...group, hooks }];
   });
+  groups.splice(0, groups.length, ...nextGroups);
+  if (!installed) groups.push({ hooks: [{ type: 'command', command, timeout }] });
+}
+
+function isSpotterCodexHookForEvent(hook, event) {
+  const subcommand = codexHookSubcommandForEvent(event).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return isSpotterCodexHook(hook) && new RegExp(`\\bcodex-hook\\s+${subcommand}\\s*$`).test(String(hook.command ?? ''));
 }
 
 function codexHookSubcommandForEvent(event) {
@@ -671,20 +669,30 @@ function removeCodexHooks(current) {
   for (const event of ['SessionStart', 'UserPromptSubmit', 'Stop']) {
     const groups = Array.isArray(next.hooks[event]) ? next.hooks[event] : [];
     next.hooks[event] = groups
-      .map((group) => ({
-        ...group,
-        hooks: Array.isArray(group.hooks)
-          ? group.hooks.filter((hook) => !isSpotterCodexHook(hook))
-          : group.hooks,
-      }))
-      .filter((group) => !Array.isArray(group.hooks) || group.hooks.length > 0);
+      .flatMap((group) => {
+        if (!Array.isArray(group.hooks)) return [group];
+        const hooks = group.hooks.filter((hook) => !isSpotterCodexHook(hook));
+        // Uninstall removes every known Spotter command even if it was placed under the wrong event.
+        // Pre-existing empty groups remain untouched.
+        if (group.hooks.length > 0 && hooks.length === 0) return [];
+        return [{ ...group, hooks }];
+      });
   }
   return next;
 }
 
 function isSpotterCodexHook(hook) {
-  const command = String(hook?.command ?? '');
-  return hook?.type === 'command' && command.includes('spotter.mjs') && command.includes('codex-hook ');
+  if (hook?.type !== 'command') return false;
+  const match = String(hook.command ?? '').match(/^(?:"((?:\\.|[^"\\])*)"|(\S+))\s+(?:"((?:\\.|[^"\\])*)"|(\S+))\s+codex-hook\s+(session-start|user-prompt-submit|stop)\s*$/);
+  if (!match) return false;
+  const nodePath = unescapeQuotedCommandToken(match[1] ?? match[2]);
+  const spotterPath = unescapeQuotedCommandToken(match[3] ?? match[4]);
+  return /(?:^|[\\/])node(?:\.exe|\.cmd|\.bat)?$/i.test(nodePath)
+    && /(?:^|[\\/])spotter\.mjs$/.test(spotterPath);
+}
+
+function unescapeQuotedCommandToken(token) {
+  return token.replace(/\\(["\\$`])/g, '$1');
 }
 
 async function ensureCodexHooksFeature(configPath) {
@@ -732,15 +740,12 @@ function isEnabledCodexHookFeatureLine(line) {
   });
 }
 
-function hookState(settings, event, commandFragment) {
+function hookState(settings, event) {
   const groups = settings?.hooks?.[event];
   if (!Array.isArray(groups)) return 'not-installed';
   for (const group of groups) {
     if (!Array.isArray(group.hooks)) continue;
-    if (group.hooks.some((hook) => {
-      const command = String(hook?.command ?? '');
-      return hook?.type === 'command' && command.includes('spotter.mjs') && command.includes(commandFragment);
-    })) {
+    if (group.hooks.some((hook) => isSpotterCodexHookForEvent(hook, event))) {
       return 'installed';
     }
   }
