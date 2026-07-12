@@ -952,6 +952,17 @@ test('formatSpotterWarning: auth failure names the codex login remedy', () => {
   assert.match(text, /codex login/);
 });
 
+test('formatSpotterWarning: usage limit names reset time or plan as the remedy', () => {
+  const prompt = formatSpotterWarning({ code: 'E_CODEX_CLI_USAGE_LIMIT' });
+  assert.match(prompt, /利用上限/);
+  assert.match(prompt, /リセット時刻/);
+  assert.match(prompt, /Codex プラン/);
+
+  const stop = formatSpotterWarning({ code: 'E_CODEX_CLI_USAGE_LIMIT', stage: 'stop' });
+  assert.match(stop, /直前の応答を Stop 時に監査できませんでした/);
+  assert.doesNotMatch(stop, /今回の入力/);
+});
+
 test('formatSpotterWarning: generic failure includes the reason code, not codex login', () => {
   const text = formatSpotterWarning({ code: 'E_HAIKU_TIMEOUT', message: 'timed out' });
   assert.match(text, /\[Spotter からの警告\]/);

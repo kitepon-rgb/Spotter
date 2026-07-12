@@ -23,7 +23,8 @@ version、schema / exact、FP/FN、p50/p95、timeout、anomaly を bounded artif
 usage limitで全12 runが失敗したが、Pro20回復後の同一fixture repeat=3ではTerra lowが12/12 exact・
 FP/FN 0・p50 3528 ms・p95 4992 msで最良、baselineは10/12、Luna lowは8/12 exactだった。
 Terra lowを次候補とするが、token/cost・合意SLOが揃うまで昇格禁止。詳細は
-[RAG](rag/openai-model-policy/spotter-auditor-model-policy.md)。
+[RAG](rag/openai-model-policy/spotter-auditor-model-policy.md)。Codex CLI利用上限は
+`E_CODEX_CLI_USAGE_LIMIT` として認証失効・generic exitから分離し、リセット待ち／プラン確認を案内する。
 
 **v1.4.17 (published 2026-07-12)**: Codex `SessionStart async:true` を canonical sync command
 handler へ修正し、upgrade normalization と readiness diagnostics を追加。Claude / Codex Stop backend

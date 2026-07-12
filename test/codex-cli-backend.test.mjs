@@ -11,6 +11,7 @@ import {
   CODEX_AUDITOR_SCHEMA,
   createCodexCliAuditorBackend,
   isCodexAuthFailure,
+  isCodexUsageLimitFailure,
 } from '../src/core/codex-cli-backend.mjs';
 import { AuditorBackendError, createAuditorBackend } from '../src/core/auditor-backend.mjs';
 
@@ -262,6 +263,36 @@ test('isCodexAuthFailure: matches codex login-expiry wording, not generic failur
   assert.equal(isCodexAuthFailure('sandbox denied write to /etc/hosts'), false);
   assert.equal(isCodexAuthFailure(''), false);
   assert.equal(isCodexAuthFailure(undefined), false);
+});
+
+test('createCodexCliAuditorBackend: usage exhaustion has a bounded actionable code', async () => {
+  const spawnFn = () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stderr.write("You've hit your usage limit. Try again at 4:41 PM.");
+      child.emit('close', 1);
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({ catalog, projectRoot: '/repo', spawnFn });
+  await assert.rejects(
+    backend.judge({ stage: 'user_input', userInput: 'x' }),
+    (err) => err instanceof AuditorBackendError
+      && err.code === 'E_CODEX_CLI_USAGE_LIMIT'
+      && /reset time/.test(err.message)
+      && err.stage === 'user_input'
+  );
+});
+
+test('isCodexUsageLimitFailure: matches observed Codex exhaustion, not generic rate errors', () => {
+  assert.equal(isCodexUsageLimitFailure("You've hit your usage limit. Try again later."), true);
+  assert.equal(isCodexUsageLimitFailure('You have hit your usage limit. Try again later.'), true);
+  assert.equal(isCodexUsageLimitFailure('429 rate limit exceeded'), false);
+  assert.equal(isCodexUsageLimitFailure(''), false);
+  assert.equal(isCodexUsageLimitFailure(undefined), false);
 });
 
 test('createCodexCliAuditorBackend: timeout kills child and returns structured error', async () => {

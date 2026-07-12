@@ -153,6 +153,7 @@ const SAFE_RUN_ERRORS = Object.freeze({
   E_CODEX_CLI_SCHEMA: { name: 'AuditorBackendError', message: 'codex-cli returned an invalid auditor result' },
   E_CODEX_CLI_SPAWN: { name: 'AuditorBackendError', message: 'codex-cli invocation could not start' },
   E_CODEX_CLI_TIMEOUT: { name: 'AuditorBackendError', message: 'codex-cli invocation timed out' },
+  E_CODEX_CLI_USAGE_LIMIT: { name: 'AuditorBackendError', message: 'codex-cli usage limit reached; wait for reset or change plan' },
   E_AUDITOR_MODEL_MATRIX: { name: 'Error', message: 'auditor model-matrix run failed' },
 });
 const SAFE_DIAGNOSTIC_ENUMS = Object.freeze({

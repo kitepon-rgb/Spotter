@@ -179,6 +179,17 @@ export function formatSpotterWarning({ code, message, stage = 'user_input' } = {
         : 'この応答を続ける前に、ユーザーに「端末で `codex login` を実行して再ログインすれば Spotter の監査が復旧する」ことを伝えてください。',
     ].join('\n');
   }
+  if (code === 'E_CODEX_CLI_USAGE_LIMIT') {
+    return [
+      header,
+      stopFailure
+        ? 'Spotter の監査エンジン (codex) が利用上限に達したため、直前の応答を Stop 時に監査できませんでした。'
+        : 'Spotter の監査エンジン (codex) が利用上限に達したため、今回の入力は監査できませんでした。',
+      stopFailure
+        ? 'ユーザーに、直前の応答が未監査だったことと、表示されたリセット時刻まで待つか Codex プランを確認すれば監査を再開できることを伝えてください。'
+        : 'この応答を続ける前に、ユーザーに、表示されたリセット時刻まで待つか Codex プランを確認すれば監査を再開できることを伝えてください。',
+    ].join('\n');
+  }
   const lines = [
     header,
     stopFailure

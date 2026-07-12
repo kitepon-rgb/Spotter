@@ -41,10 +41,24 @@ const CODEX_AUTH_FAILURE_MARKERS = [
   'please login',
 ];
 
+// Codex account-plan exhaustion is distinct from an arbitrary CLI crash: retrying the same
+// auditor call cannot recover until the stated reset time or a plan change. Match only wording
+// observed from Codex CLI so unrelated provider/rate errors stay on the generic loud path.
+const CODEX_USAGE_LIMIT_FAILURE_MARKERS = [
+  "you've hit your usage limit",
+  'you have hit your usage limit',
+];
+
 export function isCodexAuthFailure(text) {
   if (typeof text !== 'string' || text.length === 0) return false;
   const haystack = text.toLowerCase();
   return CODEX_AUTH_FAILURE_MARKERS.some((marker) => haystack.includes(marker));
+}
+
+export function isCodexUsageLimitFailure(text) {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  const haystack = text.toLowerCase();
+  return CODEX_USAGE_LIMIT_FAILURE_MARKERS.some((marker) => haystack.includes(marker));
 }
 
 export const CODEX_AUDITOR_SCHEMA = {
@@ -357,6 +371,14 @@ async function runCodexExec({
           const diag = { ...diagnostics(), exitCode: code };
           if (isCodexAuthFailure(`${diag.stdout}\n${diag.stderr}`)) {
             reject(new AuditorBackendError('E_CODEX_CLI_AUTH', 'codex-cli auth failed — codex login required (run `codex login`)', {
+              backend: 'codex-cli',
+              stage,
+              diagnostics: diag,
+            }));
+            return;
+          }
+          if (isCodexUsageLimitFailure(`${diag.stdout}\n${diag.stderr}`)) {
+            reject(new AuditorBackendError('E_CODEX_CLI_USAGE_LIMIT', 'codex-cli usage limit reached — wait for the stated reset time or change the Codex plan', {
               backend: 'codex-cli',
               stage,
               diagnostics: diag,

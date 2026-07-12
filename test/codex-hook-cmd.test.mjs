@@ -558,7 +558,7 @@ test('runCodexUserPromptSubmitHook: backend error is surfaced as Codex context, 
       },
       createAuditorBackendFn: () => ({
         judge: async () => {
-          throw new AuditorBackendError('E_CODEX_CLI_EXIT', 'codex-cli exited with code 1', {
+          throw new AuditorBackendError('E_CODEX_CLI_USAGE_LIMIT', 'codex-cli usage limit reached — wait for reset', {
             backend: 'codex-cli',
             diagnostics: { stderr: "You've hit your usage limit." },
           });
@@ -569,7 +569,7 @@ test('runCodexUserPromptSubmitHook: backend error is surfaced as Codex context, 
 
     const parsed = JSON.parse(out.join(''));
     assert.equal(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_EXIT/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_USAGE_LIMIT/);
     assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
     assert.match(parsed.hookSpecificOutput.additionalContext, /usage limit/);
   } finally {

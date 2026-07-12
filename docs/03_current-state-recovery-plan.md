@@ -350,7 +350,7 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 - [x] versioned fixture と `spotter auditor model-matrix` を追加し、選択真実性・safe artifact・
   FP/FN・anomaly・run bound を敵対的に回帰化する
 - [x] repeat=1 の operational smoke を実行し、usage limit で全12件 error だった事実を artifact 化する
-- [ ] generic `E_CODEX_CLI_EXIT` から usage limit を bounded actionable code に分類する（model 昇格とは別 commit）
+- [x] generic `E_CODEX_CLI_EXIT` から usage limit を bounded actionable code に分類する（model 昇格とは別 commit）
 - [x] `--ignore-user-config` を維持した isolated CLI の quota 回復を確認する（通常 CLI の成功だけで代用しない）
 - [x] isolated CLI quota 回復後に同一 fixture SHA / ordering で live 比較を再実行する
 - [ ] 合格した model / effort だけを独立 commit で昇格し、変更理由と評価結果を記録する
