@@ -4,6 +4,11 @@
 作成日: 2026-07-12
 対象: Spotter `UserPromptSubmit`監査 / Throughline L2 read-only connector / Claude・Codex両host
 
+## 現在のToDo
+
+- [ ] v1.4.21以降を7日以上かつfresh 30件以上（期待finding/pass各10件以上）観測し、stale率・latency・過検出・見逃しを人手ラベル付きで集計する
+- [ ] 集計結果から精度改善が必要なら修正ToDoを起票し、不要なら測定完了としてこの計画をarchiveする
+
 ## 目的
 
 Spotterの親出力安全境界は維持したまま、監査AIが会話の流れを踏まえて、親AIが見落としている
@@ -186,8 +191,8 @@ L2は要約やmetadataではなく、過去のuser/assistant本文である。�
 ### 9. default-onは由来付きproject設定としてrolloutする
 
 Spotterリポ1件だけのopt-inでは必要な実運用母数が集まらず、「母数が集まった後にdefault化する」という
-gateが循環する。2026-07-13のowner裁定により、default-onで使いながら効果を測り、維持またはrollbackを
-判断する方式へ変更する。
+gateが循環する。2026-07-13のowner裁定によりdefault-onを確定し、実運用測定はON/OFFの再審査ではなく、
+精度改善点を見つけるためだけに行う方式へ変更する。
 
 - Throughline executableをinstallerが安全にabsolute pathへ解決できる新規project installは、既定で`throughline`を設定する。
 - global envやruntimeのPATH推測で毎turn有効化せず、決定したcommandはproject-owned markerへ固定する。
@@ -196,7 +201,7 @@ gateが循環する。2026-07-13のowner裁定により、default-onで使いな
 - `spotter install --auditor-context disabled`は`origin:"explicit"`を保存し、以後の通常reinstallでもOFFを維持する。
 - Throughlineを解決できない環境はcurrent-only監査へfallbackしない。installを継続して固定診断付き`disabled`とし、doctorで理由を示す。
 - installerは、過去のuser/assistant本文だけを選択済み監査backendへ送ること、L3/tool/thinkingを送らないこと、project単位のOFF手順を表示する。
-- 緊急停止は`spotter install -y --auditor-context disabled`。既定ONの維持判断を待たず、過検出・漏洩・再帰異常のどれか1件で対象projectを即OFFにできる。
+- project所有者が個別に無効化したい場合は`spotter install -y --auditor-context disabled`を使える。これはdefault-on方針の再審査gateではない。
 
 ## 反対仮説の検証
 
@@ -285,11 +290,11 @@ gateが循環する。2026-07-13のowner裁定により、default-onで使いな
 - 30件には人手で期待findingとしたcaseを10件以上、期待passとしたcaseを10件以上含める。母数0は不合格。
 - 人手ラベルは`妥当 / 過検出 / 見逃し / context不足`。
 - `contextStatus / turns / chars / latency`だけを集計し、L2本文は記録しない。
-- fresh context取得時の過検出0、既知の未解決tool利用の見逃し0を目標とし、期間終了後にdefault-on維持・修正継続・default-off rollbackを裁定する。
+- fresh context取得時の過検出0、既知の未解決tool利用の見逃し0を目標とし、見つかった問題はdefault-onを維持したまま精度改善ToDoへ送る。
 - fresh以外で監査AI呼出・親助言が0であることを確認する。
-- 観測中も異常1件で対象projectを即OFFにできる。L2本文そのものは評価記録へ保存しない。
+- L2本文そのものは評価記録へ保存しない。
 
-## 実装フェーズとTODO
+## 完了した実装フェーズ（履歴）
 
 ### Phase 0 — 契約固定・調査（挙動不変）
 
@@ -347,18 +352,17 @@ gateが循環する。2026-07-13のowner裁定により、default-onで使いな
 - [x] exact / FP / FN / latency / token usageをsafe artifactへ記録する
 - [x] 最小合格値をownerへ提示し、`N=2 / per-body 600 / total 4,000 chars`をproduction候補として採用する
 
-### Phase 5 — default-on実運用rolloutと効果測定
+### Phase 5 — default-on配布（完了）
 
 - [x] Spotter repo限定opt-in smokeを行う
 - [x] ownerが「default-onで実運用しながら測定」する方針を承認する
 - [x] markerへ`default / explicit`由来を追加し、旧既定disabledだけを安全に移行する
 - [x] installerでThroughline executableをabsolute pathへ解決し、新規installをdefault-onにする
 - [x] 明示disabled維持、Throughline不在、再install、Windows executableの移行fixtureを追加する
-- [x] README、SLO、open issues、release notesへdefault-on・送信境界・即時OFF手順を反映する
+- [x] README、SLO、open issues、release notesへdefault-on・送信境界・明示OFF手順を反映する
 - [x] full test / CI / registry tarballからClaude・Codex両hostのfresh install smokeを行い、patch releaseする
-- [ ] 7日以上かつfresh監査30件以上（期待finding 10件以上・期待pass 10件以上）を人手ラベル付きで観測する
-- [ ] stale率、connector latency、context利用時の過検出/見逃しを確認する
-- [ ] 観測結果からdefault-on維持・修正継続・default-off rollbackを裁定する
+
+実運用測定と最終裁定は冒頭の「現在のToDo」を正とする。
 
 ### 実装・評価結果（2026-07-12）
 
@@ -429,5 +433,5 @@ Spotter v1.4.20 / Throughline v0.6.1として配布した。この時点ではco
 3. 親セッションへは従来どおり検証済みtool ID由来の固定助言以外が出ない。
 4. 実験で選んだ最小Nがcontext-sensitive fixtureを2回ともFP/FN 0で通す。
 5. 既存fixture・Claude/Codex hook・Throughline handoffに回帰がない。
-6. default-on実運用を7日以上かつ所定母数で測定し、fresh context取得時の過検出・未解決tool利用の見逃し、fresh以外での助言を評価して、default-on維持・修正継続・default-off rollbackを裁定する。
+6. default-on実運用を7日以上かつ所定母数で測定し、fresh context取得時の過検出・未解決tool利用の見逃し、fresh以外での助言を評価して、必要な精度改善ToDoを切り出す。
 7. 両リポのfull test、CI、docs、release smokeがgreen。

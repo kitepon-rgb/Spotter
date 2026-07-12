@@ -16,6 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.22 (release candidate 2026-07-13)**: v1.4.21のdefault-on裁定を公開文書へ正しく反映するdocs-only
+patch。7日 / fresh 30件の測定は精度改善にだけ使い、ON/OFFを再審査しない。
+
 ### Throughline auditor context default-on 契約
 
 - `spotter install`はPATH上のThroughlineをabsolute executableへ解決できる場合、project-owned markerで既定ONにする。旧既定disabledは再install時に移行し、明示disabledは`origin:explicit`として永続保持する。
@@ -29,8 +32,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 absolute realpathへ固定し、Windows npm shimは`node.exe + throughline.mjs`へ変換する。不在時は固定理由付き
 disabledでcurrent-onlyへfallbackしない。公開commit `5026ace`のCIは6/6 green、npm `latest`、tag /
 GitHub Release、このMacのregistry由来global installを1.4.21へ同期した。registry版fresh installで
-marker v2 / `origin:default` / connector availableを実測済み。default-onのまま7日 / fresh 30件を測り、
-維持・修正・rollbackを裁定する。
+marker v2 / `origin:default` / connector availableを実測済み。default-onはowner確定済みで、7日 /
+fresh 30件の測定は精度改善点の抽出にだけ使い、ON/OFFを再審査しない。
 
 **v1.4.20 (published 2026-07-13)**: Throughline所有のread-only projectionからexact sessionの
 freshな直近完了L2だけを取得し、Codex CLIへstdinで渡すproject opt-inを追加する。fresh以外では監査AIを

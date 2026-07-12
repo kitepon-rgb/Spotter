@@ -195,8 +195,8 @@ spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.js
   --recent-turns 2 --body-cap 600
 ```
 
-The evaluated setting is N=2 / 600. Default-on operation now collects the 7-day,
-30-fresh-result sample used to decide whether to keep, adjust, or roll back the default.
+The evaluated setting is N=2 / 600. Default-on is final; the 7-day,
+30-fresh-result sample is used only to identify precision improvements.
 
 ## Common commands
 

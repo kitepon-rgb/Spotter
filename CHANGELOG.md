@@ -1,12 +1,16 @@
 # Changelog
 
+## 1.4.22 — 2026-07-13
+
+- **default-on裁定の文書修正。** v1.4.21の実装どおりdefault-onは確定事項であり、7日・30 fresh resultの測定は精度改善にだけ使う。ON/OFFの再審査やdefault-off rollbackを選択肢としていた誤記をREADME、正典、SLO、計画、課題台帳から削除した。
+
 ## 1.4.21 — 2026-07-13
 
 ### Changed
 
 - **Throughline監査文脈をdefault-onへ変更。** `spotter install`がPATH上のThroughlineをabsolute pathへ解決できる場合、project markerへ既定設定する。marker v2の`origin:default|explicit`で旧既定disabledだけを移行し、明示OFFは再install後も維持する。POSIXはrealpath、Windows npm shimはabsolute `node.exe + throughline.mjs`を保存する。
 - **不在時は明示disabled。** Throughlineが見つからない場合は固定理由付きdisabledとし、current-only監査や別backendへfallbackしない。installerとdoctorが状態・OFF手順を表示する。
-- **実運用効果測定。** default-onで7日以上・fresh 30件以上を集め、過検出・見逃し・stale率・latencyから維持、修正、default-off rollbackを判断する。L2本文は評価ログへ保存しない。
+- **実運用効果測定。** default-onはowner確定済み。7日以上・fresh 30件以上の過検出・見逃し・stale率・latencyは精度改善にだけ使い、ON/OFFを再審査しない。L2本文は評価ログへ保存しない。
 
 ### 検証・公開
 

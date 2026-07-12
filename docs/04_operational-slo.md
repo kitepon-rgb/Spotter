@@ -58,8 +58,8 @@ tool使用ログは補助証拠に限る。月次または30 findingごとに妥
 
 2026-07-13以降は、default-onのまま7日以上かつfresh監査30件以上を測る。期待findingと期待passを
 各10件以上含め、`妥当 / 過検出 / 見逃し / context不足`で人手ラベルする。`contextStatus / turns /
-chars / latency`だけを集計し、L2本文は保存しない。過検出、見逃し、親出力への本文漏洩、再帰異常の
-いずれかを確認したprojectは、評価期間を待たず`spotter install -y --auditor-context disabled`で即時OFFにする。
+chars / latency`だけを集計し、L2本文は保存しない。default-onは確定済みで、測定結果はON/OFFの
+再審査ではなく、prompt・fixture・connectorの精度改善へ使う。
 
 ## 2026-07-12 初期スナップショット
 

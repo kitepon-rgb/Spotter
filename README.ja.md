@@ -190,7 +190,7 @@ spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.js
   --recent-turns 2 --body-cap 600
 ```
 
-評価結論はN=2 / 600です。既定ONの実運用で7日・30 fresh resultを集め、維持・修正・rollbackを判断します。
+評価結論はN=2 / 600です。既定ONは確定済みで、7日・30 fresh resultの実運用測定は精度改善に使います。
 
 ## よく使うコマンド
 
