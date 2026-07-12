@@ -433,12 +433,12 @@ test('runStop: pass:true returns without writing pending context or stdout', asy
   }
 });
 
-test('runStop: pass:false queues block reason and emits no stdout', async () => {
+test('runStop: pass:false queues block reason and records durable delivery', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-stop-defer-'));
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
     await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
-    let stdoutWrites = 0;
+    const events = [];
     await runStop({
       readInput: async () => ({
         session_id: 's-defer',
@@ -453,15 +453,17 @@ test('runStop: pass:false queues block reason and emits no stdout', async () => 
         },
       }),
       getLastAssistantTextFn: () => 'A について応答した',
+      recordHookEventFn: async ({ event }) => { events.push(event); },
     });
-    // No stdout from Stop hook itself; behavior visible via the pending queue file.
-    assert.equal(stdoutWrites, 0);
     const path = pendingPath({ projectRoot: project, sessionId: 's-defer' });
     const queued = JSON.parse(await readFile(path, 'utf8'));
     assert.equal(queued.length, 1);
     assert.match(queued[0], /\[Spotter からの指摘\]/);
     assert.match(queued[0], /mcp__caveat__caveat_search/);
     assert.match(queued[0], /既知の罠を確認する必要がある/);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'queued');
+    assert.equal(events[0].findingQueued, true);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -496,16 +498,14 @@ test('runStop: stop_hook_active=true is observed (daemon early-passes; no pendin
   }
 });
 
-test('runStop: transport failure records degraded and exits 0 (no continuation, no pending)', async () => {
-  // v1.4.x: a Stop-side Spotter failure must NOT force a continuation (exit 2 would block the
-  // stop) nor die with exit 1. It records `degraded` and returns 0; the loud warning is delivered
-  // by the next UserPromptSubmit. No pending is written (no verdict was produced).
+test('runStop: transport failure queues a warning for one later pass:true prompt', async () => {
+  // A Stop-side failure must not block stopping, but its loud warning must survive until the next
+  // same-session prompt even when the backend has recovered by then.
   const project = await mkdtemp(join(tmpdir(), 'spotter-stop-transport-'));
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
     await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
     const events = [];
-    let died = false;
     await runStop({
       readInput: async () => ({
         session_id: 's-transport',
@@ -515,30 +515,53 @@ test('runStop: transport failure records degraded and exits 0 (no continuation, 
       sendRequestFn: async () => {
         throw new TransportError('E_UNREACHABLE', 'daemon missing');
       },
-      appendPendingContextFn: async () => {
-        throw new Error('appendPendingContext must NOT be called on transport failure');
-      },
       getLastAssistantTextFn: () => 'reply',
       recordHookEventFn: async ({ event }) => { events.push(event); },
-      dieFn: () => { died = true; },
     });
-    assert.equal(died, false);
     assert.equal(events.length, 1);
     assert.equal(events[0].status, 'degraded');
     assert.equal(events[0].code, 'E_UNREACHABLE');
     assert.equal(events[0].reason, 'transport');
+    assert.equal(events[0].warningQueued, true);
+
+    let output = '';
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-transport',
+        cwd: project,
+        prompt: '次のターンの長いユーザー入力',
+      }),
+      sendRequestFn: async () => ({ ok: true, result: { pass: true, missing_tools: [] } }),
+      writeOutput: (text) => { output += text; },
+    });
+    const ctx = JSON.parse(output).hookSpecificOutput.additionalContext;
+    assert.match(ctx, /\[Spotter からの警告\]/);
+    assert.match(ctx, /E_UNREACHABLE/);
+    const drained = await drainPendingContexts({ projectRoot: project, sessionId: 's-transport' });
+    assert.deepEqual(drained, []);
+
+    let nextOutput = '';
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-transport',
+        cwd: project,
+        prompt: 'さらに次の長いユーザー入力',
+      }),
+      sendRequestFn: async () => ({ ok: true, result: { pass: true, missing_tools: [] } }),
+      writeOutput: (text) => { nextOutput += text; },
+    });
+    assert.equal(nextOutput, '');
   } finally {
     await rm(project, { recursive: true, force: true });
   }
 });
 
-test('runStop: daemon error (auditor backend) records degraded and exits 0 (no continuation)', async () => {
+test('runStop: daemon auth error queues the codex login warning', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-stop-daemon-error-'));
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
     await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
     const events = [];
-    let died = false;
     await runStop({
       readInput: async () => ({
         session_id: 's-daemon-err',
@@ -549,18 +572,251 @@ test('runStop: daemon error (auditor backend) records degraded and exits 0 (no c
         ok: false,
         error: { code: 'E_CODEX_CLI_AUTH', message: 'codex login required' },
       }),
-      appendPendingContextFn: async () => {
-        throw new Error('appendPendingContext must NOT be called on daemon error');
-      },
       getLastAssistantTextFn: () => 'reply',
       recordHookEventFn: async ({ event }) => { events.push(event); },
-      dieFn: () => { died = true; },
     });
-    assert.equal(died, false);
     assert.equal(events.length, 1);
     assert.equal(events[0].status, 'degraded');
     assert.equal(events[0].code, 'E_CODEX_CLI_AUTH');
     assert.equal(events[0].reason, 'daemon_error');
+    assert.equal(events[0].warningQueued, true);
+
+    let output = '';
+    await runUserPrompt({
+      readInput: async () => ({
+        session_id: 's-daemon-err',
+        cwd: project,
+        prompt: '次のターンの長いユーザー入力',
+      }),
+      sendRequestFn: async () => ({ ok: true, result: { pass: true, missing_tools: [] } }),
+      writeOutput: (text) => { output += text; },
+    });
+    const ctx = JSON.parse(output).hookSpecificOutput.additionalContext;
+    assert.match(ctx, /\[Spotter からの警告\]/);
+    assert.match(ctx, /codex login/);
+    assert.match(ctx, /直前の応答/);
+    assert.doesNotMatch(ctx, /今回の入力/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: failure warning is delivered on a short prompt without calling the daemon', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-warning-short-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await runStop({
+      readInput: async () => ({ session_id: 's-warning-short', cwd: project, transcript_path: '/tmp/t.jsonl' }),
+      sendRequestFn: async () => { throw new TransportError('E_UNREACHABLE', 'daemon missing'); },
+      getLastAssistantTextFn: () => 'reply',
+    });
+    let output = '';
+    let sendCalls = 0;
+    await runUserPrompt({
+      readInput: async () => ({ session_id: 's-warning-short', cwd: project, prompt: 'ok' }),
+      sendRequestFn: async () => { sendCalls += 1; return { ok: true, result: { pass: true } }; },
+      writeOutput: (text) => { output += text; },
+    });
+    assert.equal(sendCalls, 0);
+    assert.match(JSON.parse(output).hookSpecificOutput.additionalContext, /E_UNREACHABLE/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: failure warning merges with next prompt pass:false recommendation', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-warning-merge-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await runStop({
+      readInput: async () => ({ session_id: 's-warning-merge', cwd: project, transcript_path: '/tmp/t.jsonl' }),
+      sendRequestFn: async () => { throw new TransportError('E_UNREACHABLE', 'daemon missing'); },
+      getLastAssistantTextFn: () => 'reply',
+    });
+    let output = '';
+    await runUserPrompt({
+      readInput: async () => ({ session_id: 's-warning-merge', cwd: project, prompt: '次のターンの長いユーザー入力' }),
+      sendRequestFn: async () => ({
+        ok: true,
+        result: { pass: false, missing_tools: [{ name: 'mcp__caveat__caveat_search', reason: '今ターンの推奨' }] },
+      }),
+      writeOutput: (text) => { output += text; },
+    });
+    const ctx = JSON.parse(output).hookSpecificOutput.additionalContext;
+    assert.match(ctx, /E_UNREACHABLE/);
+    assert.match(ctx, /mcp__caveat__caveat_search/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: duplicate failure warning is deduped but distinct warning is retained', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-warning-dedupe-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    const invoke = async (code, message) => runStop({
+      readInput: async () => ({ session_id: 's-warning-dedupe', cwd: project, transcript_path: '/tmp/t.jsonl' }),
+      sendRequestFn: async () => { throw new TransportError(code, message); },
+      getLastAssistantTextFn: () => 'reply',
+    });
+    await invoke('E_UNREACHABLE', 'daemon missing');
+    await invoke('E_UNREACHABLE', 'daemon missing');
+    await invoke('E_TIMEOUT', 'daemon timed out');
+    const queued = await readPendingContexts(pendingPath({ projectRoot: project, sessionId: 's-warning-dedupe' }));
+    assert.equal(queued.length, 2);
+    assert.equal(queued.filter((text) => text.includes('E_UNREACHABLE')).length, 1);
+    assert.equal(queued.filter((text) => text.includes('E_TIMEOUT')).length, 1);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: warning persistence failure stays non-blocking and reports loudly', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-warning-persist-fail-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    for (const appendPendingContextFn of [
+      async () => { throw new Error('disk full'); },
+      async () => false,
+    ]) {
+      const events = [];
+      let stderr = '';
+      await runStop({
+        readInput: async () => ({ session_id: 's-warning-persist-fail', cwd: project, transcript_path: '/tmp/t.jsonl' }),
+        sendRequestFn: async () => { throw new TransportError('E_UNREACHABLE', 'daemon missing'); },
+        appendPendingContextFn,
+        getLastAssistantTextFn: () => 'reply',
+        recordHookEventFn: async ({ event }) => { events.push(event); },
+        writeError: (text) => { stderr += text; },
+      });
+      assert.match(stderr, /^Spotter Stop warning persistence failed: /);
+      assert.equal(events.length, 1);
+      assert.equal(events[0].status, 'degraded');
+      assert.equal(events[0].warningQueued, false);
+      assert.equal(events[0].code, 'E_UNREACHABLE');
+      assert.equal(events[0].reason, 'transport');
+      assert.equal(typeof events[0].pendingWriteError, 'string');
+      assert.match(stderr, /E_UNREACHABLE/);
+    }
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: marker removed during failure is reported as an unpersisted warning', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-warning-marker-race-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    const marker = join(project, '.spotter', 'marker.json');
+    await writeFile(marker, '{}', 'utf8');
+    const events = [];
+    let stderr = '';
+    await runStop({
+      readInput: async () => ({ session_id: 's-warning-marker-race', cwd: project, transcript_path: '/tmp/t.jsonl' }),
+      sendRequestFn: async () => {
+        await rm(marker);
+        throw new TransportError('E_UNREACHABLE', 'daemon missing');
+      },
+      appendPendingContextFn: async () => { throw new Error('must not append without a marker'); },
+      getLastAssistantTextFn: () => 'reply',
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeError: (text) => { stderr += text; },
+    });
+    assert.match(stderr, /^Spotter Stop warning persistence failed: /);
+    assert.equal(events[0].warningQueued, false);
+    assert.match(events[0].pendingWriteError, /marker no longer identifies the original project/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: finding persistence false or throw stays non-blocking and reports the lost finding', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-finding-persist-fail-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    for (const appendPendingContextFn of [
+      async () => { throw new Error('disk full'); },
+      async () => false,
+      async () => 'truthy-but-not-durable',
+    ]) {
+      const events = [];
+      let stderr = '';
+      await runStop({
+        readInput: async () => ({ session_id: 's-finding-persist-fail', cwd: project, transcript_path: '/tmp/t.jsonl' }),
+        sendRequestFn: async () => ({
+          ok: true,
+          result: { pass: false, missing_tools: [{ name: 'mcp__required', reason: 'must be visible' }] },
+        }),
+        appendPendingContextFn,
+        getLastAssistantTextFn: () => 'reply',
+        recordHookEventFn: async ({ event }) => { events.push(event); },
+        writeError: (text) => { stderr += text; },
+      });
+      assert.match(stderr, /^Spotter Stop finding persistence failed: /);
+      assert.match(stderr, /\[Spotter からの指摘\]/);
+      assert.match(stderr, /mcp__required/);
+      assert.equal(events.length, 1);
+      assert.equal(events[0].status, 'degraded');
+      assert.equal(events[0].pass, false);
+      assert.equal(events[0].findingQueued, false);
+      assert.equal(typeof events[0].pendingWriteError, 'string');
+    }
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: finding marker race stays non-blocking, reports stderr, and records degraded', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-finding-marker-race-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    const marker = join(project, '.spotter', 'marker.json');
+    await writeFile(marker, '{}', 'utf8');
+    const events = [];
+    let stderr = '';
+    await runStop({
+      readInput: async () => ({ session_id: 's-finding-marker-race', cwd: project, transcript_path: '/tmp/t.jsonl' }),
+      sendRequestFn: async () => {
+        await rm(marker);
+        return { ok: true, result: { pass: false, missing_tools: [{ name: 'mcp__required', reason: 'must be visible' }] } };
+      },
+      appendPendingContextFn: async () => { throw new Error('must not append after marker loss'); },
+      getLastAssistantTextFn: () => 'reply',
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeError: (text) => { stderr += text; },
+    });
+    assert.match(stderr, /^Spotter Stop finding persistence failed: /);
+    assert.match(stderr, /marker no longer identifies the original project/);
+    assert.match(stderr, /mcp__required/);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'degraded');
+    assert.equal(events[0].findingQueued, false);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runStop: stderr writer failure never turns pending persistence failure into a rejection', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-stop-stderr-fail-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    const events = [];
+    await runStop({
+      readInput: async () => ({ session_id: 's-stderr-fail', cwd: project, transcript_path: '/tmp/t.jsonl' }),
+      sendRequestFn: async () => ({ ok: true, result: { pass: false, missing_tools: [{ name: 'x', reason: 'y' }] } }),
+      appendPendingContextFn: async () => false,
+      getLastAssistantTextFn: () => 'reply',
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeError: () => { throw new Error('stderr closed'); },
+    });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'degraded');
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -702,6 +958,18 @@ test('formatSpotterWarning: generic failure includes the reason code, not codex 
   assert.match(text, /E_HAIKU_TIMEOUT/);
   assert.match(text, /timed out/);
   assert.doesNotMatch(text, /codex login/);
+});
+
+test('formatSpotterWarning: Stop failure identifies the previous response instead of the current input', () => {
+  const generic = formatSpotterWarning({ code: 'E_TIMEOUT', message: 'timed out', stage: 'stop' });
+  assert.match(generic, /直前の応答を Stop 時に監査できませんでした/);
+  assert.match(generic, /直前の応答は未監査/);
+  assert.doesNotMatch(generic, /今回の入力/);
+
+  const auth = formatSpotterWarning({ code: 'E_CODEX_CLI_AUTH', stage: 'stop' });
+  assert.match(auth, /直前の応答を Stop 時に監査できませんでした/);
+  assert.match(auth, /codex login/);
+  assert.doesNotMatch(auth, /今回の入力/);
 });
 
 test('runUserPrompt: codex auth failure emits a loud warning and does NOT erase the prompt', async () => {

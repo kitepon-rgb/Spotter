@@ -165,19 +165,28 @@ export function formatTransparentBlockReason(missingTools) {
 // same additionalContext channel as findings so the host stays responsive AND the user is told
 // they are temporarily unprotected (and, for an expired codex login, exactly how to recover).
 // This is the opposite of a silent fallback.
-export function formatSpotterWarning({ code, message } = {}) {
+export function formatSpotterWarning({ code, message, stage = 'user_input' } = {}) {
   const header = '[Spotter からの警告]';
+  const stopFailure = stage === 'stop';
   if (code === 'E_CODEX_CLI_AUTH') {
     return [
       header,
-      'Spotter の監査エンジン (codex) のログインが失効しているため、今回の入力は監査できませんでした。',
-      'この応答を続ける前に、ユーザーに「端末で `codex login` を実行して再ログインすれば Spotter の監査が復旧する」ことを伝えてください。',
+      stopFailure
+        ? 'Spotter の監査エンジン (codex) のログインが失効しているため、直前の応答を Stop 時に監査できませんでした。'
+        : 'Spotter の監査エンジン (codex) のログインが失効しているため、今回の入力は監査できませんでした。',
+      stopFailure
+        ? 'ユーザーに、直前の応答が未監査だったことと「端末で `codex login` を実行して再ログインすれば Spotter の監査が復旧する」ことを伝えてください。'
+        : 'この応答を続ける前に、ユーザーに「端末で `codex login` を実行して再ログインすれば Spotter の監査が復旧する」ことを伝えてください。',
     ].join('\n');
   }
   const lines = [
     header,
-    `Spotter は今回の入力を監査できませんでした (理由コード: ${code ?? 'unknown'})。この応答は監査されていません。`,
-    'この応答を続ける前に、ユーザーに Spotter の監査が一時的に無効になっていることを伝えてください。',
+    stopFailure
+      ? `Spotter は直前の応答を Stop 時に監査できませんでした (理由コード: ${code ?? 'unknown'})。直前の応答は未監査です。`
+      : `Spotter は今回の入力を監査できませんでした (理由コード: ${code ?? 'unknown'})。この応答は監査されていません。`,
+    stopFailure
+      ? 'ユーザーに、直前の応答が未監査だったことと Spotter の監査が一時的に無効だったことを伝えてください。'
+      : 'この応答を続ける前に、ユーザーに Spotter の監査が一時的に無効になっていることを伝えてください。',
   ];
   if (typeof message === 'string' && message.length > 0) lines.push(`詳細: ${message}`);
   return lines.join('\n');
