@@ -1122,8 +1122,8 @@ test('codexHookDiagnostics: reports feature and hook installation state', async 
     assert.equal(result.installedHooks.userPromptSubmit, 'installed');
     assert.equal(result.readiness, 'configured-unverified');
     assert.equal(result.auditorBackend, 'codex-cli');
-    assert.equal(result.auditorModelSelection.effectiveModel, 'gpt-5.4-mini');
-    assert.equal(result.auditorModelSelection.effectiveReasoningEffort, 'low');
+    assert.equal(result.auditorModelSelection.effectiveModel, 'gpt-5.6-terra');
+    assert.equal(result.auditorModelSelection.effectiveReasoningEffort, 'medium');
     assert.equal(result.auditorModelSelection.modelSource, 'policy:production');
     assert.equal(result.auditorModelSelection.availability, 'unverified-until-invocation');
     for (const event of ['sessionStart', 'userPromptSubmit', 'stop']) {
@@ -1214,7 +1214,7 @@ test('codexHookDiagnostics: auto on a Codex host resolves to codex-cli before mo
     spawnSyncFn: () => ({ status: 0, stdout: 'hooks stable true\n', stderr: '' }),
   });
   assert.equal(result.auditorBackend, 'codex-cli');
-  assert.equal(result.auditorModelSelection.effectiveModel, 'gpt-5.4-mini');
+  assert.equal(result.auditorModelSelection.effectiveModel, 'gpt-5.6-terra');
 });
 
 test('codexHookDiagnostics: legacy async SessionStart remains availability available but readiness misconfigured', async () => {

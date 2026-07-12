@@ -192,8 +192,9 @@ Primary auditor backend policy: Claude hooks の auto selection は PATH に Cod
 `SPOTTER_AUDITOR_BACKEND` の明示 override はどちらの host でも優先し、runtime failure では別 backend へ
 hidden fallback しません。
 Codex 側の SessionStart hook は `.spotter/tool-db.codex.json` を bg refresh し、Claude DB には触れません。
-Codex CLI auditor は versioned product policy を使い、production は現在 `gpt-5.4-mini × low`。
-`gpt-5.6-luna × low` / `gpt-5.6-terra × low` は評価 profile で、自動昇格しません。`latest` alias や
+Codex CLI auditor は versioned product policy を使い、production は反復 fixture 評価を通過した
+`gpt-5.6-terra × medium`。`gpt-5.6-luna × low` / `gpt-5.6-terra × low` は比較 profile として残し、
+profile から production へ自動昇格しません。`latest` alias や
 親 Codex の default を暗黙継承せず、失敗時に別 model へ retry しません。制御された実験では
 `SPOTTER_CODEX_CLI_MODEL` / `SPOTTER_CODEX_CLI_REASONING_EFFORT` で上書きでき、diagnostics は unverified と表示します。
 明示 smoke には `SPOTTER_AUDITOR_BACKEND=codex-sidecar` も使えます。

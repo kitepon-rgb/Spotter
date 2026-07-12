@@ -2,7 +2,7 @@
 
 作成日: 2026-07-12
 
-状態: **監査・独立反証済み、Phase 0〜4 完了、Phase 5 基盤完了・isolated CLI quota 待ち、Phase 7 部分完了**
+状態: **監査・独立反証済み、Phase 0〜5 完了、Phase 7 部分完了**
 
 ## 目的
 
@@ -77,8 +77,12 @@ auditor probe は成功したが、本番同条件の isolated CLI は引き続�
 `service_tier="default"` の明示だけでも解消しない。したがって user config を無断で再読込して得た結果を
 本番相当とは扱わず、隔離契約を維持したまま quota 境界を再確認する。
 
-したがって現状は **「テストは green だが、現在の Hook / trust / release 契約をテストできておらず、
-実配布は不完全」** と判定する。
+その後Pro20回復後に同一fixtureで比較を再開し、Terra mediumは2回合計24/24 exact、FP/FN 0、
+timeout 0を記録した。owner裁定によりproductionを`gpt-5.6-terra × medium`へ昇格した。金額costは
+ChatGPTプランから取得不能として明示し、backend/stage別の実運用SLOはPhase 6の継続課題とする。
+
+したがって現状は **「テストとv1.4.17配布はgreen、v1.4.18のmodel昇格はsource採用済みだが未release。
+Codex UI trustと新規taskのSessionStart実動確認、実運用SLO策定が残る」** と判定する。
 
 重要指摘は独立反証にかけた。反証後、async SessionStart / diagnostics は「初回 seed と手動 refresh が
 ある」ため P0 から P1 へ、未追跡 repo-local Hook は product bug でないため P2 へ下げた。一方、現行
@@ -89,14 +93,14 @@ transcript で shell tool call を数えない問題は実データで確認で�
 
 | 領域 | 判定 | 根拠 |
 |---|---|---|
-| Node unit / integration test | green | 現在 428 tests、426 pass、2 platform skip、0 fail |
+| Node unit / integration test | green | 現在 429 tests、427 pass、2 platform skip、0 fail |
 | Claude daemon safety | 実装・回帰あり | 再帰 guard、heartbeat、auto-resurrect、stale socket test |
 | Codex `UserPromptSubmit` / `Stop` | 稼働あり | project hook-event 14 件中両 event を観測 |
 | Codex `SessionStart` refresh | 設定修復済み / 新規 task 確認待ち | global entry はcanonical・`async`なし、runtime 1回観測待ち |
 | Codex diagnostics | green / trust確認待ち | 3 hooks 各1件、compatible / canonical、readiness=`configured-unverified` |
 | 配布 | **同期済み** | tag / npm latest / GitHub Release / global install = v1.4.17 |
 | 応答性能 | 要改善 | Codex UserPromptSubmit p50 5.8s、平均 7.4s、最大 20.0s |
-| model 評価 | **昇格裁定待ち** | Terra medium 24/24 exact、token取得済み、cost/SLO未合意 |
+| model 評価 | **採用済み** | production=`gpt-5.6-terra × medium`、24/24 exact、token取得済み |
 | 文書 | 主要正典同期済み | Hook parity TODO の archive 移動と本計画 archive は承認 / 完了待ち |
 
 ## 初回監査で確認した P0
@@ -354,15 +358,15 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 - [x] `--ignore-user-config` を維持した isolated CLI の quota 回復を確認する（通常 CLI の成功だけで代用しない）
 - [x] isolated CLI quota 回復後に同一 fixture SHA / ordering で live 比較を再実行する
 - [x] Codex JSONL `turn.completed.usage` をboundedに抽出し、profile別token usageをartifactへ記録する
-- [ ] 合格した model / effort だけを独立 commit で昇格し、変更理由と評価結果を記録する
+- [x] 合格した model / effort だけを独立 commit で昇格し、変更理由と評価結果を記録する
 
 2026-07-12 Pro20回復後の1回目repeat=3ではTerra lowが12/12 exact、usage抽出後の2回目は11/12。
 合算23/24でbaseline 18/24、Luna low 17/24より最良だが、lowの品質不足が再現したためTerra mediumを
 追加評価する。token usageは36/36取得済み。ChatGPTプラン上の金額costとSLOは未確定なので昇格は保留。
 詳細は [`rag/openai-model-policy/evals/2026-07-12-pro20-repeat3-usage.md`](../rag/openai-model-policy/evals/2026-07-12-pro20-repeat3-usage.md)。
 
-Terra mediumは比較12 runと再確認12 runの合計24/24 exact、FP/FN 0、timeout 0。技術候補を
-`gpt-5.6-terra × medium`へ確定した。詳細は
+Terra mediumは比較12 runと再確認12 runの合計24/24 exact、FP/FN 0、timeout 0。owner裁定により
+`gpt-5.6-terra × medium`をproductionへ採用し、policy version 3で昇格した。詳細は
 [`rag/openai-model-policy/evals/2026-07-12-terra-medium-verification.md`](../rag/openai-model-policy/evals/2026-07-12-terra-medium-verification.md)。
 
 Gate: schema / JSON 遵守が 100%、既存 fixture の指摘品質が非劣化で、p50 / p95 / timeout rate /

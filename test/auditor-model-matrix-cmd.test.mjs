@@ -33,6 +33,32 @@ test('model-matrix validates fixtures before creating any backend', async () => 
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('model-matrix default profiles omit the promoted terra-medium duplicate', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-model-matrix-default-profiles-'));
+  try {
+    const path = join(dir, 'fixture.json');
+    await writeFile(path, JSON.stringify({ ...fixture, cases: [fixture.cases[0]] }));
+    const created = [];
+    const artifact = await runAuditorModelMatrixCommand({
+      argv: ['--fixtures', path],
+      env: {},
+      getCodexCliVersionFn: async () => ({ status: 'unavailable' }),
+      createBackendFn: ({ modelProfile }) => {
+        created.push(modelProfile);
+        return {
+          modelSelection: selection(modelProfile),
+          judge: async () => ({ pass: true, findings: [], meta: { modelSelection: selection(modelProfile) } }),
+        };
+      },
+      writeOutput: () => {},
+    });
+    assert.deepEqual(created, ['baseline', 'luna', 'terra']);
+    assert.deepEqual(artifact.evaluation.profiles, ['baseline', 'luna', 'terra']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('model-matrix runs case then repeat then profile round-robin and writes artifact', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-model-matrix-order-'));
   try {

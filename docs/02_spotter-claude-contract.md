@@ -94,7 +94,7 @@ answer as `Stop Blocked` / exit code 1. The current Codex hook contract now desc
 continuation prompt, so immediate continuation must be re-characterized before replacing the pending queue;
 the old claim that Codex exposes no continuation is no longer valid. Backend errors are also written to
 stderr and queued as warnings so one-shot `codex exec` and the next same-session prompt do not hide the failure.
-Codex hook auditor calls use the production model policy (currently `gpt-5.4-mini × low`) and a 20s timeout.
+Codex hook auditor calls use the production model policy (currently `gpt-5.6-terra × medium`) and a 20s timeout.
 Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
 
@@ -282,11 +282,11 @@ dispatch も opt-in かつ detached であり、hook response は Codex を待�
 
 Codex CLI auditor の production selection は
 [`codex-auditor-model-policy.mjs`](../src/core/codex-auditor-model-policy.mjs) の versioned policy が正本。
-現在は `gpt-5.4-mini × low`。env override は policy より優先するが unverified と表示する。
-`gpt-5.6-luna × low` と `gpt-5.6-terra × low` は semantic evaluation profile であり、production へ
-自動昇格しない。`gpt-5.6` / CLI default / `~/.codex/models_cache.json` を暗黙継承せず、model 不在や
+現在は、同一fixtureの反復評価で24/24 exactだった `gpt-5.6-terra × medium`。env override は policy より
+優先するが unverified と表示する。`gpt-5.6-luna × low` と `gpt-5.6-terra × low` は比較profileとして残し、
+production へ自動昇格しない。`gpt-5.6` / CLI default / `~/.codex/models_cache.json` を暗黙継承せず、model 不在や
 quota を含む invocation failure で別 model へ fallback しない。`spotter auditor model-matrix` は
-再現可能な比較 artifact を作るが、token / cost と合意 SLO が揃うまで promotion を許可しない。
+再現可能な比較 artifact を作るが、自動promotionは許可しない。昇格はartifactを根拠にownerが明示裁定する。
 
 完了済みの primary backend migration 計画と smoke 結果は
 [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md) に保管しています。

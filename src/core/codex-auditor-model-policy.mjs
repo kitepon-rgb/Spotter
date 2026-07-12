@@ -8,43 +8,43 @@ function deepFreeze(value) {
 
 export const CODEX_AUDITOR_MODEL_POLICY = deepFreeze({
   schema: 'spotter.codex_auditor_model_policy.v1',
-  policyVersion: '2',
+  policyVersion: '3',
   role: 'high-frequency-structured-tool-auditor',
   production: {
-    model: 'gpt-5.4-mini',
-    reasoningEffort: 'low',
-    verifiedAt: '2026-05-06',
+    model: 'gpt-5.6-terra',
+    reasoningEffort: 'medium',
+    verifiedAt: '2026-07-12',
     status: 'production',
     verificationScope: 'operational-smoke',
   },
   evaluationProfiles: {
     baseline: {
-      model: 'gpt-5.4-mini',
-      reasoningEffort: 'low',
-      verifiedAt: '2026-05-06',
-      status: 'pending-evaluation',
+      model: 'gpt-5.6-terra',
+      reasoningEffort: 'medium',
+      verifiedAt: '2026-07-12',
+      status: 'verified',
       verificationScope: 'operational-smoke',
     },
     luna: {
       model: 'gpt-5.6-luna',
       reasoningEffort: 'low',
-      verifiedAt: null,
-      status: 'candidate',
-      verificationScope: 'not-evaluated',
+      verifiedAt: '2026-07-12',
+      status: 'rejected',
+      verificationScope: 'operational-smoke',
     },
     terra: {
       model: 'gpt-5.6-terra',
       reasoningEffort: 'low',
-      verifiedAt: null,
-      status: 'candidate',
-      verificationScope: 'not-evaluated',
+      verifiedAt: '2026-07-12',
+      status: 'rejected',
+      verificationScope: 'operational-smoke',
     },
     'terra-medium': {
       model: 'gpt-5.6-terra',
       reasoningEffort: 'medium',
-      verifiedAt: null,
-      status: 'candidate',
-      verificationScope: 'not-evaluated',
+      verifiedAt: '2026-07-12',
+      status: 'verified',
+      verificationScope: 'operational-smoke',
     },
   },
 });
@@ -99,7 +99,7 @@ function validateSelection(selection, label, { verifiedAtRequired = false } = {}
   const record = policyRecord(selection, label);
   const status = requiredCleanString(record.status, `${label}.status`);
   const verificationScope = requiredCleanString(record.verificationScope, `${label}.verificationScope`);
-  if (!['production', 'pending-evaluation', 'candidate'].includes(status)) {
+  if (!['production', 'pending-evaluation', 'candidate', 'verified', 'rejected'].includes(status)) {
     fail(`${label}.status is not supported: ${status}`);
   }
   if (!['operational-smoke', 'not-evaluated'].includes(verificationScope)) {

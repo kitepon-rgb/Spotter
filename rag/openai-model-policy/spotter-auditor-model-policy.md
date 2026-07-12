@@ -2,7 +2,7 @@
 
 調査日: 2026-07-12
 
-確度: **仕様判断は高、`gpt-5.6-terra × medium` は24/24 exactの技術候補だがproduction昇格は未完了**
+確度: **仕様判断は高、`gpt-5.6-terra × medium` は24/24 exactを根拠にproduction採用済み**
 
 ## 出典
 
@@ -13,7 +13,7 @@
 
 ## 現状
 
-Spotter は auditor を起動するとき、`gpt-5.4-mini × low` を versioned policy の production 値として明示し、
+Spotter は auditor を起動するとき、`gpt-5.6-terra × medium` を versioned policy の production 値として明示し、
 `SPOTTER_CODEX_CLI_MODEL` / `SPOTTER_CODEX_CLI_REASONING_EFFORT` で上書きできる。
 Codex は `--ignore-user-config` で起動するため、親セッションや利用者設定から auditor の品質・費用・
 latency が偶然変わらない。この隔離は維持すべき契約である。
@@ -87,6 +87,14 @@ mediumを各12 run比較し、mediumだけをさらに12 run再確認した。me
 timeout 0。p50は3.78〜3.84秒、p95は4.28〜4.36秒で、tokenもlow比較runより増えなかった。
 技術候補を`gpt-5.6-terra × medium`へ更新する。詳細は
 [`evals/2026-07-12-terra-medium-verification.md`](evals/2026-07-12-terra-medium-verification.md)。
+
+## Production採用
+
+2026-07-12、上記24/24 exact、FP/FN 0、timeout 0、安定したlatency、low比較でtoken増加なしを根拠に、
+ownerが`gpt-5.6-terra × medium`のproduction採用を裁定した。policy version 3でproductionとbaselineを
+同selectionへ更新し、Luna low / Terra lowは比較profileとして保持する。model-matrix artifactからの
+自動昇格、CLI既定modelの暗黙継承、失敗時fallbackは禁止のまま維持する。ChatGPTプランの金額costは
+取得不能として明示し、backend/stage別の実運用SLOは別の継続課題とする。
 
 ## リリース境界
 

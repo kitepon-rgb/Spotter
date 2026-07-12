@@ -54,9 +54,9 @@ test('buildCodexExecArgs: pins schema, last-message, read-only sandbox, and prom
     '--cd',
     '/repo',
     '--model',
-    'gpt-5.4-mini',
+    'gpt-5.6-terra',
     '-c',
-    'model_reasoning_effort="low"',
+    'model_reasoning_effort="medium"',
     'judge',
   ]);
 });
@@ -185,7 +185,7 @@ test('createCodexCliAuditorBackend: no final JSON is a structured error', async 
     (err) => err instanceof AuditorBackendError
       && err.code === 'E_CODEX_CLI_NO_FINAL_JSON'
       && err.stage === 'user_input'
-      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.6-terra'
   );
 });
 
@@ -205,7 +205,7 @@ test('createCodexCliAuditorBackend: spawn failure is a structured error', async 
       && err.diagnostics.processCount === 0
       && err.diagnostics.processCountMethod === 'spawn_failed'
       && err.stage === 'user_input'
-      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.6-terra'
   );
 });
 
@@ -234,7 +234,7 @@ test('createCodexCliAuditorBackend: non-zero exit is a structured error with bou
       err.stage === 'user_input' &&
       err.diagnostics.stderr.length === 32 * 1024 &&
       err.diagnostics.stderrTruncated === true &&
-      err.diagnostics.modelSelection.effectiveReasoningEffort === 'low'
+      err.diagnostics.modelSelection.effectiveReasoningEffort === 'medium'
   );
 });
 
@@ -261,7 +261,7 @@ test('createCodexCliAuditorBackend: non-zero exit carrying an auth marker is cla
       err.code === 'E_CODEX_CLI_AUTH' &&
       err.stage === 'user_input' &&
       /codex login/.test(err.message) &&
-      err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
+      err.diagnostics.modelSelection.effectiveModel === 'gpt-5.6-terra'
   );
 });
 
@@ -337,7 +337,7 @@ test('createCodexCliAuditorBackend: timeout kills child and returns structured e
     (err) => err instanceof AuditorBackendError
       && err.code === 'E_CODEX_CLI_TIMEOUT'
       && err.stage === 'user_input'
-      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.6-terra'
   );
   assert.equal(killed, true);
 });
@@ -491,7 +491,7 @@ test('createCodexCliAuditorBackend: schema errors retain invocation model diagno
   await assert.rejects(
     backend.judge({ stage: 'user_input', userInput: 'x' }),
     (err) => err.code === 'E_CODEX_CLI_SCHEMA'
-      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.6-terra'
       && err.diagnostics.processCount === 1,
   );
 });

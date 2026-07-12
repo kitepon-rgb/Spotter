@@ -193,9 +193,9 @@ otherwise the Haiku-compatible path. Codex native hooks automatically select Cod
 `SPOTTER_AUDITOR_BACKEND` override wins on either host; runtime failure never triggers a hidden fallback.
 The Codex SessionStart hook refreshes `.spotter/tool-db.codex.json` in the background
 without touching the Claude DB.
-Codex CLI auditor child processes use a versioned product policy. The production selection remains
-`gpt-5.4-mini × low`; `gpt-5.6-luna × low`, `gpt-5.6-terra × low`, and
-`gpt-5.6-terra × medium` are evaluation profiles, not automatic upgrades.
+Codex CLI auditor child processes use a versioned product policy. The production selection is
+`gpt-5.6-terra × medium`, promoted after repeated fixture evaluation. `gpt-5.6-luna × low` and
+`gpt-5.6-terra × low` remain comparison profiles; profiles never trigger automatic upgrades.
 Spotter does not inherit a `latest` alias or the parent Codex default, and an invocation failure never retries another model.
 `SPOTTER_CODEX_CLI_MODEL` and `SPOTTER_CODEX_CLI_REASONING_EFFORT` can override
 the production values for controlled experiments; diagnostics mark overrides as unverified.

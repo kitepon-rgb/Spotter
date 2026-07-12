@@ -45,21 +45,13 @@ codex-cli 949 calls は平均6.3s、timeout 3、auth 6。Haiku fallback path に
 first/resumed 観測がある。backend ごと・stage ごとの合意 SLO がないため、timeout / model / workload の
 変更を成功と判定できない。
 
-v1.4.18 の `spotter auditor model-matrix` で `gpt-5.4-mini × low`、`gpt-5.6-luna × low`、
-`gpt-5.6-terra × low` を同一 fixture で計測できる基盤は入った。ただし初回 operational smoke 12件は
-Codex CLI usage limit で全て `E_CODEX_CLI_EXIT`。model 品質・availability・latency は未測定で、
-token / cost も `not-available`。generic exit code では quota の対処が artifact だけから分からない。
+v1.4.18 の `spotter auditor model-matrix` で同一fixtureを反復評価し、Terra mediumは24/24 exact、
+FP/FN 0、timeout 0、p50 3.78〜3.84秒、p95 4.28〜4.36秒だった。owner裁定によりproductionを
+`gpt-5.6-terra × medium`へ昇格済み。Codex JSONLのtoken usageも取得済みで、利用上限は
+`E_CODEX_CLI_USAGE_LIMIT`へ分類済み。ChatGPTプランの金額costは取得不能であり、API価格で代用しない。
 
-2026-07-12 15:39〜15:41 JST の再試行では、通常 CLI と `--ignore-user-config` を外した同一 auditor
-probe は成功した一方、本番同条件の isolated CLI は usage limit（16:41 再試行案内）のままだった。
-`service_tier="default"` の明示だけでは解消しない。user config 全体の再読込は auditor の品質・費用・
-再帰隔離契約を変えるため、回避策として採用しない。
-
-**次アクション**: isolated CLI の quota 回復後に同一 fixture / hash / ordering で再実行する。
-schema 100%、baseline 非劣化、
-p50/p95、timeout rate、token/cost の SLO を先に合意し、通過した selection だけを独立 commit で昇格する。
-`E_CODEX_CLI_USAGE_LIMIT` のような bounded actionable classification は model 昇格と別 commit で検討する。
-timeout 延長や別 model retry だけで解決扱いにしない。
+**次アクション**: 新productionを実運用で観測し、backend / stage別のp50・p95・timeout率・失敗率について
+「どこまでなら正常とみなすか」をownerと合意する。timeout延長や別model retryだけで解決扱いにしない。
 
 ### daemon プロセスが shutdown ログなしに死ぬ (v1.3.0 で根因が大半解消した可能性、再観測中)
 
@@ -308,7 +300,7 @@ contract に明記して許容する。
 | Codex `SessionStart` に `async:true` を生成して現行 CLI が handler を skip し、diagnostics も `available` と誤成功していた。installer-owned entry を canonical `{type,command,timeout}` へ正規化し、feature / registered / compatible / canonical / observed / readiness を分離。trust は `/hooks` review を案内 | v1.4.17 candidate (repo 修正済み・実機反映待ち) |
 | Claude Stop backend failure が degraded event だけで warning pending を積まず、backend が回復した次 turn に過去の未監査を通知できなかった。Claude / Codex 両 host で warning を host-neutral pending に dedupe 保存し、次 prompt で finding と同時に1回 drain。pending / stderr / event writer failure も non-blocking かつ loud | v1.4.17 candidate |
 | Codex used-tools が legacy `function_call` だけを読み、現行 shell `custom_tool_call`、MCP、agent call を数えず short Stop を誤 skip し得た。bounded current-turn readerで全既知形を認識し、missing / oversize / schema drift は anomaly として監査を継続 | v1.4.17 candidate |
-| auditor model slug が backend に直接 pin され、次世代 model の比較・昇格 gate がなかった。versioned policy、semantic evaluation profiles、effective selection diagnostics、safe model-matrix artifact を追加。production は評価完了まで `gpt-5.4-mini × low` を維持 | v1.4.18 development |
+| auditor model slug が backend に直接 pin され、次世代 model の比較・昇格 gate がなかった。versioned policy、semantic evaluation profiles、effective selection diagnostics、safe model-matrix artifactを追加し、反復評価24/24 exactの`gpt-5.6-terra × medium`をowner裁定でproductionへ昇格 | v1.4.18 development |
 | daemon が異常死 (SIGKILL / crash / マシンスリープで SessionEnd 未発火) すると graceful `stop()` の socket unlink が走らず、`~/.spotter/runtime/session-<id>.sock` が orphan として残留。以後の resurrect / SessionStart は `assertNoLiveDaemon` (PID 死亡を確認) を通過して `server.listen(path)` に進むが、stale socket で `EADDRINUSE` → `daemon listening` 到達前に die → **auto-resurrect しても毎回同じ socket で crash-loop = そのセッションが永久に未監査**。実測: Kikoeru session `83d7aa04` が 16:26 起動後に異常死、18:43–19:14 の 5 回 restart が全部 backend 選択直後で停止、hook は毎ターン `E_UNREACHABLE` / `E_RESURRECT_FAILED` で degraded (「一時無効のまま」)。修正: `transport.mjs` に `removeStaleSocketFile` を新設し、`startDaemon` が `assertNoLiveDaemon` 通過後・`listen` 前に stale socket を unlink (Unix only、ENOENT は no-op、Windows named pipe は owner 終了で自動消滅するので no-op)。回帰テスト 3 件 (EADDRINUSE 再現→解消 / ENOENT no-op / Windows no-op) | v1.4.16 (実装済・未リリース) |
 | codex auditor のログイン失効 (`token_revoked` / `refresh_token_reused` / `401`) で codex が異常終了すると、(A) 失効痕跡を捨てて全部 `E_CODEX_CLI_EXIT` に潰し auth を区別せず、(B) `UserPromptSubmit` hook が daemon エラーを `die(exit 2)` していたため、Claude Code が入力時 hook の exit 2 を **プロンプト消去** 扱いして毎ターン入力が消え「Claude が一切反応しない」状態になっていた bug。codex 非ゼロ終了の stdout+stderr をスキャンして `E_CODEX_CLI_AUTH` (`codex login` 案内) に分類 + hook 失敗を `die(exit 2)` から `[Spotter からの警告]` additionalContext + exit 0 の loud degradation に転換 (UserPromptSubmit / Stop / PreToolUse) | v1.4.15 |
 | Codex hooks 登録後の初回 Codex セッションが、`SessionStart` の detached refresh 完了前に `UserPromptSubmit` を走らせると空 / 未作成の `.spotter/tool-db.codex.json` で監査し得た問題。Codex CLI が見える `spotter install` で Codex hooks 登録後に `refresh({hostAgent:"codex"})` も同期 seed し、SessionStart refresh は以後の drift 追従に限定 | v1.4.6 |

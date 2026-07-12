@@ -14,17 +14,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v1.4.18 (unreleased)**: Codex auditor model を versioned policy に集約。production default は
-`gpt-5.4-mini × low` のまま、評価 profile として `gpt-5.6-luna × low` / `gpt-5.6-terra × low` /
-`gpt-5.6-terra × medium` を定義した。backend は model selection を生成時に一度だけ解決し、
+**v1.4.18 (unreleased)**: Codex auditor model を versioned policy に集約し、production default を
+反復 fixture 評価で24/24 exact・FP/FN 0・timeout 0だった `gpt-5.6-terra × medium` へ昇格した。
+`gpt-5.6-luna × low` / `gpt-5.6-terra × low` は比較 profile として残す。backend は model selection を生成時に一度だけ解決し、
 成功・失敗・diagnostics に effective
 selection と検証状態を残す。`spotter auditor model-matrix` は versioned fixture の hash、Codex CLI
 version、schema / exact、FP/FN、p50/p95、timeout、anomaly を bounded artifact に記録するが、
 `promotionEligible:false` 固定で production を自動変更しない。2026-07-12 の初回live smokeはCodex CLI
 usage limitで全12 runが失敗したが、Pro20回復後のrepeat=3を2回実行し、Terra lowが合算23/24 exactで
 baseline 18/24、Luna low 17/24より最良だった。2回目でTerraも1件見逃したためmediumを追加評価する。
-Codex JSONL token usageは取得済み。Terra mediumは追加検証で24/24 exact・FP/FN 0・timeout 0となり
-技術的な昇格候補だが、ChatGPTプランの金額cost・合意SLOが揃うまで昇格禁止。詳細は
+Codex JSONL token usageは取得済み。Terra mediumは追加検証で24/24 exact・FP/FN 0・timeout 0となり、
+owner裁定でproductionへ採用した。ChatGPTプランの金額costは取得不能として明示し、backend/stage別の
+実運用SLO策定は別課題として残す。詳細は
 [RAG](rag/openai-model-policy/spotter-auditor-model-policy.md)。Codex CLI利用上限は
 `E_CODEX_CLI_USAGE_LIMIT` として認証失効・generic exitから分離し、リセット待ち／プラン確認を案内する。
 
@@ -291,13 +292,13 @@ spotter hook <event>              # 内部用 (Claude Code hook から呼ばれ�
 に保持する。
 `spotter codex-hook *` は Codex native hooks 用の adapter であり、Codex host の
 primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査専用の子 Codex は versioned
-auditor policy の production selection（現在 `gpt-5.4-mini × low`）と hook auditor timeout 20s を使い、短い Codex `Stop`
+auditor policy の production selection（現在 `gpt-5.6-terra × medium`）と hook auditor timeout 20s を使い、短い Codex `Stop`
 応答は重複監査せず skip する。Codex `SessionStart` は `spotter db refresh --host-agent codex`
 を detached 起動し、Claude DB には触れない。`SPOTTER_CODEX_CLI_MODEL` /
 `SPOTTER_CODEX_CLI_REASONING_EFFORT` / `SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS` /
 `SPOTTER_CODEX_STOP_SHORT_FINAL_MAX_CHARS` で実測用に上書き可能。
 model override は unverified として diagnostics に残る。`gpt-5.6-luna × low` / `gpt-5.6-terra × low` /
-`gpt-5.6-terra × medium` は model-matrix 専用 profile で、eval artifact から自動で production へ昇格しない。
+`gpt-5.6-terra × medium` は model-matrix から明示選択でき、eval artifact から自動で production へ昇格しない。
 
 テストランナーは Node 組み込み (`node --test`)。現行 CI は `.github/workflows/ci.yml` で Node 22.5 / 22.x の Linux / Windows / macOS matrix を `node --test` で走らせる。
 

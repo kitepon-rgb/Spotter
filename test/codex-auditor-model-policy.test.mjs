@@ -7,17 +7,17 @@ import {
 } from '../src/core/codex-auditor-model-policy.mjs';
 import { AuditorBackendError } from '../src/core/auditor-error.mjs';
 
-test('resolveCodexAuditorModelSelection: production default remains gpt-5.4-mini × low', () => {
+test('resolveCodexAuditorModelSelection: production default is gpt-5.6-terra × medium', () => {
   const selection = resolveCodexAuditorModelSelection({ env: {} });
-  assert.equal(selection.effectiveModel, 'gpt-5.4-mini');
-  assert.equal(selection.effectiveReasoningEffort, 'low');
+  assert.equal(selection.effectiveModel, 'gpt-5.6-terra');
+  assert.equal(selection.effectiveReasoningEffort, 'medium');
   assert.equal(selection.modelSource, 'policy:production');
   assert.equal(selection.effortSource, 'policy:production');
   assert.equal(selection.policySchema, 'spotter.codex_auditor_model_policy.v1');
-  assert.equal(selection.policyVersion, '2');
-  assert.equal(selection.policyVerifiedAt, '2026-05-06');
+  assert.equal(selection.policyVersion, '3');
+  assert.equal(selection.policyVerifiedAt, '2026-07-12');
   assert.equal(selection.policyVerificationScope, 'operational-smoke');
-  assert.equal(selection.effectiveVerifiedAt, '2026-05-06');
+  assert.equal(selection.effectiveVerifiedAt, '2026-07-12');
   assert.equal(selection.effectiveStatus, 'production');
   assert.equal(selection.effectiveVerificationScope, 'operational-smoke');
   assert.equal(selection.availability, 'unverified-until-invocation');
@@ -28,7 +28,7 @@ test('resolveCodexAuditorModelSelection: environment model and effort overrides 
     env: { SPOTTER_CODEX_CLI_MODEL: 'test-model' },
   });
   assert.equal(modelOnly.effectiveModel, 'test-model');
-  assert.equal(modelOnly.effectiveReasoningEffort, 'low');
+  assert.equal(modelOnly.effectiveReasoningEffort, 'medium');
   assert.equal(modelOnly.modelSource, 'env:SPOTTER_CODEX_CLI_MODEL');
   assert.equal(modelOnly.effortSource, 'policy:production');
   assert.equal(modelOnly.effectiveVerifiedAt, null);
@@ -38,7 +38,7 @@ test('resolveCodexAuditorModelSelection: environment model and effort overrides 
   const effortOnly = resolveCodexAuditorModelSelection({
     env: { SPOTTER_CODEX_CLI_REASONING_EFFORT: 'medium' },
   });
-  assert.equal(effortOnly.effectiveModel, 'gpt-5.4-mini');
+  assert.equal(effortOnly.effectiveModel, 'gpt-5.6-terra');
   assert.equal(effortOnly.effectiveReasoningEffort, 'medium');
   assert.equal(effortOnly.modelSource, 'policy:production');
   assert.equal(effortOnly.effortSource, 'env:SPOTTER_CODEX_CLI_REASONING_EFFORT');
@@ -56,7 +56,7 @@ test('resolveCodexAuditorModelSelection: empty environment values are unset but 
   const empty = resolveCodexAuditorModelSelection({
     env: { SPOTTER_CODEX_CLI_MODEL: '', SPOTTER_CODEX_CLI_REASONING_EFFORT: '' },
   });
-  assert.equal(empty.effectiveModel, 'gpt-5.4-mini');
+  assert.equal(empty.effectiveModel, 'gpt-5.6-terra');
   assert.throws(
     () => resolveCodexAuditorModelSelection({ env: { SPOTTER_CODEX_CLI_MODEL: ' gpt-5.6-luna' } }),
     { code: 'E_CODEX_CLI_MODEL_POLICY' },
@@ -68,25 +68,28 @@ test('resolveCodexAuditorModelSelection: semantic profiles are reproducible and 
   const luna = resolveCodexAuditorModelSelection({ env: {}, profile: 'luna' });
   const terra = resolveCodexAuditorModelSelection({ env: {}, profile: 'terra' });
   const terraMedium = resolveCodexAuditorModelSelection({ env: {}, profile: 'terra-medium' });
-  assert.equal(baseline.effectiveModel, 'gpt-5.4-mini');
-  assert.equal(baseline.effectiveReasoningEffort, 'low');
-  assert.equal(baseline.effectiveVerifiedAt, '2026-05-06');
-  assert.equal(baseline.effectiveStatus, 'pending-evaluation');
+  assert.equal(baseline.effectiveModel, 'gpt-5.6-terra');
+  assert.equal(baseline.effectiveReasoningEffort, 'medium');
+  assert.equal(baseline.effectiveVerifiedAt, '2026-07-12');
+  assert.equal(baseline.effectiveStatus, 'verified');
   assert.equal(baseline.effectiveVerificationScope, 'operational-smoke');
   assert.equal(luna.effectiveModel, 'gpt-5.6-luna');
   assert.equal(luna.effectiveReasoningEffort, 'low');
-  assert.equal(luna.effectiveVerifiedAt, null);
-  assert.equal(luna.effectiveStatus, 'candidate');
-  assert.equal(luna.effectiveVerificationScope, 'not-evaluated');
+  assert.equal(luna.effectiveVerifiedAt, '2026-07-12');
+  assert.equal(luna.effectiveStatus, 'rejected');
+  assert.equal(luna.effectiveVerificationScope, 'operational-smoke');
   assert.equal(terra.effectiveModel, 'gpt-5.6-terra');
   assert.equal(terra.effectiveReasoningEffort, 'low');
-  assert.equal(terra.effectiveVerifiedAt, null);
+  assert.equal(terra.effectiveVerifiedAt, '2026-07-12');
+  assert.equal(terra.effectiveStatus, 'rejected');
   assert.equal(terraMedium.effectiveModel, 'gpt-5.6-terra');
   assert.equal(terraMedium.effectiveReasoningEffort, 'medium');
+  assert.equal(terraMedium.effectiveStatus, 'verified');
+  assert.equal(terraMedium.effectiveVerifiedAt, '2026-07-12');
   assert.equal(terraMedium.modelSource, 'profile:terra-medium');
   assert.equal(luna.modelSource, 'profile:luna');
   assert.equal(luna.effortSource, 'profile:luna');
-  assert.equal(resolveCodexAuditorModelSelection({ env: {} }).effectiveModel, 'gpt-5.4-mini');
+  assert.equal(resolveCodexAuditorModelSelection({ env: {} }).effectiveModel, 'gpt-5.6-terra');
 });
 
 test('resolveCodexAuditorModelSelection: profile conflicts and unknown profiles fail explicitly', () => {
@@ -108,7 +111,7 @@ test('resolveCodexAuditorModelSelection: profile conflicts and unknown profiles 
 
 test('resolveCodexAuditorModelSelection: invalid injected policy model or effort fails explicitly', () => {
   const invalidModel = structuredClone(CODEX_AUDITOR_MODEL_POLICY);
-  invalidModel.production.model = ' gpt-5.4-mini';
+  invalidModel.production.model = ' gpt-5.6-terra';
   assert.throws(
     () => resolveCodexAuditorModelSelection({ env: {}, policy: invalidModel }),
     { code: 'E_CODEX_CLI_MODEL_POLICY' },
@@ -140,7 +143,7 @@ test('resolveCodexAuditorModelSelection: invalid injected policy model or effort
     );
   }
   const invalidUnselectedProfile = structuredClone(CODEX_AUDITOR_MODEL_POLICY);
-  invalidUnselectedProfile.evaluationProfiles.terra.status = 'verified';
+  invalidUnselectedProfile.evaluationProfiles.terra.status = 'invalid-status';
   assert.throws(
     () => resolveCodexAuditorModelSelection({ env: {}, profile: 'luna', policy: invalidUnselectedProfile }),
     { code: 'E_CODEX_CLI_MODEL_POLICY' },

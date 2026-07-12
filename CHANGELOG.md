@@ -3,14 +3,14 @@
 ## 1.4.18 (unreleased development)
 
 auditor model の更新を model 名の場当たり的な置換から切り離し、versioned policy と再現可能な比較 eval を
-導入する。production default は評価完了まで `gpt-5.4-mini × low` のままとし、`latest` alias や
-Codex CLI の暗黙既定、失敗時 fallback では自動昇格しない。
+導入する。反復評価24/24 exactの `gpt-5.6-terra × medium` をowner裁定でproductionへ昇格した。
+`latest` aliasやCodex CLIの暗黙既定、失敗時fallback、eval artifactからの自動昇格は使わない。
 
 ### 変更点
 
 - **model policy**: 意味論的な auditor role、production selection、`gpt-5.6-luna × low` /
   `gpt-5.6-terra × low` / `gpt-5.6-terra × medium` の評価 profile、policy version、検証状態を
-  単一 module に集約した。medium追加時にpolicy versionを2へ上げた。
+  単一 module に集約した。medium追加時にpolicy versionを2、production昇格時に3へ上げた。
 - **backend / diagnostics**: model と reasoning effort を backend 生成時に一度だけ解決し、成功・失敗の
   structured result と diagnostics に effective selection、選択元、policy version、検証状態を残す。
   model invocation が失敗しても別 model へ retry しない。
@@ -26,14 +26,15 @@ Codex CLI の暗黙既定、失敗時 fallback では自動昇格しない。
 ### 検証
 
 `auditor-model-matrix-cmd` / `auditor-cmd` / `cli` の targeted test 29 / 29 pass、全体
-428 / 426 pass / 0 fail / 2 skip。
+429 / 427 pass / 0 fail / 2 skip。
 循環・非文字列 backend 応答、model selection 不一致、version 出力の秘密混入、dirty fixture、filtered
 hallucination を敵対的に再検証し、blocker 0 を確認した。代表 fixture の repeat=1 operational smoke は
 baseline / Luna / Terra の全12件が Codex CLI usage limit で `E_CODEX_CLI_EXIT` となったため、model 品質・
 latency・availability の比較には使わなかった。Pro20回復後のrepeat=3を2回実行し、Terra lowは合算
 23/24 exactでbaseline 18/24、Luna low 17/24より最良。usage対応runではtoken usageを36/36取得した。
-Terra lowにも見逃しが1件出たためmediumを追加評価し、金額cost・SLO未合意の間はproduction defaultを維持する。
-Terra mediumは2回のrepeat=3で合計24/24 exact、FP/FN 0、timeout 0。技術的な昇格候補に確定した。
+Terra lowにも見逃しが1件出たためmediumを追加評価した。Terra mediumは2回のrepeat=3で合計24/24 exact、
+FP/FN 0、timeout 0となり、owner裁定でproductionへ採用した。ChatGPTプランの金額costは取得不能として
+明示し、backend/stage別の実運用SLOは継続課題とする。
 
 ## 1.4.17
 
