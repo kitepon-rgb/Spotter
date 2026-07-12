@@ -3109,4 +3109,3 @@ retrieved_at: 2026-07-12
 method: markitdown 0.1.5
 certainty: high（Anthropic公式Claude Code Hook仕様の取得時点スナップショット）
 ---
-
