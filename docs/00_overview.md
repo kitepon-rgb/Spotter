@@ -25,6 +25,7 @@ contracts, error handling, and release workflow.
 ## Operational Documents
 
 - [`open-issues.md`](open-issues.md): current unresolved issues and observation tasks.
+- [`06_release-v1.4.19-plan.md`](06_release-v1.4.19-plan.md): active v1.4.19 release checklist.
 
 ## Archive
 
@@ -32,3 +33,5 @@ contracts, error handling, and release workflow.
   and smoke notes. These are reference material rather than current contract.
 - [`archive/03_current-state-recovery-plan.md`](archive/03_current-state-recovery-plan.md):
   completed recovery, v1.4.17/1.4.18 release, and model-evaluation plan.
+- [`archive/05_parent-session-safety-plan.md`](archive/05_parent-session-safety-plan.md):
+  completed parent-session output-boundary implementation plan.

@@ -15,7 +15,7 @@
 
 Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。記録すべき決定を memory / caveat MCP に残さない、docs lookup MCP を呼ばずに古い知識で応答する、ブラウザ自動化 MCP で確認せず UI 状態を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
 
-Spotter はツールカタログを完全に把握した別の監査エージェントで、ユーザー入力と主役 AI の応答を並走監査します。自動選択では Claude host は Codex CLI があればそれを、なければ session-scoped Haiku を選び、Codex host は Codex CLI を既定にします。明示 backend override は host より優先しますが、runtime failure で別 backend へ黙って切り替えません。見落としは透明化された指摘として次に利用できる文脈へ届けます。**主役 AI が自覚して自己監査する**設計は本プロダクトの存在意義を破壊するため、hook 経由でその意思と独立に検出します。
+Spotter はツールカタログを完全に把握した別の監査エージェントで、ユーザー入力と主役 AI の応答を並走監査します。自動選択では Claude host は Codex CLI があればそれを、なければ session-scoped Haiku を選び、Codex host は Codex CLI を既定にします。明示 backend override は host より優先しますが、runtime failure で別 backend へ黙って切り替えません。応答前は検証済みtool IDだけを固定・非命令形の助言へ変換でき、応答後のfindingは構造eventに留めて後続turnへ注入しません。監査用AIの自由文が親セッションへ入ることはありません。**主役 AI が自覚して自己監査する**設計は本プロダクトの存在意義を破壊するため、hook 経由でその意思と独立に検出します。
 
 <p align="center">
   <img src=".github/concept.svg" alt="Claude が答え、Spotter が見ている" width="80%">
@@ -62,6 +62,7 @@ Codex 側では現行の `[features].hooks = true` を有効化し、互換の�
 Spotter が所有する Codex handler は現行の同期 command schema で生成します。install / upgrade 後は `/hooks` で review して新しい Codex session を開いてください。`spotter codex-hook diagnostics` は登録と readiness を診断しますが、trust を内部状態から推測しません。
 
 Spotter を upgrade した後、release note で hook 設定変更が案内されている場合は、各 install 済みプロジェクトで `spotter install` を再実行してください。global package update でコード経路は変わりますが、既存 `.claude/settings.json` の timeout 値は自動では書き換わりません。
+`v1.4.19`はruntimeの出力変換だけを変更するため、install済みprojectで`spotter install`をやり直す必要はありません。global packageを更新し、新しいClaude/Codexセッションを開いてください。
 
 ```bash
 spotter uninstall        # このプロジェクトの hook 登録を解除
@@ -217,7 +218,7 @@ profile から production へ自動昇格しません。`latest` alias や
 
 - **親出力をルールベース化** (v1.4.19) — 監査用AIの自由文は親セッションへ入りません。検証済みtool IDだけがUserPromptSubmitの任意助言になり、Stop findingは無関係な次turnへ持ち越されません
 - **daemon は異常死しても復活する** (v1.4.16) — daemon が graceful shutdown を経ず死んでも (マシンスリープ / 強制終了 / `SessionEnd` 前の crash)、残った Unix socket が以後の起動を塞がなくなった。`startDaemon` が bind 前に orphan socket を除去するので、次の `UserPromptSubmit` の auto-resurrect が `EADDRINUSE` で crash-loop せずに成功し、「そのセッションが永久に未監査」になる事態を防ぐ
-- **失敗は声に出して縮退、host を固めない** (v1.4.15) — auditor backend が失敗したとき (例: codex のログイン失効) も、`UserPromptSubmit` hook はプロンプトを黙って消さずに `[Spotter からの警告]` を出して通す。codex ログイン失効時は直し方 (`codex login`) を明示する
+- **失敗は声に出して縮退、hostを固めない** (v1.4.15) — この版でbackend failureによるpromptのsilent消去を止めた。v1.4.19以降もnon-blocking挙動は維持し、旧model可視警告文は固定`systemMessage`・stderr・構造event診断へ置換した
 - **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Claude の監査から silent に脱落させていた)
 - **プロジェクト単位の監査隔離** — daemon が監査に使うのはローカル DB のみ。グローバル DB は description 再利用キャッシュに役割限定。**他プロジェクト**でインストールしたツールが現プロジェクトの監査に混入することはない
 - **手放しでカタログ維持** — `spotter install` が Claude DB を自動 seed、Claude / Codex それぞれの SessionStart が host-local DB を bg refresh する。手書き管理は一切不要

@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v1.4.19 (development 2026-07-12)**: 親セッションとの出力信頼境界を修正する。監査用AIの
+**v1.4.19 (release candidate 2026-07-12)**: 親セッションとの出力信頼境界を修正する。監査用AIの
 `reason` / `raw`、backend message、provider stdout / stderr は Hook 出力へ渡さず、Claude / Codex
 共通のルールベース projector が catalog 照合済みの安全なツールIDだけを固定・非命令形の助言へ
 変換する。`Stop` finding / failure の次ターン pending 配送は廃止し、finding は構造Hook event、failureは

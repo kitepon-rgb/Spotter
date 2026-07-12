@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点（v1.4.19 local install、2026-07-12）に **塞がっていない穴** と
+Spotter で現時点（v1.4.19 release candidate、2026-07-12）に **塞がっていない穴** と
 **実測未検証の懸念** を優先度付きで記録する。repo で修正済みでも、未配布・未 install なら
 実環境では未解決として扱う。
 
@@ -40,7 +40,7 @@ UserPromptSubmit / Stopはいずれもp50 6秒、p95 15秒、timeout率1%、auth
 timeout延長よりHook重複・workload・model/effortの順に直す。金額costはChatGPT planから取得不能なので
 API価格で捏造せず、token usageと利用上限発生を観測する。
 
-**次アクション**: v1.4.18 global install後、各Hook 50 callに達した時点で初回production窓を判定する。
+**次アクション**: v1.4.19 global install後、各Hook 50 callに達した時点で初回production窓を判定する。
 
 ### daemon プロセスが shutdown ログなしに死ぬ (v1.3.0 で根因が大半解消した可能性、再観測中)
 
@@ -116,6 +116,10 @@ chain には入れない (現セッションでも `[caveat:codex-sidecar] advis
 command failed` を観測)。Codex host の auto selection (`codex-cli`) と監査用子プロセスのモデル指定
 (`gpt-5.4-mini` / `model_reasoning_effort="low"`) は変更なし。
 
+**2026-07-12 置換**: 上記はv1.4.10時点の履歴。v1.4.18でversioned model policyを導入し、
+現行productionは反復評価24/24 exactの`gpt-5.6-terra × medium`。暗黙defaultや`latest` aliasへは追従せず、
+候補profileを同一fixtureで評価してowner裁定で昇格する。
+
 **2026-05-08 完了 (v1.4.8 Hook behavior parity)**: Codex 改修で確定した hook 挙動 3 種を
 Claude 側にも移植完了。
 (A) Stop short-skip = daemon `handleTurnEnd` で短い final + 0 used_tools のとき auditor を呼ばずに即 pass。
@@ -128,6 +132,9 @@ host-neutral `.spotter/pending/` に移行 (旧 `.spotter/codex-pending/`)。
 [`archive/SPOTTER_HOOK_PARITY_TODO.md`](archive/SPOTTER_HOOK_PARITY_TODO.md)。
 別プロジェクトでの実セッション smoke と数日分 diagnostics は rollout 観測フェーズで実施する。
 
+**2026-07-12 置換**: v1.4.19では(B)のpending新規保存・次turn配送を廃止した。Stop findingは
+構造Hook eventに限定し、legacy same-session pendingは内容を読まずに削除する。(A)(D)は維持する。
+
 **2026-05-06 更新**: `spotter diagnostics logs --json` は backend 別集計 (`backends`,
 `stages.*.backends`) を持つようになった。Haiku first/resumed だけでなく、Codex CLI /
 codex-sidecar primary auditor の duration / pass=false / missing 件数を同じ summary で比較できる。
@@ -137,14 +144,12 @@ codex-sidecar primary auditor の duration / pass=false / missing 件数を同�
 高頻度・低遅延・低コストの構造化 JSON 監査なので、frontier model を暗黙に使うより
 mini model を固定し、必要な smoke / 実験だけ `SPOTTER_CODEX_CLI_MODEL` で上書きする。
 
-**2026-05-07 方針メモ**: Codex native hook の timeout は `UserPromptSubmit` と `Stop` を同一に
-扱わない。`UserPromptSubmit` はユーザー入力直後の体感 UX に直撃するため短く保つ。一方 Codex
-`Stop` は回答後監査で、現行実装では immediate block ではなく `.spotter/pending/` への
-deferred delivery なので、多少長くても UX 影響は相対的に小さい。`Stop` で有用な指摘を timeout
-で落とす損失のほうが大きい可能性があるため、実運用で `E_CODEX_CLI_TIMEOUT` が再発する場合は
-`UserPromptSubmit` は 10-20s 程度、`Stop` は 30-45s 程度の非対称 timeout を検討する。無制限には
-しない。長い `Stop` が次 turn の pending context 配送に間に合わないケースと、プロセス滞留は
-別途 diagnostics で観測する。
+**2026-05-07方針、2026-07-12更新**: Codex native hookのtimeoutは`UserPromptSubmit`と`Stop`を
+同一に扱わない。`UserPromptSubmit`はユーザー入力直後の体感UXに直撃するため短く保つ。`Stop`は
+回答後監査で、v1.4.19以降はfindingを構造Hook eventへ記録するだけで回答をblockせず、次turnへも
+配送しない。実運用で`E_CODEX_CLI_TIMEOUT`が再発する場合は`UserPromptSubmit`を10-20s、`Stop`を
+30-45s程度とする非対称timeoutを検討する。無制限にはせず、長いStopのプロセス滞留とfinding欠落を
+diagnosticsで観測する。
 
 **2026-05-06 v1.4.3 Codex native hook 実機 smoke**: Spotter repo の新 Codex thread で
 `spotter --version` が `spotter 1.4.3`、`spotter codex-hook diagnostics --project
@@ -227,7 +232,8 @@ timeout 突破頻発なら緊急対処。
 
 ### `/ask-spotter` スラッシュコマンド (v0.3 予定)
 
-ユーザーが明示的に Spotter に問い合わせできるスラッシュコマンド。現状は hook 由来の `additionalContext` / pending queue のみが介入経路で、ユーザー発案の問い合わせは不可。
+ユーザーが明示的にSpotterへ問い合わせできるスラッシュコマンド。現状の親セッション向け経路は、
+`UserPromptSubmit`の固定・非命令形助言と`Stop`の構造Hook eventだけで、ユーザー発案の問い合わせは不可。
 
 ### async hook 化 (v0.4+)
 
@@ -249,11 +255,11 @@ timeout 突破頻発なら緊急対処。
 
 | 課題 | 解決版 |
 |---|---|
-| 監査用AIの`reason`、backend/provider生出力、Stopの前turn指摘が親モデルcontextへ昇格して暴走を誘発できた。共通projectorがcatalog照合・grammar検証済みtool IDだけを固定・非命令形助言へ変換し、failureは固定Hook出力、Stop findingは構造eventに限定。pending新規作成と次turn配送を廃止し、旧pendingは非読取unlink。全447件中445 pass/2 skip、敵対的再監査blocker 0、local global 1.4.19へ反映 | v1.4.19 local install（npm未公開） |
-| Codex `SessionStart` に `async:true` を生成して現行 CLI が handler を skip し、diagnostics も `available` と誤成功していた。installer-owned entry を canonical `{type,command,timeout}` へ正規化し、feature / registered / compatible / canonical / observed / readiness を分離。trust は `/hooks` review を案内 | v1.4.17 candidate (repo 修正済み・実機反映待ち) |
-| Claude Stop backend failure が degraded event だけで warning pending を積まず、backend が回復した次 turn に過去の未監査を通知できなかった。Claude / Codex 両 host で warning を host-neutral pending に dedupe 保存し、次 prompt で finding と同時に1回 drain。pending / stderr / event writer failure も non-blocking かつ loud | v1.4.17 candidate |
-| Codex used-tools が legacy `function_call` だけを読み、現行 shell `custom_tool_call`、MCP、agent call を数えず short Stop を誤 skip し得た。bounded current-turn readerで全既知形を認識し、missing / oversize / schema drift は anomaly として監査を継続 | v1.4.17 candidate |
-| auditor model slug が backend に直接 pin され、次世代 model の比較・昇格 gate がなかった。versioned policy、semantic evaluation profiles、effective selection diagnostics、safe model-matrix artifactを追加し、反復評価24/24 exactの`gpt-5.6-terra × medium`をowner裁定でproductionへ昇格 | v1.4.18 development |
+| 監査用AIの`reason`、backend/provider生出力、Stopの前turn指摘が親モデルcontextへ昇格して暴走を誘発できた。共通projectorがcatalog照合・grammar検証済みtool IDだけを固定・非命令形助言へ変換し、failureは固定Hook出力、Stop findingは構造eventに限定。pending新規作成と次turn配送を廃止し、旧pendingは非読取unlink。全447件中445 pass/2 skip、敵対的再監査blocker 0、local global 1.4.19へ反映 | v1.4.19 release candidate |
+| Codex `SessionStart` に `async:true` を生成して現行 CLI が handler を skip し、diagnostics も `available` と誤成功していた。installer-owned entry を canonical `{type,command,timeout}` へ正規化し、feature / registered / compatible / canonical / observed / readiness を分離。trust は `/hooks` review を案内 | v1.4.17 published |
+| Claude Stop backend failure が degraded event だけで warning pending を積まず、backend が回復した次 turn に過去の未監査を通知できなかった。Claude / Codex 両 host で warning を host-neutral pending に dedupe 保存し、次 prompt で finding と同時に1回 drain。pending / stderr / event writer failure も non-blocking かつ loud。v1.4.19で親文脈へ配送しない安全境界へ置換 | v1.4.17 published、v1.4.19で置換 |
+| Codex used-tools が legacy `function_call` だけを読み、現行 shell `custom_tool_call`、MCP、agent call を数えず short Stop を誤 skip し得た。bounded current-turn readerで全既知形を認識し、missing / oversize / schema drift は anomaly として監査を継続 | v1.4.17 published |
+| auditor model slug が backend に直接 pin され、次世代 model の比較・昇格 gate がなかった。versioned policy、semantic evaluation profiles、effective selection diagnostics、safe model-matrix artifactを追加し、反復評価24/24 exactの`gpt-5.6-terra × medium`をowner裁定でproductionへ昇格 | v1.4.18 published |
 | daemon が異常死 (SIGKILL / crash / マシンスリープで SessionEnd 未発火) すると graceful `stop()` の socket unlink が走らず、`~/.spotter/runtime/session-<id>.sock` が orphan として残留。以後の resurrect / SessionStart は `assertNoLiveDaemon` (PID 死亡を確認) を通過して `server.listen(path)` に進むが、stale socket で `EADDRINUSE` → `daemon listening` 到達前に die → **auto-resurrect しても毎回同じ socket で crash-loop = そのセッションが永久に未監査**。実測: Kikoeru session `83d7aa04` が 16:26 起動後に異常死、18:43–19:14 の 5 回 restart が全部 backend 選択直後で停止、hook は毎ターン `E_UNREACHABLE` / `E_RESURRECT_FAILED` で degraded (「一時無効のまま」)。修正: `transport.mjs` に `removeStaleSocketFile` を新設し、`startDaemon` が `assertNoLiveDaemon` 通過後・`listen` 前に stale socket を unlink (Unix only、ENOENT は no-op、Windows named pipe は owner 終了で自動消滅するので no-op)。回帰テスト 3 件 (EADDRINUSE 再現→解消 / ENOENT no-op / Windows no-op) | v1.4.16 (実装済・未リリース) |
 | codex auditor のログイン失効 (`token_revoked` / `refresh_token_reused` / `401`) で codex が異常終了すると、(A) 失効痕跡を捨てて全部 `E_CODEX_CLI_EXIT` に潰し auth を区別せず、(B) `UserPromptSubmit` hook が daemon エラーを `die(exit 2)` していたため、Claude Code が入力時 hook の exit 2 を **プロンプト消去** 扱いして毎ターン入力が消え「Claude が一切反応しない」状態になっていた bug。codex 非ゼロ終了の stdout+stderr をスキャンして `E_CODEX_CLI_AUTH` (`codex login` 案内) に分類 + hook 失敗を `die(exit 2)` から `[Spotter からの警告]` additionalContext + exit 0 の loud degradation に転換 (UserPromptSubmit / Stop / PreToolUse) | v1.4.15 |
 | Codex hooks 登録後の初回 Codex セッションが、`SessionStart` の detached refresh 完了前に `UserPromptSubmit` を走らせると空 / 未作成の `.spotter/tool-db.codex.json` で監査し得た問題。Codex CLI が見える `spotter install` で Codex hooks 登録後に `refresh({hostAgent:"codex"})` も同期 seed し、SessionStart refresh は以後の drift 追従に限定 | v1.4.6 |

@@ -304,7 +304,9 @@ quota を含む invocation failure で別 model へ fallback しない。`spotte
 - `test/codex-risk-dispatch.test.mjs`: daemon-side detached dispatch input files, env gates,
   and recursion-blocking child env.
 - `test/codex-hook-cmd.test.mjs`: canonical hook generation / upgrade ownership、readiness、
-  Stop warning pending、bounded current-turn transcript integration。
+  Stop structured event、legacy pending cleanup、bounded current-turn transcript integration。
+- `test/parent-output-projector.test.mjs`: catalog照合・tool ID grammar・固定非命令形助言・
+  auditor/provider自由文の非反射。
 - `test/codex-auditor-model-policy.test.mjs`: versioned policy、override precedence、profile isolation。
 - `test/auditor-model-matrix-cmd.test.mjs`: fixture validation、selection truthfulness、safe artifact、
   FP/FN / anomaly scoring、ordering / run bounds。

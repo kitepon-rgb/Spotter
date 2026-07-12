@@ -15,7 +15,7 @@
 
 Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It may skip a project memory MCP when a decision should be recorded, answer from stale memory instead of a docs-lookup MCP, or reason about UI state without a browser-automation MCP. The model can't always tell when it doesn't know — so the tool stays unused.
 
-Spotter runs a separate auditor with the full tool catalog and checks both the user's prompt and the primary agent's reply. Automatic selection uses Codex CLI on a Claude host when available, otherwise the session-scoped Haiku path; on a Codex host it defaults to Codex CLI. An explicit backend override takes precedence, but a runtime failure never silently switches backend. When Spotter finds a missed tool, it injects a transparent recommendation into the next available context. **The primary agent is never asked to self-audit** — that would defeat the premise. Detection happens through hooks, independent of the primary agent's intent.
+Spotter runs a separate auditor with the full tool catalog and checks both the user's prompt and the primary agent's reply. Automatic selection uses Codex CLI on a Claude host when available, otherwise the session-scoped Haiku path; on a Codex host it defaults to Codex CLI. An explicit backend override takes precedence, but a runtime failure never silently switches backend. Before the primary reply, validated tool IDs may become fixed, non-directive advice; after the reply, findings remain structured events and are not injected into a later turn. Auditor prose never enters the parent session. **The primary agent is never asked to self-audit** — that would defeat the premise. Detection happens through hooks, independent of the primary agent's intent.
 
 <p align="center">
   <img src=".github/concept.svg" alt="Claude answers · Spotter watches" width="80%">
@@ -62,6 +62,7 @@ For Codex, install enables the current `[features].hooks = true` flag and still 
 Installer-owned Codex handlers use the current synchronous command schema. After install or upgrade, review them with `/hooks`, then open a fresh Codex session; `spotter codex-hook diagnostics` reports registration/readiness but does not guess hook trust.
 
 After upgrading Spotter, re-run `spotter install` in each installed project when release notes mention hook setting changes. The global package update changes the code path, but existing `.claude/settings.json` timeout values are not rewritten automatically.
+`v1.4.19` changes runtime output projection only, so already installed projects do not need another `spotter install`; update the global package and open a fresh Claude/Codex session.
 
 ```bash
 spotter uninstall        # remove hooks from this project
@@ -219,7 +220,7 @@ the production values for controlled experiments; diagnostics mark overrides as 
 
 - **Rule-based parent output boundary** (v1.4.19) — auditor AI prose cannot enter parent-session Hook output. Validated tool IDs become optional fixed advice on `UserPromptSubmit`; `Stop` findings stay structured and are never carried into an unrelated next turn
 - **Daemon recovers after an ungraceful death** (v1.4.16) — if the daemon dies without graceful shutdown (machine sleep, force-quit, crash before `SessionEnd`), the Unix socket it leaves behind no longer bricks every restart. `startDaemon` removes the orphaned socket before binding, so the next `UserPromptSubmit` auto-resurrect succeeds instead of crash-looping on `EADDRINUSE` and leaving the session permanently unaudited
-- **Failures degrade loudly, never freeze the host** (v1.4.15) — when the auditor backend fails (e.g. codex login expired), the `UserPromptSubmit` hook surfaces a `[Spotter からの警告]` and lets your prompt through instead of silently erasing it. codex login expiry names the one-line fix (`codex login`)
+- **Failures degrade loudly, never freeze the host** (v1.4.15) — this release stopped backend failure from silently erasing a prompt. Since v1.4.19, the non-blocking behavior remains but the old model-visible warning text is replaced by fixed `systemMessage`, stderr, and structured event diagnostics
 - **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Claude's audit
 - **Per-project / per-host audit isolation** — the daemon audits against the local DB only; global DBs are host-specific description caches. Tools discovered in *other* projects or another host can never bleed into this project's audit set
 - **Zero-touch catalog** — `spotter install` seeds the Claude DB automatically; Claude and Codex SessionStart hooks keep their host-local DBs fresh in the background. You never have to maintain the tool list by hand
