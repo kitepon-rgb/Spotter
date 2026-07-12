@@ -9,6 +9,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: codex-model-policy-check
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -42,7 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE_TITLE: 'Evaluate Codex auditor model family ${{ steps.check.outputs.family }}'
         run: |
-          if gh issue list --state open --search "$ISSUE_TITLE in:title" --json title --jq '.[] | select(.title == env.ISSUE_TITLE) | .title' | grep -qx "$ISSUE_TITLE"; then
+          if gh issue list --state all --search "$ISSUE_TITLE in:title" --json title --jq '.[] | select(.title == env.ISSUE_TITLE) | .title' | grep -qx "$ISSUE_TITLE"; then
             exit 0
           fi
           node --input-type=module <<'EOF' > issue-body.md

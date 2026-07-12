@@ -31,6 +31,18 @@ test('model policy update check: future 5.7 becomes evaluation-only update propo
   assert.equal(artifact.detectedFamily.version, '5.7');
 });
 
+test('model policy update check: historical families may differ while both sources agree on the newest family', async () => {
+  const artifact = await runModelPolicyCheck({
+    fetchFn: fetchFor({
+      latestBody: `${latest('5.5')}\n${latest('5.6')}`,
+      pricingBody: `${pricing('5.4')}\n${pricing('5.6')}`,
+    }),
+    policy,
+  });
+  assert.equal(artifact.status, 'current');
+  assert.deepEqual(artifact.candidates.map(({ version }) => version), ['5.6']);
+});
+
 test('model policy update check: one-sided, missing role, non-200, and oversize fail loud', async () => {
   await assert.rejects(runModelPolicyCheck({ fetchFn: fetchFor({ latestBody: latest('5.7'), pricingBody: pricing('5.6') }), policy }), { code: 'E_MODEL_POLICY_CHECK_SOURCE_MISMATCH' });
   await assert.rejects(runModelPolicyCheck({ fetchFn: fetchFor({ latestBody: 'gpt-5.7-sol gpt-5.7-terra' }), policy }), { code: 'E_MODEL_POLICY_CHECK_REQUIRED_FAMILY_MISSING' });
@@ -58,7 +70,9 @@ test('workflow does not edit model policy and only creates issues for update-ava
   const workflow = await readFile(new URL('../.github/workflows/model-policy-check.yml', import.meta.url), 'utf8');
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /concurrency:\s*\n\s*group: codex-model-policy-check/s);
   assert.match(workflow, /node-version: '22\.5\.0'/);
   assert.doesNotMatch(workflow, /codex-auditor-model-policy\.mjs.*(?:sed|perl|node -e|mv|cp)/s);
   assert.match(workflow, /steps\.check\.outputs\.status == 'update-available'/);
+  assert.match(workflow, /gh issue list --state all/);
 });

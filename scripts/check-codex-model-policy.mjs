@@ -109,13 +109,15 @@ export async function runModelPolicyCheck({
   const latestFamilies = extractCompleteFamilies(latestMarkdown, 'latest');
   const pricingFamilies = extractCompleteFamilies(pricingMarkdown, 'pricing');
   if (latestFamilies.length === 0 || pricingFamilies.length === 0) fail('E_MODEL_POLICY_CHECK_REQUIRED_FAMILY_MISSING');
-  const latestVersions = latestFamilies.map(({ version }) => version);
-  const pricingVersions = pricingFamilies.map(({ version }) => version);
-  if (JSON.stringify(latestVersions) !== JSON.stringify(pricingVersions)) fail('E_MODEL_POLICY_CHECK_SOURCE_MISMATCH');
-  const detectedFamily = latestFamilies.at(-1);
+  const latestDetected = latestFamilies.at(-1);
+  const pricingDetected = pricingFamilies.at(-1);
+  if (latestDetected.version !== pricingDetected.version) fail('E_MODEL_POLICY_CHECK_SOURCE_MISMATCH');
+  const pricingVersionSet = new Set(pricingFamilies.map(({ version }) => version));
+  const commonFamilies = latestFamilies.filter(({ version }) => pricingVersionSet.has(version));
+  const detectedFamily = latestDetected;
   const status = compareVersions(detectedFamily.version, production.version) > 0 ? 'update-available' : 'current';
   const diagnostics = status === 'current'
-    && latestFamilies.some(({ version }) => version !== production.version)
+    && commonFamilies.some(({ version }) => version !== production.version)
     ? ['E_MODEL_POLICY_CHECK_NON_PRODUCTION_CANDIDATE_PRESENT']
     : [];
   return {
@@ -124,7 +126,7 @@ export async function runModelPolicyCheck({
     policy: { version: policy.policyVersion, production: policy.production.model },
     sources: [LATEST_MODELS_URL, PRICING_URL],
     detectedFamily,
-    candidates: latestFamilies,
+    candidates: commonFamilies,
     status,
     proposal: status === 'update-available' ? PROPOSAL : null,
     diagnostics,
