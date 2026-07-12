@@ -1,16 +1,19 @@
 # Spotter Hook Behavior Parity TODO
 
+> 完了済みの履歴台帳。現行仕様は [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)、
+> 現在の作業は [`../03_current-state-recovery-plan.md`](../03_current-state-recovery-plan.md) を参照。
+
 Codex host で改修した hook 挙動 (deferred delivery / short-skip / hook event JSONL) を Claude host
 にも移植して、3 hook (UserPromptSubmit / PreToolUse / Stop) の挙動思想を揃える計画書兼進捗 TODO。
-backend の取り扱いは [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
+backend の取り扱いは [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md)
 で完了済み (v1.4.7) のため、ここでは扱わない。
 
 ## Document Map
 
-- 正本: [`../CLAUDE.md`](../CLAUDE.md)
-- 現状課題: [`open-issues.md`](open-issues.md)
-- Claude hook / daemon / Haiku contract: [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md)
-- Backend port (完了済み): [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
+- 正本: [`../../CLAUDE.md`](../../CLAUDE.md)
+- 現状課題: [`../open-issues.md`](../open-issues.md)
+- Claude hook / daemon / Haiku contract: [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)
+- Backend port (完了済み): [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md)
 
 ## Goal
 
@@ -58,13 +61,13 @@ Stop hook は事後介入のみ。
 
 ### Phase A. Stop short-skip ✅ 完了 (2026-05-08)
 
-- [x] [src/daemon/daemon.mjs](../src/daemon/daemon.mjs) `handleTurnEnd` 冒頭に short-final + 0
+- [x] [src/daemon/daemon.mjs](../../src/daemon/daemon.mjs) `handleTurnEnd` 冒頭に short-final + 0
   used_tools の skip 分岐を追加。`{pass:true, missing_tools:[], reason:"short_final_no_tools"}`
   を即返し、`state.usedTools` / `state.lastUserInput` も従来どおりリセット。
 - [x] env override: `SPOTTER_STOP_SHORT_FINAL_MAX_CHARS` (default 120)。`<= 0` で無効化。
 - [x] daemon log に `turn_end: pass=true, reason=short_final_no_tools, usedTools=0,
   finalChars=<n>, maxChars=<m>` を出力。
-- [x] [test/daemon.test.mjs](../test/daemon.test.mjs) に回帰テスト 5 件
+- [x] [test/daemon.test.mjs](../../test/daemon.test.mjs) に回帰テスト 5 件
   (短 final + 0 tools → skip / 短 final + tools あり → 通常 audit / 長 final + 0 tools → 通常 audit /
   `stopShortFinalMaxChars=0` で無効化 / state リセット)。
 - [x] pure helper unit test 8 件 (`shouldSkipShortStop` の 5 軸 / `resolveStopShortFinalMaxChars`
@@ -82,11 +85,11 @@ Gate:
 - [x] pending file path: `<projectRoot>/.spotter/pending/<sessionId>.json` (host-neutral)。
   既存 Codex 側 `<projectRoot>/.spotter/codex-pending/<sessionId>.json` も新パスへ移行
   (Codex 側 hook adapter の path だけ書き換え、schema は不変)。
-- [x] [src/hooks/stop.mjs](../src/hooks/stop.mjs):
+- [x] [src/hooks/stop.mjs](../../src/hooks/stop.mjs):
   daemon が `pass:false` を返したら、`decision:"block"` を返さず pending file に
   指摘テキストを追記して exit 0 / no-output。`stop_hook_active:true` は daemon 早期 pass で
   受信側 (hook) は何も書かない。
-- [x] [src/hooks/user-prompt.mjs](../src/hooks/user-prompt.mjs):
+- [x] [src/hooks/user-prompt.mjs](../../src/hooks/user-prompt.mjs):
   pending file を drain して `additionalContext` に追記。drain 後は file を削除。
   daemon の `pass:false` 結果と pending drain は同じ `additionalContext` に統合。短プロンプト
   早期 return 経路でも drain は走る (Codex 側と同じ)。
@@ -95,13 +98,13 @@ Gate:
   が真実源で hook 失敗 = ユーザー表面化が筋)。
 - [x] pending file format: Codex 側互換の JSON 配列 `[<text>, <text>, ...]`、
   identical text は dedupe。
-- [x] 共有ヘルパ作成: [src/hooks/pending-context.mjs](../src/hooks/pending-context.mjs)
+- [x] 共有ヘルパ作成: [src/hooks/pending-context.mjs](../../src/hooks/pending-context.mjs)
   (`pendingPath` / `appendPendingContext` / `drainPendingContexts` / `readPendingContexts`)。
-- [x] Codex side 移行 ([src/cli/codex-hook-cmd.mjs](../src/cli/codex-hook-cmd.mjs)):
+- [x] Codex side 移行 ([src/cli/codex-hook-cmd.mjs](../../src/cli/codex-hook-cmd.mjs)):
   `codexPendingPath` / `appendCodexPendingContext` / `drainCodexPendingContexts` /
   `readCodexPendingContexts` を共有ヘルパに置換、`CODEX_PENDING_DIR` constant 撤去、
   未使用となった `unlink` import 削除。
-- [x] [test/hooks.test.mjs](../test/hooks.test.mjs) Phase B 回帰 13 件:
+- [x] [test/hooks.test.mjs](../../test/hooks.test.mjs) Phase B 回帰 13 件:
   pendingPath sanitize / append + dedupe / drain unlink / drain empty /
   Stop pass:true (write なし) / Stop pass:false (queue + 空 stdout) /
   Stop stop_hook_active 観察 / Stop transport failure (silent fallback 禁止) /
@@ -124,7 +127,7 @@ Gate:
   全 event に `host: "claude" | "codex"` フィールドを追加。
 - [x] file path rename: `.spotter/codex-hook-events.jsonl` →
   `.spotter/hook-events.jsonl`。
-- [x] 共有ヘルパ作成: [src/core/hook-event-log.mjs](../src/core/hook-event-log.mjs)
+- [x] 共有ヘルパ作成: [src/core/hook-event-log.mjs](../../src/core/hook-event-log.mjs)
   (`appendHookEvent` / `appendHookEventSafe` / `summarizeHookEvents` / `hookEventsPath` /
   `HOOK_EVENT_SCHEMA` / `HOOK_EVENTS_SUMMARY_SCHEMA`)。
 - [x] Claude 側 hook 5 種に append (lib.mjs `recordClaudeHookEvent` 経由):
@@ -137,11 +140,11 @@ Gate:
   (`recordHookEventFn` parameter)。`summarizeCodexHookEvents` は新ファイルを host=codex で
   filter する wrapper にして既存 export 名互換。`CODEX_HOOK_EVENTS_FILE` 定数撤去、
   未使用となった `appendFile` import 削除。
-- [x] [src/cli/diagnostics-cmd.mjs](../src/cli/diagnostics-cmd.mjs):
+- [x] [src/cli/diagnostics-cmd.mjs](../../src/cli/diagnostics-cmd.mjs):
   `--project DIR` option 追加、`hookEvents` フィールドを summary に統合。
   text formatter に hook-events セクション追加 (events / parse_errors / avg / max /
   byHost / byHook / byStatus / byBackend)。既存 daemon log 集計は維持。
-- [x] [test/hook-event-log.test.mjs](../test/hook-event-log.test.mjs) 11 件:
+- [x] [test/hook-event-log.test.mjs](../../test/hook-event-log.test.mjs) 11 件:
   hookEventsPath / append (host validation, ISO timestamp, schema, append-multi) /
   appendHookEventSafe (write error swallowing) / summarizeHookEvents (empty /
   multi-host counters / parseErrors / recent cap / mkdir on demand)。
@@ -156,15 +159,15 @@ Gate:
 
 ### Phase Z. Release v1.4.8 ✅ 完了 (2026-05-08)
 
-- [x] [CHANGELOG.md](../CHANGELOG.md) v1.4.8 エントリ。
-- [x] [package.json](../package.json) `1.4.7` → `1.4.8`。
-- [x] [CLAUDE.md](../CLAUDE.md) Repository Status v1.4.8。
-- [x] [02_spotter-claude-contract.md](02_spotter-claude-contract.md):
+- [x] [CHANGELOG.md](../../CHANGELOG.md) v1.4.8 エントリ。
+- [x] [package.json](../../package.json) `1.4.7` → `1.4.8`。
+- [x] [CLAUDE.md](../../CLAUDE.md) Repository Status v1.4.8。
+- [x] [02_spotter-claude-contract.md](../02_spotter-claude-contract.md):
   Stop hook 契約を deferred delivery に書き換え、JSONL log と pending host-neutral 化を追記。
-- [x] [open-issues.md](open-issues.md):
+- [x] [open-issues.md](../open-issues.md):
   Hook parity 進行中エントリを完了状態に更新、§12.4 (CLAUDE.md) を deferred 化で部分解消した
   状態に整理。
-- [x] [README.md](../README.md) / [README.ja.md](../README.ja.md):
+- [x] [README.md](../../README.md) / [README.ja.md](../../README.ja.md):
   Stop hook の振る舞いを deferred 化に追従、Mermaid フローも更新。
 - [x] `node --test` 緑 (320 tests / 319 pass / 1 skip)。
 

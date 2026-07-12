@@ -9,8 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 課題を解決したら open-issues.md から項目を消し、CHANGELOG にリリース番号とともに記録する運用。
 
 現行の復旧・配布・model 評価 TODO は
-[docs/SPOTTER_CURRENT_STATE_RECOVERY_PLAN.md](docs/SPOTTER_CURRENT_STATE_RECOVERY_PLAN.md) で管理する。
-`docs/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳で、archive 移動待ち。
+[docs/03_current-state-recovery-plan.md](docs/03_current-state-recovery-plan.md) で管理する。
+`docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
 
@@ -330,7 +330,7 @@ model override は unverified として diagnostics に残る。`gpt-5.6-luna ×
   なったため「最終応答が補正中心になって元の文脈が迷子」という UX 欠陥は解消した。残る論点は
   「ユーザーが最初の応答を **見てから次の入力をするまで** 指摘を知らせる手段が無い」点。Pre-Response
   hook 相当の feature が Claude Code 側で公式追加された場合、`docs-lookup` で確認した通り 2026-05-08
-  時点では未提供 ([SPOTTER_HOOK_PARITY_TODO.md](docs/SPOTTER_HOOK_PARITY_TODO.md) 参照)、
+  時点では未提供 ([SPOTTER_HOOK_PARITY_TODO.md](docs/archive/SPOTTER_HOOK_PARITY_TODO.md) 参照)、
   追加されれば再評価する
 
 §12.1 (カタログ初期構築の手動 vs 自動列挙) は v0.7.0 の tool-db 置換で完全に自動側に確定したため、未解決から削除済み。

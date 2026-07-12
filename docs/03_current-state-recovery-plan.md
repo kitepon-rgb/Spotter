@@ -1,4 +1,4 @@
-# Spotter Current State Audit and Recovery Plan
+# 03 — Spotter Current State Audit and Recovery Plan
 
 作成日: 2026-07-12
 
@@ -182,7 +182,7 @@ Spotter のロジック bug とは断定しないが、入力直後の同期 Hoo
 
 ### P2-1. 未コミット repo-local Hook は trust すると二重・異種経路になる
 
-未追跡 [`.codex/hooks.json`](../.codex/hooks.json) は置き場所と JSON shape は現行 Codex に合うが、
+着手時に未追跡だった repo-local `.codex/hooks.json` は置き場所と JSON shape は現行 Codex に合うが、
 `codex-hook ...` ではなく Claude 用 `spotter hook ...` を登録している。現行 Codex は user-global と
 repo-local の matching hook をすべて並行実行するため、trust すると以下が同時発火する。
 
@@ -228,7 +228,7 @@ latency を隔離するため有効だが、次世代 model の検知・比較�
 - `docs/02_spotter-claude-contract.md` の Claude default / legacy policy は availability-based selection と
   versioned model policy へ修正済み。
 - `docs/open-issues.md` は v1.4.18 development 現在へ更新し、最優先 SLO を backend-neutral 化済み。
-- `docs/SPOTTER_HOOK_PARITY_TODO.md` は全 phase 完了済みなのに docs 直下で「進行中」扱い。
+- `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` へ完了済み台帳を移動し、現役文書から分離した。
 
 ## 現在動いているもの / 棄却した疑い
 
@@ -246,9 +246,9 @@ latency を隔離するため有効だが、次世代 model の検知・比較�
 
 | Path | 判定 | 今回の処置 | 実装時の扱い |
 |---|---|---|---|
-| `.codex/hooks.json` | 危険なローカル試作 / P2 | 保持、commit / trust しない | 正規 generator 修正後に削除または正式 adapter へ置換（要承認） |
+| `.codex/hooks.json` | 危険なローカル試作 / P2 | owner承認後に削除済み | global installer-owned adapterだけを使用 |
 | `.codegraph/.gitignore` | product と独立した hygiene | `!config.json` を明記して採用 | 独立 commit `6b7f772` で完了 |
-| `docs/SPOTTER_CURRENT_STATE_RECOVERY_PLAN.md` | 今回の正本 | 採用 | 実装完了後 `docs/archive/` へ移動 |
+| `docs/03_current-state-recovery-plan.md` | 今回の正本 | 採用 | 全TODO完了後 `docs/archive/` へ移動 |
 | `rag/codex-hooks/` / `rag/openai-model-policy/` / `rag/INDEX.md` | 公式仕様の還流 | 採用 | Hook / model policy 更新時の根拠として維持 |
 
 ## 復旧プラン
@@ -379,7 +379,7 @@ fallback せず可視化されること。
 - [x] `CLAUDE.md` / Claude contract / README / open issues を実装と現行 Hook 仕様へ同期する
 - [ ] 完了済み Hook parity TODO を `docs/archive/` へ移す
 - [x] Haiku 固有の最優先観測項目を backend-neutral latency / failure / cost SLO へ置き換える
-- [ ] `.codex/hooks.json` は Phase 1 の正式 entry と重複しない形で削除または正式化する
+- [x] repo-local `.codex/hooks.json` をowner承認後に削除し、global正式entryとの重複をなくす
 - [ ] 本計画を完了チェック後に `docs/archive/` へ移す
 
 `.codegraph/.gitignore` は product 復旧と別件として、tracked `config.json` の扱いを確認後に独立処理する。
@@ -400,7 +400,7 @@ fallback せず可視化されること。
 
 ## やらないこと
 
-- 現在の repo-local `.codex/hooks.json` をそのまま trust / commit しない。
+- 削除済みの repo-local `.codex/hooks.json` を復元・trust・commitしない。
 - `~/.codex/hooks.json` を手で `async:false` にするだけで済ませない（再 install で戻る）。
 - Hook activation 修正と Stop delivery の挙動変更を同じ差分にしない。
 - diagnostics で Codex の内部 trust state を安定 API として解釈しない。

@@ -143,7 +143,8 @@ Claude 側にも移植完了。
 host-neutral `.spotter/pending/` に移行 (旧 `.spotter/codex-pending/`)。
 (D) Hook event JSONL = `.spotter/hook-events.jsonl` (schema `spotter.hook_event.v1` + `host` フィールド)
 に Claude / Codex 両 host の hook event を時系列で記録、`spotter diagnostics logs --json` で
-集計表示。設計判断と検証ログは [`SPOTTER_HOOK_PARITY_TODO.md`](SPOTTER_HOOK_PARITY_TODO.md)。
+集計表示。設計判断と検証ログは
+[`archive/SPOTTER_HOOK_PARITY_TODO.md`](archive/SPOTTER_HOOK_PARITY_TODO.md)。
 別プロジェクトでの実セッション smoke と数日分 diagnostics は rollout 観測フェーズで実施する。
 
 **2026-05-06 更新**: `spotter diagnostics logs --json` は backend 別集計 (`backends`,
