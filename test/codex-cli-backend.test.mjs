@@ -11,6 +11,7 @@ import {
   CODEX_AUDITOR_SCHEMA,
   createCodexCliAuditorBackend,
   isCodexAuthFailure,
+  isCodexModelUnavailableFailure,
   isCodexUsageLimitFailure,
   parseCodexTurnUsageLine,
 } from '../src/core/codex-cli-backend.mjs';
@@ -302,6 +303,82 @@ test('isCodexUsageLimitFailure: matches observed Codex exhaustion, not generic r
   assert.equal(isCodexUsageLimitFailure('429 rate limit exceeded'), false);
   assert.equal(isCodexUsageLimitFailure(''), false);
   assert.equal(isCodexUsageLimitFailure(undefined), false);
+});
+
+test('createCodexCliAuditorBackend: account-rejected model has a bounded actionable code without retry', async () => {
+  let spawnCalls = 0;
+  const rejectedModel = 'gpt-5.6-unknown';
+  const spawnFn = (_cmd, _args, _opts) => {
+    spawnCalls += 1;
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stdout.write(JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'error', message: `Model metadata for ${rejectedModel} not found` },
+      }) + '\n');
+      child.stdout.write(JSON.stringify({
+        type: 'error',
+        message: `The '${rejectedModel}' model is not supported when using Codex with a ChatGPT account.`,
+      }) + '\n');
+      child.emit('close', 1);
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({
+    catalog,
+    projectRoot: '/repo',
+    env: { SPOTTER_CODEX_CLI_MODEL: rejectedModel },
+    spawnFn,
+  });
+
+  await assert.rejects(
+    backend.judge({ stage: 'user_input', userInput: 'x' }),
+    (err) => err instanceof AuditorBackendError
+      && err.code === 'E_CODEX_CLI_MODEL_UNAVAILABLE'
+      && err.message === 'codex-cli model is unavailable — update the model or reasoning-effort override, or review the auditor model policy'
+      && !err.message.includes(rejectedModel)
+      && err.diagnostics.modelSelection.effectiveModel === rejectedModel
+      && err.diagnostics.exitCode === 1,
+  );
+  assert.equal(spawnCalls, 1);
+});
+
+test('createCodexCliAuditorBackend: auth classification remains ahead of model unavailability', async () => {
+  const spawnFn = () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stderr.write("401 Unauthorized: token_revoked; The 'gpt-5.6-unknown' model is not supported when using Codex with a ChatGPT account.");
+      child.emit('close', 1);
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({ catalog, projectRoot: '/repo', spawnFn });
+
+  await assert.rejects(
+    backend.judge({ stage: 'user_input', userInput: 'x' }),
+    (err) => err instanceof AuditorBackendError && err.code === 'E_CODEX_CLI_AUTH',
+  );
+});
+
+test('isCodexModelUnavailableFailure: matches account model rejection, not generic model errors', () => {
+  assert.equal(isCodexModelUnavailableFailure(JSON.stringify({
+    type: 'turn.failed',
+    error: {
+      status: 400,
+      type: 'invalid_request_error',
+      message: "The 'gpt-5.6-unknown' model is not supported when using Codex with a ChatGPT account.",
+    },
+  })), true);
+  assert.equal(isCodexModelUnavailableFailure('Model metadata for gpt-5.6-unknown not found'), false);
+  assert.equal(isCodexModelUnavailableFailure('model rate error'), false);
+  assert.equal(isCodexModelUnavailableFailure(''), false);
+  assert.equal(isCodexModelUnavailableFailure(undefined), false);
 });
 
 test('parseCodexTurnUsageLine: accepts only bounded complete turn usage', () => {

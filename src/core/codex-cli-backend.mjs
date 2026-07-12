@@ -51,6 +51,13 @@ const CODEX_USAGE_LIMIT_FAILURE_MARKERS = [
   'you have hit your usage limit',
 ];
 
+// A model may be absent from local CLI metadata yet still be accepted by the provider, so do
+// not classify metadata wording alone. This marker is the observed provider-side rejection for
+// a model that cannot be used with the current ChatGPT account.
+const CODEX_MODEL_UNAVAILABLE_FAILURE_MARKERS = [
+  'model is not supported when using codex with a chatgpt account',
+];
+
 export function isCodexAuthFailure(text) {
   if (typeof text !== 'string' || text.length === 0) return false;
   const haystack = text.toLowerCase();
@@ -61,6 +68,12 @@ export function isCodexUsageLimitFailure(text) {
   if (typeof text !== 'string' || text.length === 0) return false;
   const haystack = text.toLowerCase();
   return CODEX_USAGE_LIMIT_FAILURE_MARKERS.some((marker) => haystack.includes(marker));
+}
+
+export function isCodexModelUnavailableFailure(text) {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  const haystack = text.toLowerCase();
+  return CODEX_MODEL_UNAVAILABLE_FAILURE_MARKERS.some((marker) => haystack.includes(marker));
 }
 
 export function parseCodexTurnUsageLine(line) {
@@ -404,6 +417,14 @@ async function runCodexExec({
           }
           if (isCodexUsageLimitFailure(`${diag.stdout}\n${diag.stderr}`)) {
             reject(new AuditorBackendError('E_CODEX_CLI_USAGE_LIMIT', 'codex-cli usage limit reached — wait for the stated reset time or change the Codex plan', {
+              backend: 'codex-cli',
+              stage,
+              diagnostics: diag,
+            }));
+            return;
+          }
+          if (isCodexModelUnavailableFailure(`${diag.stdout}\n${diag.stderr}`)) {
+            reject(new AuditorBackendError('E_CODEX_CLI_MODEL_UNAVAILABLE', 'codex-cli model is unavailable — update the model or reasoning-effort override, or review the auditor model policy', {
               backend: 'codex-cli',
               stage,
               diagnostics: diag,
