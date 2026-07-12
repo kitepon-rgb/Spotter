@@ -31,6 +31,11 @@ export {
   createCodexCliAuditorBackend,
 } from './core/codex-cli-backend.mjs';
 export {
+  CODEX_AUDITOR_MODEL_POLICY,
+  CodexAuditorModelPolicyError,
+  resolveCodexAuditorModelSelection,
+} from './core/codex-auditor-model-policy.mjs';
+export {
   buildCodexSidecarAuditorCommand,
   buildCodexSidecarAuditorPrompt,
   createCodexSidecarAuditorBackend,

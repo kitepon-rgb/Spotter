@@ -118,8 +118,24 @@ export async function inspectCodexHookConfiguration({ projectRoot = null, diagno
   return {
     ok: diagnostics.readiness === 'configured-unverified',
     diagnostics,
-    detail: `availability=${diagnostics.availability}; issues=${issues.join(',') || 'none'}; trust=${diagnostics.trust?.state ?? 'unknown'}; ${diagnostics.trust?.action ?? 'review with /hooks'}`,
+    detail: [
+      `availability=${diagnostics.availability}`,
+      `issues=${issues.join(',') || 'none'}`,
+      `trust=${diagnostics.trust?.state ?? 'unknown'}`,
+      `auditor-backend=${diagnostics.auditorBackend ?? 'unknown'}`,
+      formatCodexAuditorModelSelection({
+        backend: diagnostics.auditorBackend,
+        selection: diagnostics.auditorModelSelection,
+      }),
+      diagnostics.trust?.action ?? 'review with /hooks',
+    ].filter(Boolean).join('; '),
   };
+}
+
+function formatCodexAuditorModelSelection({ backend, selection }) {
+  if (backend && backend !== 'codex-cli') return 'auditor-model=not-applicable';
+  if (!selection || typeof selection !== 'object') return 'auditor-model=unknown';
+  return `auditor-model=${selection.effectiveModel ?? 'unknown'} effort=${selection.effectiveReasoningEffort ?? 'unknown'} source=${selection.modelSource ?? 'unknown'}/${selection.effortSource ?? 'unknown'} availability=${selection.availability ?? 'unknown'}`;
 }
 
 async function checkLocalAuditDb({ projectRoot, hostAgent }) {

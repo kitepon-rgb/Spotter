@@ -14,6 +14,7 @@ import {
   uninstallCodexHooks,
 } from '../src/cli/codex-hook-cmd.mjs';
 import { AuditorBackendError } from '../src/core/auditor-error.mjs';
+import { CodexAuditorModelPolicyError } from '../src/core/codex-auditor-model-policy.mjs';
 
 async function makeProject() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-codex-hook-project-'));
@@ -576,6 +577,36 @@ test('runCodexUserPromptSubmitHook: backend error is surfaced as Codex context, 
   }
 });
 
+test('runCodexUserPromptSubmitHook: model policy creation error degrades visibly without failing the hook', async () => {
+  const project = await makeProject();
+  const out = [];
+  const events = [];
+  try {
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        prompt: 'GeForce 5000 番台について既知の罠を調べて',
+      }),
+      readLocalFn: async () => [],
+      createAuditorBackendFn: () => {
+        throw new CodexAuditorModelPolicyError('SPOTTER_CODEX_CLI_MODEL is invalid');
+      },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeOutput: (text) => out.push(text),
+    });
+
+    const parsed = JSON.parse(out.join(''));
+    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_MODEL_POLICY/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'error');
+    assert.equal(events[0].backend, 'codex-cli');
+    assert.equal(events[0].code, 'E_CODEX_CLI_MODEL_POLICY');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test('runCodexUserPromptSubmitHook: Codex hook auditor timeout defaults short and accepts env override', async () => {
   const project = await makeProject();
   const old = process.env.SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS;
@@ -742,6 +773,150 @@ test('runCodexStopHook: backend error is queued for next UserPromptSubmit contex
     const parsed = JSON.parse(userOut.join(''));
     assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_TIMEOUT/);
     assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: model policy creation error is queued without failing the hook', async () => {
+  const project = await makeProject();
+  const stopErr = [];
+  const userOut = [];
+  const events = [];
+  try {
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-model-policy-error',
+        transcript_path: '/tmp/transcript.jsonl',
+        last_assistant_message: 'GPU について断定しました。'.repeat(20),
+      }),
+      readLocalFn: async () => [],
+      readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
+      createAuditorBackendFn: () => {
+        throw new CodexAuditorModelPolicyError('SPOTTER_CODEX_CLI_REASONING_EFFORT is invalid');
+      },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeError: (text) => stopErr.push(text),
+    });
+
+    assert.match(stopErr.join(''), /E_CODEX_CLI_MODEL_POLICY/);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'error');
+    assert.equal(events[0].code, 'E_CODEX_CLI_MODEL_POLICY');
+    assert.equal(events[0].warningQueued, true);
+
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-model-policy-error',
+        prompt: 'ok',
+      }),
+      createAuditorBackendFn: () => { throw new Error('short prompt must not create a backend'); },
+      writeOutput: (text) => userOut.push(text),
+    });
+    const parsed = JSON.parse(userOut.join(''));
+    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_MODEL_POLICY/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: pending warning persistence failure stays non-blocking and loud', async () => {
+  const project = await makeProject();
+  try {
+    for (const appendPendingContextFn of [
+      async () => false,
+      async () => { throw new Error('disk unavailable'); },
+    ]) {
+      const errors = [];
+      const events = [];
+      await runCodexStopHook({
+        readInput: async () => ({
+          cwd: project,
+          session_id: 'sess-codex-warning-persist-failure',
+          transcript_path: '/tmp/transcript.jsonl',
+          last_assistant_message: 'GPU について断定しました。'.repeat(20),
+        }),
+        readLocalFn: async () => [],
+        readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
+        createAuditorBackendFn: () => {
+          throw new CodexAuditorModelPolicyError('invalid model policy');
+        },
+        appendPendingContextFn,
+        recordHookEventFn: async ({ event }) => { events.push(event); },
+        writeError: (text) => errors.push(text),
+      });
+
+      assert.match(errors.join(''), /Spotter Codex Stop warning persistence failed/);
+      assert.match(errors.join(''), /E_CODEX_CLI_MODEL_POLICY/);
+      assert.equal(events.length, 1);
+      assert.equal(events[0].status, 'error');
+      assert.equal(events[0].warningQueued, false);
+      assert.ok(events[0].pendingWriteError);
+    }
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: finding persistence failure degrades without rejecting', async () => {
+  const project = await makeProject();
+  const errors = [];
+  const events = [];
+  try {
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-codex-finding-persist-failure',
+        transcript_path: '/tmp/transcript.jsonl',
+        last_assistant_message: 'GPU について断定しました。'.repeat(20),
+      }),
+      readLocalFn: async () => [],
+      readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async () => ({
+          pass: false,
+          findings: [{ toolName: 'mcp__caveat__caveat_search', reason: 'search first' }],
+          anomalies: [],
+          meta: { backend: 'codex-cli' },
+        }),
+      }),
+      appendPendingContextFn: async () => { throw new Error('read-only filesystem'); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeError: (text) => errors.push(text),
+    });
+
+    assert.match(errors.join(''), /Spotter Codex Stop finding persistence failed/);
+    assert.match(errors.join(''), /mcp__caveat__caveat_search/);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'degraded');
+    assert.equal(events[0].findingQueued, false);
+    assert.match(events[0].pendingWriteError, /read-only filesystem/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: stderr writer failure cannot reject a persistence failure', async () => {
+  const project = await makeProject();
+  try {
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-codex-stderr-failure',
+        transcript_path: '/tmp/transcript.jsonl',
+        last_assistant_message: 'GPU について断定しました。'.repeat(20),
+      }),
+      readLocalFn: async () => [],
+      readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
+      createAuditorBackendFn: () => { throw new CodexAuditorModelPolicyError('bad policy'); },
+      appendPendingContextFn: async () => false,
+      recordHookEventFn: async () => { throw new Error('event log unavailable'); },
+      writeError: () => { throw new Error('stderr unavailable'); },
+    });
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -946,6 +1121,11 @@ test('codexHookDiagnostics: reports feature and hook installation state', async 
     assert.equal(result.installedHooks.sessionStart, 'installed');
     assert.equal(result.installedHooks.userPromptSubmit, 'installed');
     assert.equal(result.readiness, 'configured-unverified');
+    assert.equal(result.auditorBackend, 'codex-cli');
+    assert.equal(result.auditorModelSelection.effectiveModel, 'gpt-5.4-mini');
+    assert.equal(result.auditorModelSelection.effectiveReasoningEffort, 'low');
+    assert.equal(result.auditorModelSelection.modelSource, 'policy:production');
+    assert.equal(result.auditorModelSelection.availability, 'unverified-until-invocation');
     for (const event of ['sessionStart', 'userPromptSubmit', 'stop']) {
       assert.equal(result.validation[event].expectedRegisteredCount, 1);
       assert.equal(result.validation[event].registered, true);
@@ -961,6 +1141,80 @@ test('codexHookDiagnostics: reports feature and hook installation state', async 
   } finally {
     await rm(codexHome, { recursive: true, force: true });
   }
+});
+
+test('codexHookDiagnostics: reports effective overrides without probing model availability', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-model-'));
+  let spawnCalls = 0;
+  try {
+    const result = await codexHookDiagnostics({
+      codexHome,
+      env: {
+        SPOTTER_CODEX_CLI_MODEL: 'gpt-5.6-terra',
+        SPOTTER_CODEX_CLI_REASONING_EFFORT: 'medium',
+      },
+      spawnSyncFn: () => {
+        spawnCalls += 1;
+        return { status: 0, stdout: 'hooks stable true\n', stderr: '' };
+      },
+    });
+
+    assert.equal(spawnCalls, 1, 'only the hooks feature query may spawn');
+    assert.equal(result.auditorModelSelection.effectiveModel, 'gpt-5.6-terra');
+    assert.equal(result.auditorModelSelection.effectiveReasoningEffort, 'medium');
+    assert.equal(result.auditorModelSelection.effectiveStatus, 'override-unverified');
+    assert.equal(result.auditorModelSelection.availability, 'unverified-until-invocation');
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('codexHookDiagnostics: invalid model policy fails before querying Codex', async () => {
+  let spawnCalls = 0;
+  await assert.rejects(
+    codexHookDiagnostics({
+      env: { SPOTTER_CODEX_CLI_MODEL: ' gpt-5.6-luna' },
+      spawnSyncFn: () => {
+        spawnCalls += 1;
+        return { status: 0, stdout: 'hooks stable true\n', stderr: '' };
+      },
+    }),
+    { code: 'E_CODEX_CLI_MODEL_POLICY' },
+  );
+  assert.equal(spawnCalls, 0);
+});
+
+test('codexHookDiagnostics: non-Codex active backend does not report or validate a dormant Codex model', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-haiku-'));
+  let spawnCalls = 0;
+  try {
+    const result = await codexHookDiagnostics({
+      codexHome,
+      env: {
+        SPOTTER_AUDITOR_BACKEND: 'haiku',
+        SPOTTER_CODEX_CLI_MODEL: ' invalid dormant override',
+      },
+      spawnSyncFn: () => {
+        spawnCalls += 1;
+        return { status: 0, stdout: 'hooks stable true\n', stderr: '' };
+      },
+    });
+
+    assert.equal(spawnCalls, 1);
+    assert.equal(result.auditorBackend, 'haiku');
+    assert.equal(result.auditorModelSelection, null);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('codexHookDiagnostics: auto on a Codex host resolves to codex-cli before model selection', async () => {
+  const result = await codexHookDiagnostics({
+    env: { SPOTTER_AUDITOR_BACKEND: 'auto' },
+    spawnSyncFn: () => ({ status: 0, stdout: 'hooks stable true\n', stderr: '' }),
+  });
+  assert.equal(result.auditorBackend, 'codex-cli');
+  assert.equal(result.auditorModelSelection.effectiveModel, 'gpt-5.4-mini');
 });
 
 test('codexHookDiagnostics: legacy async SessionStart remains availability available but readiness misconfigured', async () => {

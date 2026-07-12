@@ -5,10 +5,14 @@ import { join } from 'node:path';
 import { toSpotterJudgment } from './judgment.mjs';
 import { AuditorBackendError } from './auditor-error.mjs';
 import { filterCatalogMisses, parseAuditorResponse } from './auditor-response.mjs';
+import {
+  CODEX_AUDITOR_MODEL_POLICY,
+  resolveCodexAuditorModelSelection,
+} from './codex-auditor-model-policy.mjs';
 
 const DEFAULT_CODEX_CLI_TIMEOUT_MS = 45_000;
-const DEFAULT_CODEX_CLI_MODEL = 'gpt-5.4-mini';
-const DEFAULT_CODEX_CLI_REASONING_EFFORT = 'low';
+const DEFAULT_CODEX_CLI_MODEL = CODEX_AUDITOR_MODEL_POLICY.production.model;
+const DEFAULT_CODEX_CLI_REASONING_EFFORT = CODEX_AUDITOR_MODEL_POLICY.production.reasoningEffort;
 const STDERR_LIMIT = 32 * 1024;
 const STDOUT_LIMIT = 64 * 1024;
 
@@ -71,6 +75,8 @@ export function createCodexCliAuditorBackend({
   spawnFn = spawn,
   timeoutMs = DEFAULT_CODEX_CLI_TIMEOUT_MS,
   codexBin = 'codex',
+  modelProfile = null,
+  resolveModelSelectionFn = resolveCodexAuditorModelSelection,
 } = {}) {
   if (!Array.isArray(catalog)) {
     throw new TypeError('createCodexCliAuditorBackend: catalog must be an array');
@@ -81,10 +87,14 @@ export function createCodexCliAuditorBackend({
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError('createCodexCliAuditorBackend: timeoutMs must be a positive number');
   }
+  const modelSelection = Object.freeze({
+    ...resolveModelSelectionFn({ env, profile: modelProfile }),
+  });
   const catalogNames = new Set(catalog.map((tool) => tool.name));
 
   return {
     name: 'codex-cli',
+    modelSelection,
     reset() {},
     async judge(input = {}) {
       const stage = validateStage(input.stage);
@@ -105,8 +115,7 @@ export function createCodexCliAuditorBackend({
           env,
           spawnFn,
           timeoutMs,
-          model: env?.SPOTTER_CODEX_CLI_MODEL || DEFAULT_CODEX_CLI_MODEL,
-          reasoningEffort: env?.SPOTTER_CODEX_CLI_REASONING_EFFORT || DEFAULT_CODEX_CLI_REASONING_EFFORT,
+          modelSelection,
         });
         let rawFinal;
         try {
@@ -119,11 +128,19 @@ export function createCodexCliAuditorBackend({
             cause: err,
           });
         }
-        const parsed = parseAuditorResponse(rawFinal, {
-          backend: 'codex-cli',
-          stage,
-          errorCode: 'E_CODEX_CLI_SCHEMA',
-        });
+        let parsed;
+        try {
+          parsed = parseAuditorResponse(rawFinal, {
+            backend: 'codex-cli',
+            stage,
+            errorCode: 'E_CODEX_CLI_SCHEMA',
+          });
+        } catch (err) {
+          throw attachModelSelectionDiagnostics(err, {
+            modelSelection,
+            diagnostics: run.diagnostics,
+          });
+        }
         const { parsed: filtered, dropped } = filterCatalogMisses(parsed, catalogNames);
         return toSpotterJudgment({
           stage,
@@ -133,6 +150,7 @@ export function createCodexCliAuditorBackend({
             backend: 'codex-cli',
             mode: 'exec',
             durationMs: Date.now() - startedAt,
+            modelSelection,
             diagnostics: {
               ...run.diagnostics,
               droppedCatalogExternalNames: dropped,
@@ -236,10 +254,16 @@ async function runCodexExec({
   env,
   spawnFn,
   timeoutMs,
-  model,
-  reasoningEffort,
+  modelSelection,
 }) {
-  const args = buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, prompt, model, reasoningEffort });
+  const args = buildCodexExecArgs({
+    schemaPath,
+    lastMessagePath,
+    projectRoot,
+    prompt,
+    model: modelSelection.effectiveModel,
+    reasoningEffort: modelSelection.effectiveReasoningEffort,
+  });
   const options = buildCodexCliSpawnOptions({ projectRoot, env });
   const startedAt = Date.now();
   let child;
@@ -248,6 +272,7 @@ async function runCodexExec({
   } catch (err) {
     throw new AuditorBackendError('E_CODEX_CLI_SPAWN', `failed to spawn ${codexBin}: ${err.message}`, {
       backend: 'codex-cli',
+      stage,
       diagnostics: {
         durationMs: Date.now() - startedAt,
         processCount: 0,
@@ -256,6 +281,7 @@ async function runCodexExec({
         stderr: '',
         stdoutTruncated: false,
         stderrTruncated: false,
+        modelSelection,
       },
       cause: err,
     });
@@ -290,6 +316,7 @@ async function runCodexExec({
         if (typeof child.kill === 'function') child.kill();
         reject(new AuditorBackendError('E_CODEX_CLI_TIMEOUT', `codex-cli did not respond within ${timeoutMs}ms`, {
           backend: 'codex-cli',
+          stage,
           diagnostics: {
             ...diagnostics(),
             lastMessageCheck: completed.reason,
@@ -319,6 +346,7 @@ async function runCodexExec({
     child.on('error', (err) => {
       settle(() => reject(new AuditorBackendError('E_CODEX_CLI_SPAWN', `failed to spawn ${codexBin}: ${err.message}`, {
         backend: 'codex-cli',
+        stage,
         diagnostics: diagnostics(),
         cause: err,
       })));
@@ -330,12 +358,14 @@ async function runCodexExec({
           if (isCodexAuthFailure(`${diag.stdout}\n${diag.stderr}`)) {
             reject(new AuditorBackendError('E_CODEX_CLI_AUTH', 'codex-cli auth failed — codex login required (run `codex login`)', {
               backend: 'codex-cli',
+              stage,
               diagnostics: diag,
             }));
             return;
           }
           reject(new AuditorBackendError('E_CODEX_CLI_EXIT', `codex-cli exited with code ${code}`, {
             backend: 'codex-cli',
+            stage,
             diagnostics: diag,
           }));
           return;
@@ -354,10 +384,21 @@ async function runCodexExec({
       stderr,
       stdoutTruncated,
       stderrTruncated,
+      modelSelection,
     };
     if (Number.isInteger(child?.pid)) out.childPid = child.pid;
     return out;
   }
+}
+
+function attachModelSelectionDiagnostics(error, { modelSelection, diagnostics = null } = {}) {
+  if (!(error instanceof AuditorBackendError)) return error;
+  error.diagnostics = {
+    ...(diagnostics ?? {}),
+    ...(error.diagnostics ?? {}),
+    modelSelection,
+  };
+  return error;
 }
 
 async function readSchemaValidLastMessage({ lastMessagePath, stage }) {

@@ -144,6 +144,11 @@ test('createCodexCliAuditorBackend: reads last-message JSON, filters catalog mis
   assert.equal(judgment.findings[0].toolName, 'mcp__caveat__caveat_search');
   assert.equal(judgment.meta.backend, 'codex-cli');
   assert.equal(judgment.meta.mode, 'exec');
+  assert.equal(backend.modelSelection.effectiveModel, 'gpt-5.4-mini');
+  assert.equal(backend.modelSelection.effectiveReasoningEffort, 'medium');
+  assert.equal(backend.modelSelection.effectiveStatus, 'override-unverified');
+  assert.strictEqual(judgment.meta.modelSelection, backend.modelSelection);
+  assert.strictEqual(judgment.meta.diagnostics.modelSelection, backend.modelSelection);
   assert.deepEqual(judgment.meta.diagnostics.droppedCatalogExternalNames, ['ghost_tool']);
   assert.equal(judgment.meta.diagnostics.processCount, 1);
   assert.equal(judgment.meta.diagnostics.processCountMethod, 'direct_child_spawn');
@@ -167,7 +172,10 @@ test('createCodexCliAuditorBackend: no final JSON is a structured error', async 
   });
   await assert.rejects(
     backend.judge({ stage: 'user_input', userInput: 'x' }),
-    (err) => err instanceof AuditorBackendError && err.code === 'E_CODEX_CLI_NO_FINAL_JSON'
+    (err) => err instanceof AuditorBackendError
+      && err.code === 'E_CODEX_CLI_NO_FINAL_JSON'
+      && err.stage === 'user_input'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
   );
 });
 
@@ -186,6 +194,8 @@ test('createCodexCliAuditorBackend: spawn failure is a structured error', async 
     (err) => err instanceof AuditorBackendError && err.code === 'E_CODEX_CLI_SPAWN'
       && err.diagnostics.processCount === 0
       && err.diagnostics.processCountMethod === 'spawn_failed'
+      && err.stage === 'user_input'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
   );
 });
 
@@ -211,8 +221,10 @@ test('createCodexCliAuditorBackend: non-zero exit is a structured error with bou
     (err) =>
       err instanceof AuditorBackendError &&
       err.code === 'E_CODEX_CLI_EXIT' &&
+      err.stage === 'user_input' &&
       err.diagnostics.stderr.length === 32 * 1024 &&
-      err.diagnostics.stderrTruncated === true
+      err.diagnostics.stderrTruncated === true &&
+      err.diagnostics.modelSelection.effectiveReasoningEffort === 'low'
   );
 });
 
@@ -237,7 +249,9 @@ test('createCodexCliAuditorBackend: non-zero exit carrying an auth marker is cla
     (err) =>
       err instanceof AuditorBackendError &&
       err.code === 'E_CODEX_CLI_AUTH' &&
-      /codex login/.test(err.message)
+      err.stage === 'user_input' &&
+      /codex login/.test(err.message) &&
+      err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
   );
 });
 
@@ -269,7 +283,10 @@ test('createCodexCliAuditorBackend: timeout kills child and returns structured e
   });
   await assert.rejects(
     backend.judge({ stage: 'user_input', userInput: 'x' }),
-    (err) => err instanceof AuditorBackendError && err.code === 'E_CODEX_CLI_TIMEOUT'
+    (err) => err instanceof AuditorBackendError
+      && err.code === 'E_CODEX_CLI_TIMEOUT'
+      && err.stage === 'user_input'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
   );
   assert.equal(killed, true);
 });
@@ -306,6 +323,126 @@ test('createCodexCliAuditorBackend: timeout accepts schema-valid last-message be
   assert.equal(judgment.findings[0].toolName, 'mcp__caveat__caveat_search');
   assert.equal(judgment.meta.diagnostics.completionReason, 'last_message_before_process_close');
   assert.equal(judgment.meta.diagnostics.exitCode, null);
+});
+
+test('createCodexCliAuditorBackend: resolves model policy once per backend and reuses it for every judgment', async () => {
+  let resolveCalls = 0;
+  let spawnCalls = 0;
+  const selected = {
+    effectiveModel: 'gpt-5.6-luna',
+    effectiveReasoningEffort: 'low',
+    modelSource: 'profile:luna',
+    effortSource: 'profile:luna',
+    availability: 'unverified-until-invocation',
+  };
+  const spawnFn = (_cmd, args) => {
+    spawnCalls += 1;
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    const lastPath = args[args.indexOf('--output-last-message') + 1];
+    queueMicrotask(async () => {
+      await import('node:fs/promises').then(({ writeFile }) => writeFile(lastPath, JSON.stringify({
+        pass: true,
+        missing_tools: [],
+      }), 'utf8'));
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({
+    catalog,
+    projectRoot: '/repo',
+    env: {},
+    modelProfile: 'luna',
+    resolveModelSelectionFn: ({ profile }) => {
+      resolveCalls += 1;
+      assert.equal(profile, 'luna');
+      return selected;
+    },
+    spawnFn,
+  });
+
+  assert.equal(resolveCalls, 1);
+  assert.ok(Object.isFrozen(backend.modelSelection));
+  for (let index = 0; index < 2; index += 1) {
+    const judgment = await backend.judge({ stage: 'user_input', userInput: `input-${index}` });
+    assert.strictEqual(judgment.meta.modelSelection, backend.modelSelection);
+  }
+  assert.equal(resolveCalls, 1);
+  assert.equal(spawnCalls, 2);
+});
+
+test('createCodexCliAuditorBackend: invalid model override fails before spawning', () => {
+  let spawnCalls = 0;
+  assert.throws(
+    () => createCodexCliAuditorBackend({
+      catalog,
+      projectRoot: '/repo',
+      env: { SPOTTER_CODEX_CLI_MODEL: ' gpt-5.6-luna' },
+      spawnFn: () => { spawnCalls += 1; },
+    }),
+    { code: 'E_CODEX_CLI_MODEL_POLICY' },
+  );
+  assert.equal(spawnCalls, 0);
+});
+
+test('createCodexCliAuditorBackend: model failure is reported once without fallback retry', async () => {
+  let spawnCalls = 0;
+  let spawnedArgs = [];
+  const spawnFn = (_cmd, args) => {
+    spawnCalls += 1;
+    spawnedArgs = args;
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stderr.write('model is not available');
+      child.emit('close', 1);
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({
+    catalog,
+    projectRoot: '/repo',
+    env: {},
+    modelProfile: 'luna',
+    spawnFn,
+  });
+
+  await assert.rejects(
+    backend.judge({ stage: 'user_input', userInput: 'x' }),
+    (err) => err.code === 'E_CODEX_CLI_EXIT'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.6-luna',
+  );
+  assert.equal(spawnCalls, 1);
+  assert.ok(spawnedArgs.includes('gpt-5.6-luna'));
+  assert.ok(!spawnedArgs.includes('gpt-5.4-mini'));
+});
+
+test('createCodexCliAuditorBackend: schema errors retain invocation model diagnostics', async () => {
+  const spawnFn = (_cmd, args) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    const lastPath = args[args.indexOf('--output-last-message') + 1];
+    queueMicrotask(async () => {
+      await import('node:fs/promises').then(({ writeFile }) => writeFile(lastPath, '{"pass":"wrong","missing_tools":[]}', 'utf8'));
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({ catalog, projectRoot: '/repo', spawnFn });
+
+  await assert.rejects(
+    backend.judge({ stage: 'user_input', userInput: 'x' }),
+    (err) => err.code === 'E_CODEX_CLI_SCHEMA'
+      && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.4-mini'
+      && err.diagnostics.processCount === 1,
+  );
 });
 
 test('createAuditorBackend: codex-cli now returns the Codex CLI backend', () => {

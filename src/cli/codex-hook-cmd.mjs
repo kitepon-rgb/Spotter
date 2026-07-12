@@ -4,7 +4,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAuditorBackend } from '../core/auditor-backend.mjs';
+import { createAuditorBackend, selectAuditorBackend } from '../core/auditor-backend.mjs';
+import { resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
 import { codexLastAssistantMessage, readCodexToolUsage } from '../core/codex-transcript.mjs';
 import { legacyResultFromJudgment } from '../core/judgment.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
@@ -139,9 +140,10 @@ export async function runCodexUserPromptSubmitHook({
   }
 
   const catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
-  const backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
+  let backend;
   let judgment;
   try {
+    backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
     judgment = await backend.judge({ stage: 'user_input', userInput: prompt });
   } catch (err) {
     contexts.push(formatCodexHookBackendError(err));
@@ -152,6 +154,7 @@ export async function runCodexUserPromptSubmitHook({
         status: 'error',
         backend: err?.backend ?? null,
         code: err?.code ?? 'E_INTERNAL',
+        ...compactCodexModelSelectionForEvent(err?.diagnostics?.modelSelection),
         pendingContextCount: contexts.length,
         durationMs: Date.now() - startedAt,
       },
@@ -167,6 +170,7 @@ export async function runCodexUserPromptSubmitHook({
       backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
       pass: judgment.pass,
       missingTools: judgment.findings.map((finding) => finding.toolName),
+      ...compactCodexModelSelectionForEvent(judgment.meta?.modelSelection),
       pendingContextCount: contexts.length,
       backendDurationMs: judgment.meta?.durationMs ?? null,
       durationMs: Date.now() - startedAt,
@@ -186,6 +190,7 @@ export async function runCodexStopHook({
   readLocalFn = readLocal,
   createAuditorBackendFn = createAuditorBackend,
   readCodexToolUsageFn = readCodexToolUsage,
+  appendPendingContextFn = appendPendingContext,
   recordHookEventFn = appendCodexHookEvent,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
@@ -196,6 +201,30 @@ export async function runCodexStopHook({
   const projectRoot = findSpotterMarker(input.cwd);
   if (!projectRoot) return;
   const startedAt = Date.now();
+  const reportError = (text) => safeWriteError(writeError, text);
+  const persistPending = async ({ text, kind }) => {
+    let queued = false;
+    let pendingWriteError = null;
+    const currentProjectRoot = findSpotterMarker(input.cwd);
+    if (currentProjectRoot !== projectRoot) {
+      pendingWriteError = 'Spotter project marker no longer identifies the original project';
+    } else {
+      try {
+        queued = await appendPendingContextFn({
+          projectRoot,
+          sessionId: codexSessionId(input),
+          text,
+        }) === true;
+        if (!queued) pendingWriteError = 'appendPendingContext returned false';
+      } catch (err) {
+        pendingWriteError = String(err?.message ?? err) || 'unknown pending context persistence error';
+      }
+    }
+    if (!queued) {
+      reportError(`Spotter Codex Stop ${kind} persistence failed: ${pendingWriteError}\n${text}\n`);
+    }
+    return { queued, pendingWriteError };
+  };
 
   const transcriptPath = requireString(input, 'transcript_path');
   const finalResponse = codexLastAssistantMessage(input) ?? '(no final response available)';
@@ -214,21 +243,21 @@ export async function runCodexStopHook({
         ...toolUsageEvent,
         durationMs: Date.now() - startedAt,
       },
-    }, writeError);
+    }, reportError);
     return;
   }
   const catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
-  const backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
+  let backend;
   let judgment;
   try {
+    backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
     judgment = await backend.judge({ stage: 'turn_end', finalResponse, usedTools });
   } catch (err) {
     const errorText = formatCodexHookBackendError(err);
-    writeError(`${errorText}\n`);
-    await appendPendingContext({
-      projectRoot,
-      sessionId: codexSessionId(input),
+    reportError(`${errorText}\n`);
+    const { queued: warningQueued, pendingWriteError } = await persistPending({
       text: errorText,
+      kind: 'warning',
     });
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
@@ -237,11 +266,14 @@ export async function runCodexStopHook({
         status: 'error',
         backend: err?.backend ?? null,
         code: err?.code ?? 'E_INTERNAL',
+        ...compactCodexModelSelectionForEvent(err?.diagnostics?.modelSelection),
+        warningQueued,
+        ...(!warningQueued ? { pendingWriteError } : {}),
         usedToolCount: usedTools.length,
         ...toolUsageEvent,
         durationMs: Date.now() - startedAt,
       },
-    }, writeError);
+    }, reportError);
     return;
   }
   if (judgment.pass === true) {
@@ -253,34 +285,38 @@ export async function runCodexStopHook({
         backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
         pass: true,
         missingTools: [],
+        ...compactCodexModelSelectionForEvent(judgment.meta?.modelSelection),
         usedToolCount: usedTools.length,
         ...toolUsageEvent,
         backendDurationMs: judgment.meta?.durationMs ?? null,
         durationMs: Date.now() - startedAt,
       },
-    }, writeError);
+    }, reportError);
     return;
   }
 
-  await appendPendingContext({
-    projectRoot,
-    sessionId: codexSessionId(input),
-    text: formatTransparentBlockReason(legacyResultFromJudgment(judgment).missing_tools),
+  const findingText = formatTransparentBlockReason(legacyResultFromJudgment(judgment).missing_tools);
+  const { queued: findingQueued, pendingWriteError } = await persistPending({
+    text: findingText,
+    kind: 'finding',
   });
   await recordCodexHookEventSafe(recordHookEventFn, {
     projectRoot,
     event: {
       hook: 'Stop',
-      status: 'queued',
+      status: findingQueued ? 'queued' : 'degraded',
       backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
       pass: false,
       missingTools: judgment.findings.map((finding) => finding.toolName),
+      ...compactCodexModelSelectionForEvent(judgment.meta?.modelSelection),
+      findingQueued,
+      ...(!findingQueued ? { pendingWriteError } : {}),
       usedToolCount: usedTools.length,
       ...toolUsageEvent,
       backendDurationMs: judgment.meta?.durationMs ?? null,
       durationMs: Date.now() - startedAt,
     },
-  }, writeError);
+  }, reportError);
 }
 
 function compactCodexToolUsageForEvent(toolUsage) {
@@ -425,7 +461,17 @@ export async function uninstallCodexHooks({ codexHome = defaultCodexHome() } = {
   };
 }
 
-export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), projectRoot = null, spawnSyncFn = spawnSync } = {}) {
+export async function codexHookDiagnostics({
+  codexHome = defaultCodexHome(),
+  projectRoot = null,
+  env = process.env,
+  spawnSyncFn = spawnSync,
+  resolveModelSelectionFn = resolveCodexAuditorModelSelection,
+} = {}) {
+  const auditorBackend = resolveCodexHookAuditorBackend({ env });
+  const auditorModelSelection = auditorBackend === 'codex-cli'
+    ? resolveModelSelectionFn({ env })
+    : null;
   const features = spawnSyncFn('codex', ['features', 'list'], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
   const featureOutput = [features.stdout, features.stderr].filter(Boolean).join('\n');
   const hooks = await loadJson(join(codexHome, 'hooks.json'));
@@ -458,6 +504,8 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), pro
     installedHooks: installed,
     evidence,
     readiness: unavailable ? 'unavailable' : incompatible ? 'misconfigured' : missing ? 'not-installed' : 'configured-unverified',
+    auditorBackend,
+    auditorModelSelection,
     validation,
     trust: {
       state: 'unknown',
@@ -522,7 +570,7 @@ function isIncompatibleSpotterHookIssue(issue) {
 }
 
 function createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn }) {
-  const backend = process.env.SPOTTER_AUDITOR_BACKEND || 'codex-cli';
+  const backend = resolveCodexHookAuditorBackend({ env: process.env });
   return createAuditorBackendFn({
     backend,
     catalog,
@@ -531,6 +579,11 @@ function createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBack
     env: process.env,
     timeoutMs: codexHookAuditorTimeoutMs(process.env),
   });
+}
+
+function resolveCodexHookAuditorBackend({ env }) {
+  if (!env?.SPOTTER_AUDITOR_BACKEND) return 'codex-cli';
+  return selectAuditorBackend({ hostAgent: 'codex', env }).backend;
 }
 
 function codexHookAuditorTimeoutMs(env) {
@@ -577,11 +630,30 @@ function formatBackendDiagnostics(diagnostics) {
   if (!diagnostics || typeof diagnostics !== 'object') return '';
   const stderr = typeof diagnostics.stderr === 'string' ? diagnostics.stderr.trim() : '';
   const stdout = typeof diagnostics.stdout === 'string' ? diagnostics.stdout.trim() : '';
-  const parts = [];
-  if (stdout) parts.push(`stdout:\n${stdout.split('\n').slice(-4).join('\n')}`);
-  if (stderr) parts.push(`stderr:\n${stderr.split('\n').slice(-4).join('\n')}`);
-  if (parts.length === 0) return '';
-  return `backend output:\n${parts.join('\n')}`;
+  const sections = [];
+  const model = diagnostics.modelSelection;
+  if (model && typeof model === 'object') {
+    sections.push(
+      `auditor model: model=${model.effectiveModel ?? 'unknown'} effort=${model.effectiveReasoningEffort ?? 'unknown'} source=${model.modelSource ?? 'unknown'}/${model.effortSource ?? 'unknown'} availability=${model.availability ?? 'unknown'}`,
+    );
+  }
+  const output = [];
+  if (stdout) output.push(`stdout:\n${stdout.split('\n').slice(-4).join('\n')}`);
+  if (stderr) output.push(`stderr:\n${stderr.split('\n').slice(-4).join('\n')}`);
+  if (output.length > 0) sections.push(`backend output:\n${output.join('\n')}`);
+  return sections.join('\n');
+}
+
+function compactCodexModelSelectionForEvent(selection) {
+  if (!selection || typeof selection !== 'object') return {};
+  return {
+    auditorModel: typeof selection.effectiveModel === 'string' ? selection.effectiveModel : null,
+    auditorReasoningEffort: typeof selection.effectiveReasoningEffort === 'string'
+      ? selection.effectiveReasoningEffort
+      : null,
+    auditorModelSource: typeof selection.modelSource === 'string' ? selection.modelSource : null,
+    auditorModelAvailability: typeof selection.availability === 'string' ? selection.availability : null,
+  };
 }
 
 function codexSessionId(payload) {
@@ -606,7 +678,15 @@ async function recordCodexHookEventSafe(recordHookEventFn, input, writeError) {
   try {
     await recordHookEventFn(input);
   } catch (err) {
-    writeError(`Spotter codex-hook event log failed: ${err.message}\n`);
+    safeWriteError(writeError, `Spotter codex-hook event log failed: ${err.message}\n`);
+  }
+}
+
+function safeWriteError(writeError, text) {
+  try {
+    writeError(text);
+  } catch {
+    // Hook degradation must not become a host-blocking process failure when stderr is unavailable.
   }
 }
 
