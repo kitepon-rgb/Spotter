@@ -242,19 +242,25 @@ test('runCodexReadOnlyWorkflow: rejects unsupported workflows', async () => {
   );
 });
 
-test('readFindingsJson: accepts array, {findings}, and {judgment:{findings}}', async () => {
+test('readFindingsJson: accepts legacy forms and safe {stage,toolIds}', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-findings-json-'));
   try {
     const arrayPath = join(dir, 'array.json');
     const objectPath = join(dir, 'object.json');
     const judgmentPath = join(dir, 'judgment.json');
+    const safePath = join(dir, 'safe.json');
     await writeFile(arrayPath, JSON.stringify([finding]), 'utf8');
     await writeFile(objectPath, JSON.stringify({ findings: [finding] }), 'utf8');
     await writeFile(judgmentPath, JSON.stringify({ judgment: { findings: [finding] } }), 'utf8');
+    await writeFile(safePath, JSON.stringify({ stage: 'user_input', toolIds: [finding.toolName] }), 'utf8');
 
     assert.equal((await readFindingsJson(arrayPath)).length, 1);
     assert.equal((await readFindingsJson(objectPath)).length, 1);
     assert.equal((await readFindingsJson(judgmentPath)).length, 1);
+    const safe = await readFindingsJson(safePath);
+    assert.equal(safe.length, 1);
+    assert.equal(safe[0].toolName, finding.toolName);
+    assert.ok(!JSON.stringify(safe).includes(finding.reason));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

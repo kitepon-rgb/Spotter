@@ -2,7 +2,7 @@
 
 import { access, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { loadDb, globalDbPath, localDbPath } from '../tool-db/loader.mjs';
@@ -75,6 +75,10 @@ export async function runDoctor() {
     const sidecar = await codexSidecarAuditorReadiness(projectRoot);
     mark(sidecar.ok, `codex-sidecar auditor: ${sidecar.status}`, sidecar.detail);
     if (!sidecar.ok) warnings += 1;
+
+    const auditorContext = await inspectAuditorContextConfiguration({ projectRoot });
+    mark(auditorContext.ok, `auditor context: ${auditorContext.mode}`, auditorContext.detail);
+    if (!auditorContext.ok) warnings += 1;
   }
 
   // tool-db (host-specific global caches). Since v1.2.0 these are not part of
@@ -130,6 +134,43 @@ export async function inspectCodexHookConfiguration({ projectRoot = null, diagno
       diagnostics.trust?.action ?? 'review with /hooks',
     ].filter(Boolean).join('; '),
   };
+}
+
+export async function inspectAuditorContextConfiguration({
+  projectRoot,
+  readFileFn = readFile,
+  accessFn = access,
+} = {}) {
+  const disabled = { ok: true, mode: 'disabled', detail: 'disabled' };
+  if (typeof projectRoot !== 'string' || projectRoot.length === 0) return disabled;
+
+  let marker;
+  try {
+    marker = JSON.parse(await readFileFn(join(projectRoot, '.spotter', 'marker.json'), 'utf8'));
+  } catch {
+    return { ok: false, mode: 'unknown', detail: 'marker unreadable' };
+  }
+
+  const config = marker?.auditorContext;
+  if (config === undefined || config?.mode === 'disabled') return disabled;
+  if (config?.mode !== 'throughline') {
+    return { ok: false, mode: 'unknown', detail: 'invalid configuration' };
+  }
+  if (
+    typeof config.command !== 'string' ||
+    !isAbsolute(config.command) ||
+    /\.(?:cmd|bat)$/i.test(config.command) ||
+    !Array.isArray(config.args) ||
+    config.args.some((arg) => typeof arg !== 'string' || arg.length === 0)
+  ) {
+    return { ok: false, mode: 'throughline', detail: 'invalid configuration' };
+  }
+  try {
+    await accessFn(config.command);
+  } catch {
+    return { ok: false, mode: 'throughline', detail: 'command unavailable' };
+  }
+  return { ok: true, mode: 'throughline', detail: 'command available' };
 }
 
 function formatCodexAuditorModelSelection({ backend, selection }) {

@@ -37,7 +37,7 @@ export async function runAuditorCommand({ argv = process.argv.slice(2) } = {}) {
   }
   if (sub === 'model-matrix') {
     if (argv.slice(1).includes('--help') || argv.slice(1).includes('-h')) {
-      process.stdout.write(`Usage: spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra|terra-medium]...\n       [--repeat N] [--project DIR] [--output FILE]\n`);
+      process.stdout.write(`Usage: spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra|terra-medium]...\n       [--repeat N] [--recent-turns 0|1|2|3] [--body-cap CHARS] [--project DIR] [--output FILE]\n`);
       return;
     }
     await runAuditorModelMatrixCommand({ argv: argv.slice(1) });

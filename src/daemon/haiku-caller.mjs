@@ -195,7 +195,12 @@ function truncate(s, n = 300) {
 // のみで行う。
 export function sanitizeHaikuEnv(baseEnv) {
   const { CLAUDE_CONFIG_DIR: _strip, ...rest } = baseEnv;
-  return rest;
+  return {
+    ...rest,
+    // Throughline installs a global Claude Stop hook. Every Spotter Haiku child
+    // must be non-capturable so auditor prompts cannot re-enter its memory DB.
+    THROUGHLINE_IN_HAIKU_SUBPROCESS: '1',
+  };
 }
 
 // v1.3.0: write the wire prompt to a tempfile and return its read-only fd.
@@ -218,7 +223,7 @@ export async function preparePromptFile(wirePrompt) {
     throw new TypeError('preparePromptFile: wirePrompt must be a string');
   }
   const tmpPath = join(tmpdir(), `spotter-prompt-${process.pid}-${randomUUID()}.txt`);
-  await writeFile(tmpPath, wirePrompt, { encoding: 'utf8' });
+  await writeFile(tmpPath, wirePrompt, { encoding: 'utf8', mode: 0o600 });
   const handle = await open(tmpPath, 'r');
   return {
     tmpPath,
@@ -285,7 +290,10 @@ export function createHaikuCaller({ preamble, timeoutMs, claudeBin = 'claude', m
       });
       const child = spawn(cmd, cmdArgs, {
         cwd: WORKDIR,
-        env: { ...sanitizeHaikuEnv(env), SPOTTER_PARENT_PID: String(process.pid) },
+        env: {
+          ...sanitizeHaikuEnv(env),
+          SPOTTER_PARENT_PID: String(process.pid),
+        },
         stdio: [promptFile.fd, 'pipe', 'pipe'],
         windowsHide: true,
       });

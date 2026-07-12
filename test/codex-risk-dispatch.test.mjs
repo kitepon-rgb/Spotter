@@ -36,7 +36,7 @@ test('isCodexRiskDispatchEnabled / DryRun: env flags are explicit opt-in', () =>
   assert.equal(isCodexRiskDispatchDryRun({ SPOTTER_CODEX_RISK_CHECK_DRY_RUN: 'yes' }), true);
 });
 
-test('dispatchCodexRiskCheck: writes judgment and spawns detached spotter codex risk-check', async () => {
+test('dispatchCodexRiskCheck: writes a safe DTO and spawns detached spotter codex risk-check', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-risk-dispatch-'));
   try {
     const spawnCalls = [];
@@ -64,7 +64,10 @@ test('dispatchCodexRiskCheck: writes judgment and spawns detached spotter codex 
     assert.match(dispatch.findingsPath, /session_with_unsafe-user_input-findings\.json$/);
     assert.match(dispatch.resultPath, /session_with_unsafe-user_input-codex-risk-check\.json$/);
     const saved = JSON.parse(await readFile(dispatch.findingsPath, 'utf8'));
-    assert.deepEqual(saved.judgment.findings, judgment.findings);
+    assert.deepEqual(saved, {
+      stage: 'user_input',
+      toolIds: ['mcp__caveat__caveat_search'],
+    });
 
     assert.equal(spawnCalls.length, 1);
     const call = spawnCalls[0];
@@ -95,6 +98,42 @@ test('dispatchCodexRiskCheck: pass=true is a no-op', async () => {
       },
     });
     assert.deepEqual(dispatch, { dispatched: false, reason: 'no_findings' });
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('dispatchCodexRiskCheck: persists only the stage and safe tool IDs for second pass', async () => {
+  // Phase 0 safety net: model-generated reason/raw and backend diagnostics are not
+  // a second-pass input contract. This is intentionally red until dispatch receives
+  // and serializes a safe DTO instead of the complete Spotter judgment.
+  const project = await mkdtemp(join(tmpdir(), 'spotter-risk-dispatch-safe-dto-'));
+  const sentinel = 'MODEL_REASON_RAW_SENTINEL_MUST_NOT_REACH_SIDECAR';
+  try {
+    const dispatch = await dispatchCodexRiskCheck({
+      projectRoot: project,
+      sessionId: 'safe-dto',
+      stage: 'user_input',
+      judgment: {
+        pass: false,
+        findings: [{
+          id: 'spotter.user_input.1',
+          stage: 'user_input',
+          toolName: 'mcp__caveat__caveat_search',
+          reason: sentinel,
+          raw: { reason: sentinel },
+        }],
+        anomalies: [{ raw: sentinel }],
+        meta: { modelReason: sentinel, providerRaw: sentinel },
+      },
+      spawnFn: () => ({ pid: 1, on: () => {}, unref: () => {} }),
+    });
+    const saved = await readFile(dispatch.findingsPath, 'utf8');
+    assert.ok(!saved.includes(sentinel));
+    assert.deepEqual(JSON.parse(saved), {
+      stage: 'user_input',
+      toolIds: ['mcp__caveat__caveat_search'],
+    });
   } finally {
     await rm(project, { recursive: true, force: true });
   }

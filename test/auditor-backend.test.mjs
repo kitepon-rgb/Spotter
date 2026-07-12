@@ -35,6 +35,19 @@ test('parseAuditorResponse: schema errors use AuditorBackendError, not HaikuErro
   );
 });
 
+test('parseAuditorResponse: schema error message never reflects provider raw output', () => {
+  // Phase 0 safety net: provider output is untrusted and must not cross the error
+  // boundary (parent context / daemon log). The current implementation still
+  // interpolates raw into schema messages; this red test records that contract gap.
+  const sentinel = 'PROVIDER_RAW_SENTINEL_MUST_NOT_LEAK';
+  assert.throws(
+    () => parseAuditorResponse(`not-json ${sentinel}`, { backend: 'codex-cli', stage: 'user_input' }),
+    (err) => err instanceof AuditorBackendError
+      && err.code === 'E_AUDITOR_SCHEMA'
+      && !err.message.includes(sentinel)
+  );
+});
+
 test('filterCatalogMisses: backend-neutral filtering preserves current hallucination semantics', () => {
   const { parsed, dropped } = filterCatalogMisses({
     pass: false,
@@ -228,6 +241,28 @@ test('createHaikuAuditorBackend: adapter returns SpotterJudgment and preserves p
   assert.ok(!prompts[0].includes('## カタログ'), 'adapter must pass only per-turn delta to provided caller');
   backend.reset();
   assert.equal(resetCalled, 1);
+});
+
+test('createHaikuAuditorBackend: rejects recent context before invoking persistent Haiku session', async () => {
+  let calls = 0;
+  const backend = createHaikuAuditorBackend({
+    catalog,
+    haikuCaller: async () => {
+      calls += 1;
+      return JSON.stringify({ pass: true, missing_tools: [] });
+    },
+  });
+  await assert.rejects(
+    backend.judge({
+      stage: 'user_input',
+      userInput: '続けて',
+      recentContext: [{ user: '前の依頼', assistant: '未実施' }],
+    }),
+    (err) => err instanceof AuditorBackendError
+      && err.code === 'E_AUDITOR_CONTEXT_BACKEND_UNSUPPORTED'
+      && err.backend === 'haiku',
+  );
+  assert.equal(calls, 0);
 });
 
 test('auditor-backend module does not import codex-sidecar policy', async () => {

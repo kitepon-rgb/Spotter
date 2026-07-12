@@ -23,6 +23,17 @@ async function makeProject() {
   return dir;
 }
 
+const THROUGHLINE_CONFIG = { mode: 'throughline', command: '/opt/throughline/bin/throughline', args: [] };
+const FRESH_CONTEXT = Object.freeze({
+  schema: 'throughline.auditor_context.v1', status: 'fresh', reason: 'fresh',
+  turns: Object.freeze([{ originSessionId: 'prior', turnNumber: 1, user: '前の依頼', assistant: '前の回答', createdAt: 1 }]),
+  stats: Object.freeze({ requestedTurns: 2, returnedTurns: 1, chars: 8, truncated: false }),
+});
+const freshContextDeps = {
+  readAuditorContextConfigFn: async () => THROUGHLINE_CONFIG,
+  loadAuditorContextFn: async () => FRESH_CONTEXT,
+};
+
 test('installCodexHooks: fresh install generates only canonical Codex hook fields', async () => {
   const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-'));
   try {
@@ -489,13 +500,17 @@ test('runCodexSessionStartHook: child Codex backend env exits before reading std
 test('runCodexUserPromptSubmitHook: invokes Codex CLI auditor and emits Codex additionalContext', async () => {
   const project = await makeProject();
   const out = [];
+  let judgeInput;
   try {
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
         cwd: project,
         hook_event_name: 'UserPromptSubmit',
+        session_id: 'codex-session-1',
+        transcript_path: '/tmp/codex-session-1.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
+      ...freshContextDeps,
       readLocalFn: async ({ projectRoot, hostAgent }) => {
         assert.equal(projectRoot, project);
         assert.equal(hostAgent, 'codex');
@@ -506,7 +521,9 @@ test('runCodexUserPromptSubmitHook: invokes Codex CLI auditor and emits Codex ad
         assert.equal(projectRoot, project);
         assert.equal(hostAgent, 'codex');
         return {
-          judge: async (input) => ({
+          judge: async (input) => {
+            judgeInput = input;
+            return ({
             pass: false,
             findings: [{
               toolName: 'mcp__caveat__caveat_search',
@@ -514,7 +531,8 @@ test('runCodexUserPromptSubmitHook: invokes Codex CLI auditor and emits Codex ad
             }],
             anomalies: [],
             meta: { backend: 'codex-cli' },
-          }),
+            });
+          },
         };
       },
       writeOutput: (text) => out.push(text),
@@ -523,6 +541,10 @@ test('runCodexUserPromptSubmitHook: invokes Codex CLI auditor and emits Codex ad
     const parsed = JSON.parse(out.join(''));
     assert.equal(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
     assert.match(parsed.hookSpecificOutput.additionalContext, /mcp__caveat__caveat_search/);
+    assert.deepEqual(judgeInput, {
+      stage: 'user_input', userInput: 'GeForce 5000 番台について既知の罠を調べて',
+      recentContext: FRESH_CONTEXT.turns, contextStatus: 'fresh',
+    });
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -551,8 +573,11 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
         cwd: project,
+        session_id: 'codex-backend-error',
+        transcript_path: '/tmp/codex-backend-error.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
+      ...freshContextDeps,
       readLocalFn: async ({ hostAgent }) => {
         assert.equal(hostAgent, 'codex');
         return [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }];
@@ -588,8 +613,11 @@ test('runCodexUserPromptSubmitHook: model policy creation error maps to fixed ge
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
         cwd: project,
+        session_id: 'codex-model-error',
+        transcript_path: '/tmp/codex-model-error.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
+      ...freshContextDeps,
       readLocalFn: async () => [],
       createAuditorBackendFn: () => {
         throw new CodexAuditorModelPolicyError('SPOTTER_CODEX_CLI_MODEL is invalid');
@@ -618,7 +646,8 @@ test('runCodexUserPromptSubmitHook: catalog read failure cannot escape or reflec
   const events = [];
   try {
     await runCodexUserPromptSubmitHook({
-      readInput: async () => ({ cwd: project, prompt: '十分に長いユーザー入力' }),
+      readInput: async () => ({ cwd: project, session_id: 'codex-catalog-error', transcript_path: '/tmp/codex-catalog-error.jsonl', prompt: '十分に長いユーザー入力' }),
+      ...freshContextDeps,
       readLocalFn: async () => { throw new Error('AI_SENTINEL:catalog-secret'); },
       recordHookEventFn: async ({ event }) => { events.push(event); },
       writeOutput: (text) => out.push(text),
@@ -641,8 +670,11 @@ test('runCodexUserPromptSubmitHook: Codex hook auditor timeout defaults short an
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
         cwd: project,
+        session_id: 'codex-timeout-default',
+        transcript_path: '/tmp/codex-timeout-default.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
+      ...freshContextDeps,
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
       createAuditorBackendFn: ({ timeoutMs }) => {
         seen.push(timeoutMs);
@@ -654,8 +686,11 @@ test('runCodexUserPromptSubmitHook: Codex hook auditor timeout defaults short an
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
         cwd: project,
+        session_id: 'codex-timeout-override',
+        transcript_path: '/tmp/codex-timeout-override.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
+      ...freshContextDeps,
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
       createAuditorBackendFn: ({ timeoutMs }) => {
         seen.push(timeoutMs);
@@ -688,6 +723,31 @@ test('runCodexUserPromptSubmitHook: exits outside installed Spotter project', as
     assert.deepEqual(out, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('runCodexUserPromptSubmitHook: disabled and non-fresh context quietly skip without creating a backend', async () => {
+  const project = await makeProject();
+  try {
+    for (const [config, contextStatus] of [
+      [{ mode: 'disabled' }, 'disabled'],
+      [THROUGHLINE_CONFIG, 'stale'],
+    ]) {
+      const out = []; const events = [];
+      await runCodexUserPromptSubmitHook({
+        readInput: async () => ({ cwd: project, session_id: `codex-${contextStatus}`, transcript_path: `/tmp/${contextStatus}.jsonl`, prompt: '短文' }),
+        readAuditorContextConfigFn: async () => config,
+        loadAuditorContextFn: async () => ({ ...FRESH_CONTEXT, status: contextStatus, turns: [], stats: { requestedTurns: 2, returnedTurns: 0, chars: 0, truncated: false } }),
+        createAuditorBackendFn: () => { throw new Error('backend must not be created'); },
+        recordHookEventFn: async ({ event }) => { events.push(event); },
+        writeOutput: (text) => out.push(text),
+      });
+      assert.deepEqual(out, []);
+      assert.equal(events[0].status, 'skipped');
+      assert.equal(events[0].contextStatus, contextStatus);
+    }
+  } finally {
+    await rm(project, { recursive: true, force: true });
   }
 });
 

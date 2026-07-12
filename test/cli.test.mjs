@@ -12,6 +12,8 @@ test('cli: --help prints public and internal command contract', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, '--help']);
   assert.equal(stderr, '');
   assert.ok(stdout.includes('spotter install [-y]'));
+  assert.ok(stdout.includes('--auditor-context disabled|throughline'));
+  assert.ok(stdout.includes('--throughline-command ABS'));
   assert.ok(stdout.includes('spotter db list'));
   assert.ok(stdout.includes('spotter db refresh'));
   assert.ok(stdout.includes('spotter db rebuild'));
@@ -28,6 +30,22 @@ test('cli: --help prints public and internal command contract', async () => {
   assert.ok(stdout.includes('spotter hook <event>'));
   assert.ok(stdout.includes('session-start | user-prompt |'));
   assert.ok(stdout.includes('pre-tool-use | stop | session-end'));
+});
+
+test('cli: install rejects unknown or incomplete auditor-context arguments before running install', async () => {
+  for (const args of [
+    ['install', '--auditor-context', 'throughline'],
+    ['install', '--auditor-context', 'throughline', '--throughline-command', 'throughline'],
+    ['install', '--auditor-context', 'throughline', '--throughline-command', 'C:\\tools\\throughline.cmd'],
+    ['install', '--auditor-context', 'disabled', '--throughline-arg', 'unexpected'],
+    ['install', '--unknown-install-option'],
+  ]) {
+    await assert.rejects(execFileAsync(process.execPath, [BIN, ...args]), (err) => {
+      assert.equal(err.code, 2);
+      assert.match(err.stderr, /spotter: invalid install arguments/);
+      return true;
+    });
+  }
 });
 
 test('cli: --version prints package version', async () => {

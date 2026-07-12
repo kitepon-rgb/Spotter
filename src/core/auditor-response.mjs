@@ -16,11 +16,11 @@ export function parseAuditorResponse(raw, {
   } catch (err) {
     throw new AuditorBackendError(
       errorCode,
-      `${backend} output is not valid JSON: ${err.message} :: raw=${truncate(raw)}`,
+      `${backend} output is not valid JSON`,
       { backend, stage, cause: err }
     );
   }
-  validateAuditorResponse(parsed, { backend, stage, errorCode, raw });
+  validateAuditorResponse(parsed, { backend, stage, errorCode });
   return parsed;
 }
 
@@ -28,16 +28,15 @@ export function validateAuditorResponse(parsed, {
   backend = 'auditor',
   stage = 'unknown',
   errorCode = 'E_AUDITOR_SCHEMA',
-  raw = '',
 } = {}) {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new AuditorBackendError(errorCode, `${backend} output root is not an object :: ${truncate(raw)}`, { backend, stage });
+    throw new AuditorBackendError(errorCode, `${backend} output root is not an object`, { backend, stage });
   }
   if (typeof parsed.pass !== 'boolean') {
-    throw new AuditorBackendError(errorCode, `${backend} "pass" must be boolean :: ${truncate(raw)}`, { backend, stage });
+    throw new AuditorBackendError(errorCode, `${backend} "pass" must be boolean`, { backend, stage });
   }
   if (!Array.isArray(parsed.missing_tools)) {
-    throw new AuditorBackendError(errorCode, `${backend} "missing_tools" must be array :: ${truncate(raw)}`, { backend, stage });
+    throw new AuditorBackendError(errorCode, `${backend} "missing_tools" must be array`, { backend, stage });
   }
   parsed.missing_tools.forEach((m, i) => {
     if (m === null || typeof m !== 'object' || Array.isArray(m)) {
@@ -53,14 +52,14 @@ export function validateAuditorResponse(parsed, {
   if (parsed.pass === true && parsed.missing_tools.length > 0) {
     throw new AuditorBackendError(
       errorCode,
-      `pass: true with non-empty missing_tools is inconsistent :: ${truncate(raw)}`,
+      'pass: true with non-empty missing_tools is inconsistent',
       { backend, stage }
     );
   }
   if (parsed.pass === false && parsed.missing_tools.length === 0) {
     throw new AuditorBackendError(
       errorCode,
-      `pass: false with empty missing_tools is inconsistent :: ${truncate(raw)}`,
+      'pass: false with empty missing_tools is inconsistent',
       { backend, stage }
     );
   }
@@ -87,10 +86,4 @@ export function filterCatalogMisses(parsed, catalogNames) {
 function stripFence(text) {
   const fenceMatch = text.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/);
   return fenceMatch ? fenceMatch[1] : text;
-}
-
-function truncate(s, n = 300) {
-  if (typeof s !== 'string') return '';
-  if (s.length <= n) return s;
-  return s.slice(0, n) + '...';
 }

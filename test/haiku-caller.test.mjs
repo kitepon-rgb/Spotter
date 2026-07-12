@@ -413,10 +413,19 @@ test('sanitizeHaikuEnv: strips CLAUDE_CONFIG_DIR so haiku uses default ~/.claude
   assert.equal(input.CLAUDE_CONFIG_DIR, '/tmp/bellbot-isolated');
 });
 
-test('sanitizeHaikuEnv: no-op when CLAUDE_CONFIG_DIR is absent', () => {
+test('sanitizeHaikuEnv: preserves existing env while adding the Throughline guard', () => {
   const input = { PATH: '/usr/bin' };
   const out = sanitizeHaikuEnv(input);
-  assert.deepEqual(out, { PATH: '/usr/bin' });
+  assert.deepEqual(out, {
+    PATH: '/usr/bin',
+    THROUGHLINE_IN_HAIKU_SUBPROCESS: '1',
+  });
+});
+
+test('sanitizeHaikuEnv: marks Haiku child for Throughline hook recursion guard', () => {
+  // Throughline's turn-processor exits when this inherited marker is "1".
+  const out = sanitizeHaikuEnv({ PATH: '/usr/bin' });
+  assert.equal(out.THROUGHLINE_IN_HAIKU_SUBPROCESS, '1');
 });
 
 // v1.3.0: preparePromptFile — root fix for the "stdin abandoned after 3s" bug.

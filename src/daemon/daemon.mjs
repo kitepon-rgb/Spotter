@@ -188,7 +188,8 @@ export async function startDaemon({
 
     // 10-second window safety net: events that would invoke the auditor within 10s of
     // our own child spawn are likely recursive noise; pass them quietly.
-    const needsHaiku = envelope.event === 'user_input' || envelope.event === 'turn_end';
+    const needsHaiku = (envelope.event === 'user_input' && envelope.payload?.audit !== false)
+      || envelope.event === 'turn_end';
     const sinceLast = Date.now() - lastAuditorCallAt;
     if (
       needsHaiku &&
@@ -230,7 +231,30 @@ export async function startDaemon({
     state.lastUserInput = userInput;
     state.usedTools = []; // reset tools for this turn
 
-    const judgment = await runAuditorJudgment({ stage: 'user_input', userInput });
+    if (payload.audit === false) {
+      logFn('user_input: audit skipped because fresh context was unavailable');
+      return { pass: true, missing_tools: [], reason: 'auditor_context_not_fresh' };
+    }
+
+    const hasContext = payload.context_status !== undefined || payload.recent_context !== undefined;
+    if (hasContext && (payload.context_status !== 'fresh' || !Array.isArray(payload.recent_context))) {
+      const err = new Error('context-bearing user_input payload must include fresh recent_context');
+      err.code = 'E_AUDITOR_CONTEXT_INPUT';
+      throw err;
+    }
+    if (hasContext && auditorBackend.name === 'haiku') {
+      const err = new Error('recent conversation context is not supported by the haiku auditor backend');
+      err.code = 'E_AUDITOR_CONTEXT_BACKEND_UNSUPPORTED';
+      throw err;
+    }
+    const judgment = await runAuditorJudgment(hasContext
+      ? {
+          stage: 'user_input',
+          userInput,
+          recentContext: payload.recent_context,
+          contextStatus: 'fresh',
+        }
+      : { stage: 'user_input', userInput });
     const result = legacyResultFromJudgment(judgment);
     const meta = judgment.meta ?? {};
     logFn(

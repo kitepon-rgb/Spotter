@@ -145,6 +145,40 @@ test('install (project): writes .spotter/marker.json with version metadata', asy
     assert.equal(marker.markerVersion, '1');
     assert.ok(typeof marker.spotterVersion === 'string' && marker.spotterVersion.length > 0);
     assert.ok(typeof marker.installedAt === 'string' && marker.installedAt.length > 0);
+    assert.deepEqual(marker.auditorContext, { mode: 'disabled' });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install (project): preserves existing auditorContext unless explicitly replaced', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-marker-context-preserve-'));
+  const existing = { mode: 'throughline', command: '/opt/throughline/bin/throughline', args: ['--profile', 'readonly'] };
+  try {
+    await mkdir(join(dir, '.spotter'), { recursive: true });
+    await writeFile(join(dir, '.spotter', 'marker.json'), JSON.stringify({ markerVersion: '1', auditorContext: existing }), 'utf8');
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
+    let marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
+    assert.deepEqual(marker.auditorContext, existing);
+
+    await runInstall({
+      target: 'project', autoYes: true, cwd: dir, skipRefresh: true,
+      auditorContext: { mode: 'disabled' },
+    });
+    marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
+    assert.deepEqual(marker.auditorContext, { mode: 'disabled' });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install (project): writes explicit Throughline auditorContext configuration', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-marker-context-throughline-'));
+  const auditorContext = { mode: 'throughline', command: '/opt/throughline/bin/throughline', args: ['--profile', 'readonly'] };
+  try {
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true, auditorContext });
+    const marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
+    assert.deepEqual(marker.auditorContext, auditorContext);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -25,15 +25,20 @@ import { sendRequest, TransportError } from '../daemon/transport.mjs';
 import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
 import { discardLegacyPending } from './pending-context.mjs';
 import { projectBackendFailure, projectParentAdvice, projectToolIds } from './parent-output-projector.mjs';
+import {
+  loadAuditorContext,
+  readProjectAuditorContextConfig,
+} from '../core/auditor-context.mjs';
 
 const TIMEOUT_MS = 50_000;
-const SHORT_PROMPT_MAX_CHARS = 10;
 
 export async function runUserPrompt({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
   spawnDaemonAndWaitReadyFn = spawnDaemonAndWaitReady,
   discardLegacyPendingFn = discardLegacyPending,
+  readAuditorContextConfigFn = readProjectAuditorContextConfig,
+  loadAuditorContextFn = loadAuditorContext,
   recordHookEventFn = recordClaudeHookEvent,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
@@ -47,6 +52,7 @@ export async function runUserPrompt({
   const prompt = requireString(input, 'prompt');
   const projectRoot = findSpotterMarker(input.cwd);
   const startedAt = Date.now();
+  let contextDurationMs = null;
 
   const legacyPending = projectRoot
     ? await discardLegacyPendingFn({ projectRoot, sessionId })
@@ -63,19 +69,103 @@ export async function runUserPrompt({
         status: 'degraded',
         code: failure.code,
         reason,
+        contextDurationMs,
         legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
       },
     });
   };
 
-  if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
+  const sendDaemonPayload = async (payload) => {
+    const send = () => sendRequestFn({
+      sessionId,
+      event: 'user_input',
+      payload,
+      timeoutMs: TIMEOUT_MS,
+    });
+    try {
+      return await send();
+    } catch (err) {
+      if (!(err instanceof TransportError) || err.code !== 'E_UNREACHABLE') throw err;
+      await spawnDaemonAndWaitReadyFn({ sessionId, projectRoot });
+      return send();
+    }
+  };
+
+  const syncUserInputWithoutAudit = async (contextStatus) => {
+    try {
+      const response = await sendDaemonPayload({
+        user_input: prompt,
+        audit: false,
+        context_status: contextStatus,
+      });
+      if (response.ok !== true) {
+        await degrade({ code: response.error?.code ?? 'E_INTERNAL', reason: 'daemon_state_sync' });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      await degrade({ code: err?.code, reason: 'daemon_state_sync' });
+      return false;
+    }
+  };
+
+  let context;
+  const contextStartedAt = Date.now();
+  try {
+    const config = await readAuditorContextConfigFn(projectRoot);
+    contextDurationMs = Date.now() - contextStartedAt;
+    if (config.mode === 'disabled') {
+      if (!await syncUserInputWithoutAudit('disabled')) return;
+      await recordHookEventFn({
+        projectRoot,
+        event: {
+          hook: 'UserPromptSubmit',
+          status: 'skipped',
+          reason: 'context_disabled',
+          contextStatus: 'disabled',
+          contextDurationMs,
+          legacyPendingDiagnostic: legacyPending.diagnostic,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      return;
+    }
+    context = await loadAuditorContextFn({
+      config,
+      host: 'claude',
+      sessionId,
+      projectRoot,
+      transcriptPath: requireString(input, 'transcript_path'),
+    });
+    contextDurationMs = Date.now() - contextStartedAt;
+  } catch (err) {
+    contextDurationMs = Date.now() - contextStartedAt;
+    await degrade({ code: err?.code, reason: 'auditor_context' });
+    return;
+  }
+
+  if (context.status === 'unavailable' || context.status === 'schema_mismatch') {
+    await degrade({
+      code: context.status === 'unavailable'
+        ? 'E_AUDITOR_CONTEXT_UNAVAILABLE'
+        : 'E_AUDITOR_CONTEXT_SCHEMA',
+      reason: 'auditor_context_status',
+    });
+    return;
+  }
+  if (context.status !== 'fresh') {
+    if (!await syncUserInputWithoutAudit(context.status)) return;
     await recordHookEventFn({
       projectRoot,
       event: {
         hook: 'UserPromptSubmit',
         status: 'skipped',
-        reason: 'short_prompt',
+        reason: 'context_not_fresh',
+        contextStatus: context.status,
+        contextTurns: 0,
+        contextChars: 0,
+        contextDurationMs,
         legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
       },
@@ -83,35 +173,17 @@ export async function runUserPrompt({
     return;
   }
 
-  const sendUserInput = () =>
-    sendRequestFn({
-      sessionId,
-      event: 'user_input',
-      payload: { user_input: prompt },
-      timeoutMs: TIMEOUT_MS,
-    });
-
   let response;
   try {
-    response = await sendUserInput();
+    response = await sendDaemonPayload({
+      user_input: prompt,
+      audit: true,
+      context_status: 'fresh',
+      recent_context: context.turns,
+    });
   } catch (err) {
-    if (err instanceof TransportError && err.code === 'E_UNREACHABLE') {
-      // v0.12.0: daemon is gone (heartbeat shutdown, crash, missing). Resurrect and retry once.
-      // projectRoot is guaranteed non-null here (isOutsideSpotterProject early-returned otherwise).
-      try {
-        await spawnDaemonAndWaitReadyFn({ sessionId, projectRoot });
-        response = await sendUserInput();
-      } catch (recoverErr) {
-        await degrade({
-          code: recoverErr?.code ?? 'E_RESURRECT_FAILED',
-          reason: 'resurrect_failed',
-        });
-        return;
-      }
-    } else {
-      await degrade({ code: err?.code, reason: 'transport' });
-      return;
-    }
+    await degrade({ code: err?.code ?? 'E_RESURRECT_FAILED', reason: 'transport_or_resurrect' });
+    return;
   }
 
   if (response.ok !== true) {
@@ -136,6 +208,10 @@ export async function runUserPrompt({
       status: 'success',
       pass: result.pass === true,
       missingTools: toolIds,
+      contextStatus: 'fresh',
+      contextTurns: context.stats.returnedTurns,
+      contextChars: context.stats.chars,
+      contextDurationMs,
       legacyPendingDiagnostic: legacyPending.diagnostic,
       durationMs: Date.now() - startedAt,
     },

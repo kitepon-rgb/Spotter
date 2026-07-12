@@ -146,6 +146,58 @@ The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`
 
 Both share the principle of **"don't rely on the primary agent to do it itself."** They compose well — you can run them together.
 
+### Optional Throughline auditor context canary
+
+Fresh project installs keep auditor context **disabled**. This is a project-owned
+opt-in, not a production-wide default: the current candidate is a canary in the
+Spotter repository only. Re-running `spotter install` without auditor-context
+options preserves the project's existing setting. Disable it again with:
+
+```bash
+spotter install -y --auditor-context disabled
+```
+
+To opt a project in, configure a direct absolute Throughline executable and any
+leading arguments with repeatable `--throughline-arg`:
+
+```bash
+spotter install -y --auditor-context throughline \
+  --throughline-command /absolute/path/to/throughline
+```
+
+On Windows, `.cmd` and `.bat` wrappers are deliberately rejected to avoid shell
+injection. Point at an absolute `node.exe` and pass the absolute
+`throughline.mjs` path as a repeated argument instead:
+
+```powershell
+spotter install -y --auditor-context throughline `
+  --throughline-command 'C:\Program Files\nodejs\node.exe' `
+  --throughline-arg 'C:\absolute\path\to\throughline\bin\throughline.mjs'
+```
+
+The connector is Codex CLI-only. It sends no context in argv: the bounded
+projection is supplied to that AI over stdin. Haiku does not support this
+context path and is never called for it. Only a `fresh` Throughline result is
+eligible for an AI call; every other status skips AI. An enabled connector
+failure becomes a fixed warning, not a hidden fallback.
+
+Throughline contributes only fresh, completed L2 user/assistant pairs: two
+recent pairs (N=2), each body capped at 600 characters and 4,000 characters in
+total. Spotter never reflects Throughline L2, `reason`, or `raw` to the parent.
+The parent receives only fixed non-imperative advice built from safe catalog tool
+IDs. `spotter doctor` displays the auditor-context mode and a fixed availability
+detail without printing its command or arguments.
+
+The v2 model-matrix can make the context choice explicit:
+
+```bash
+spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json \
+  --recent-turns 2 --body-cap 600
+```
+
+Current evaluation conclusion is N=2 / 600. It is not a rollout approval: the
+Spotter-repository canary still lacks its 7-day and 30-fresh-result gates.
+
 ## Common commands
 
 ```bash
@@ -173,7 +225,7 @@ spotter codex-hook install
                          # repair / explicitly register Codex native hooks (normally handled by spotter install)
 spotter codex-hook diagnostics
                          # check Codex hook registration/readiness; trust is reviewed with /hooks
-spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v1.json
+spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600
                          # experimental reproducible comparison of pinned auditor model profiles
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
 ```

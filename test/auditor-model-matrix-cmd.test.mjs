@@ -448,3 +448,76 @@ test('representative model-matrix fixture has distinct valid stage cases', async
     await runAuditorModelMatrixCommand({ argv: ['--fixtures', path, '--profile', 'baseline'], env: {}, getCodexCliVersionFn: async () => ({ status: 'unavailable' }), createBackendFn: ({ modelProfile }) => ({ modelSelection: selection(modelProfile), judge: async () => ({ pass: true, findings: [], meta: { modelSelection: selection(modelProfile) } }) }), writeOutput: () => {} });
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('v2 fixture transforms recent context by trailing turn count and body cap, and records safe evaluation metadata', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-model-matrix-v2-transform-'));
+  const v2 = {
+    schema: 'spotter.auditor_model_fixtures.v2', catalog: fixture.catalog,
+    cases: [{ id: 'v2', stage: 'user_input', input: { userInput: '続けて', recentContext: [
+      { user: 'first-user', assistant: 'first-assistant' }, { user: 'second-user', assistant: 'second-assistant' }, { user: 'third-user', assistant: 'third-assistant' },
+    ] }, expected: { pass: true, missingTools: [] } }],
+  };
+  try {
+    const path = join(dir, 'v2.json'); await writeFile(path, JSON.stringify(v2));
+    const inputs = [];
+    const artifact = await runAuditorModelMatrixCommand({
+      argv: ['--fixtures', path, '--profile', 'baseline', '--recent-turns', '2', '--body-cap', '6'], env: {},
+      getCodexCliVersionFn: async () => ({ status: 'unavailable' }),
+      createBackendFn: ({ modelProfile }) => ({ modelSelection: selection(modelProfile), judge: async (input) => { inputs.push(input); return { pass: true, findings: [], meta: { modelSelection: selection(modelProfile) } }; } }), writeOutput: () => {},
+    });
+    assert.deepEqual(inputs[0].recentContext, [{ user: 'd-user', assistant: 'istant' }, { user: 'd-user', assistant: 'istant' }]);
+    assert.deepEqual(artifact.evaluation.recentTurns, 2);
+    assert.deepEqual(artifact.evaluation.bodyCap, 6);
+    assert.equal(artifact.auditorPromptVersion, '2');
+
+    inputs.length = 0;
+    await runAuditorModelMatrixCommand({
+      argv: ['--fixtures', path, '--profile', 'baseline', '--recent-turns', '0', '--body-cap', '6'], env: {},
+      getCodexCliVersionFn: async () => ({ status: 'unavailable' }),
+      createBackendFn: ({ modelProfile }) => ({ modelSelection: selection(modelProfile), judge: async (input) => { inputs.push(input); return { pass: true, findings: [], meta: { modelSelection: selection(modelProfile) } }; } }), writeOutput: () => {},
+    });
+    assert.equal(Object.hasOwn(inputs[0], 'recentContext'), false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('v2 fixture validation rejects unknown, unclean, and invalid recentContext before backend creation', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-model-matrix-v2-invalid-'));
+  const valid = { schema: 'spotter.auditor_model_fixtures.v2', catalog: fixture.catalog, cases: [{ id: 'v2', stage: 'user_input', input: { userInput: 'x', recentContext: [{ user: 'u', assistant: 'a' }] }, expected: { pass: true, missingTools: [] } }] };
+  try {
+    const invalids = [
+      { ...valid, cases: [{ ...valid.cases[0], input: { ...valid.cases[0].input, extra: true } }] },
+      { ...valid, cases: [{ ...valid.cases[0], input: { ...valid.cases[0].input, recentContext: [] } }] },
+      { ...valid, cases: [{ ...valid.cases[0], input: { ...valid.cases[0].input, recentContext: [{ user: ' dirty ', assistant: 'a' }] } }] },
+      { ...valid, cases: [{ ...valid.cases[0], input: { ...valid.cases[0].input, recentContext: [{ user: 'u', assistant: 'a', raw: 'x' }] } }] },
+    ];
+    for (const [index, value] of invalids.entries()) {
+      const path = join(dir, `${index}.json`); await writeFile(path, JSON.stringify(value)); let creates = 0;
+      await assert.rejects(runAuditorModelMatrixCommand({ argv: ['--fixtures', path], createBackendFn: () => { creates++; } }));
+      assert.equal(creates, 0);
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('v1 rejects v2 context options and v2 option validation occurs before backend creation', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-model-matrix-v2-options-'));
+  try {
+    const v1Path = join(dir, 'v1.json'); await writeFile(v1Path, JSON.stringify(fixture));
+    await assert.rejects(runAuditorModelMatrixCommand({ argv: ['--fixtures', v1Path, '--recent-turns', '1'] }), /require a v2 fixture/);
+    const v2Path = join(dir, 'v2.json'); await writeFile(v2Path, JSON.stringify({ schema: 'spotter.auditor_model_fixtures.v2', catalog: fixture.catalog, cases: [{ id: 'v2', stage: 'user_input', input: { userInput: 'x', recentContext: [{ user: 'u', assistant: 'a' }] }, expected: { pass: true, missingTools: [] } }] }));
+    for (const args of [['--recent-turns', '4'], ['--recent-turns', '-1'], ['--body-cap', '0']]) {
+      let creates = 0;
+      await assert.rejects(runAuditorModelMatrixCommand({ argv: ['--fixtures', v2Path, ...args], createBackendFn: () => { creates++; } }));
+      assert.equal(creates, 0);
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('representative v2 fixture contains the planned context-sensitive cases', async () => {
+  const v2 = JSON.parse(await readFile(new URL('./fixtures/auditor-model-matrix.v2.json', import.meta.url), 'utf8'));
+  assert.equal(v2.schema, 'spotter.auditor_model_fixtures.v2');
+  assert.equal(v2.cases.length, 9);
+  assert.ok(v2.cases.some((item) => item.input.recentContext.length === 2));
+  assert.ok(v2.cases.some((item) => item.input.recentContext.length === 3));
+  assert.ok(v2.cases.every((item) => item.input.recentContext.length >= 1));
+  assert.ok(v2.cases.every((item) => item.expected.missingTools.every((name) => v2.catalog.some((tool) => tool.name === name))));
+});

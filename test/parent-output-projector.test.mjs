@@ -90,14 +90,23 @@ test('Claude and Codex UserPromptSubmit project identical advice and exclude aud
       ],
     };
     let claudeOutput = '';
+    const freshContext = {
+      status: 'fresh',
+      turns: [{ user: '前の依頼', assistant: '未実施' }],
+      stats: { returnedTurns: 1, chars: 8 },
+    };
     await runUserPrompt({
-      readInput: async () => ({ session_id: 's', cwd: projectRoot, prompt: 'これは十分に長いユーザー入力です' }),
+      readInput: async () => ({ session_id: 's', cwd: projectRoot, transcript_path: '/tmp/claude.jsonl', prompt: 'これは十分に長いユーザー入力です' }),
+      readAuditorContextConfigFn: async () => ({ mode: 'throughline', command: '/bin/throughline', args: [] }),
+      loadAuditorContextFn: async () => freshContext,
       sendRequestFn: async () => ({ ok: true, result }),
       writeOutput: (text) => { claudeOutput += text; },
     });
     let codexOutput = '';
     await runCodexUserPromptSubmitHook({
-      readInput: async () => ({ session_id: 's2', cwd: projectRoot, prompt: 'これは十分に長いユーザー入力です' }),
+      readInput: async () => ({ session_id: 's2', cwd: projectRoot, transcript_path: '/tmp/codex.jsonl', prompt: 'これは十分に長いユーザー入力です' }),
+      readAuditorContextConfigFn: async () => ({ mode: 'throughline', command: '/bin/throughline', args: [] }),
+      loadAuditorContextFn: async () => freshContext,
       readLocalFn: async () => [],
       createAuditorBackendFn: () => ({
         name: 'codex-cli',

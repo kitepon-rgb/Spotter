@@ -89,6 +89,13 @@ export function createHaikuAuditorBackend({
     },
     async judge(input = {}) {
       const stage = validateStage(input.stage);
+      if (input.recentContext !== undefined) {
+        throw new AuditorBackendError(
+          'E_AUDITOR_CONTEXT_BACKEND_UNSUPPORTED',
+          'recent conversation context is not supported by the haiku auditor backend',
+          { backend: 'haiku', stage },
+        );
+      }
       const prompt = buildStagePrompt(stage, input);
       let raw, meta;
       try {

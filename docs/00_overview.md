@@ -25,6 +25,8 @@ contracts, error handling, and release workflow.
 ## Operational Documents
 
 - [`open-issues.md`](open-issues.md): current unresolved issues and observation tasks.
+- [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md): proposed
+  Throughline L2 context integration and precision-evaluation plan.
 
 ## Archive
 

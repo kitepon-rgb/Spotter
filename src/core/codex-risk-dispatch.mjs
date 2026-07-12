@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { projectToolIds } from '../hooks/parent-output-projector.mjs';
 
 export function isCodexRiskDispatchEnabled(env = process.env) {
   const value = env?.SPOTTER_CODEX_RISK_CHECK;
@@ -43,7 +44,14 @@ export async function dispatchCodexRiskCheck({
 
   await mkdir(dirname(findingsPath), { recursive: true });
   await mkdir(dirname(resultPath), { recursive: true });
-  await writeFile(findingsPath, JSON.stringify({ judgment }, null, 2) + '\n', 'utf8');
+  const safeInput = {
+    stage: safeStage,
+    toolIds: projectToolIds(judgment.findings.map((finding) => finding?.toolName)),
+  };
+  if (safeInput.toolIds.length === 0) {
+    return { dispatched: false, reason: 'no_safe_tool_ids' };
+  }
+  await writeFile(findingsPath, JSON.stringify(safeInput, null, 2) + '\n', 'utf8');
 
   const args = [
     resolveSpotterBin(),

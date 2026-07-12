@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { version } from '../version.mjs';
-import { createCodexCliAuditorBackend } from '../core/codex-cli-backend.mjs';
+import { CODEX_AUDITOR_PROMPT_VERSION, createCodexCliAuditorBackend } from '../core/codex-cli-backend.mjs';
 import { CODEX_AUDITOR_MODEL_POLICY, resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -21,6 +21,7 @@ export async function runAuditorModelMatrixCommand({
   const raw = await readFileFn(opts.fixturesPath);
   const fixtureBytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   const fixture = parseAndValidateFixture(fixtureBytes.toString('utf8'));
+  const contextOptions = resolveContextOptions(opts, fixture.schema);
   if (fixture.cases.length * opts.repeat * opts.profiles.length > MAX_MODEL_MATRIX_RUNS) {
     throw new Error(`model-matrix run count exceeds maximum ${MAX_MODEL_MATRIX_RUNS}`);
   }
@@ -40,7 +41,7 @@ export async function runAuditorModelMatrixCommand({
     const modelSelection = selections[profile];
     try {
       const backend = backends[profile];
-      const judgment = await backend.judge({ ...toAuditorInput(item), meta: { caseId: item.id, repeat, profile } });
+      const judgment = await backend.judge({ ...toAuditorInput(item, contextOptions), meta: { caseId: item.id, repeat, profile } });
       if (!sameSelection(modelSelection, judgment?.meta?.modelSelection)) {
         throw new Error('judgment model selection does not match backend model selection');
       }
@@ -87,6 +88,7 @@ export async function runAuditorModelMatrixCommand({
     schema: 'spotter.auditor_model_matrix.v1', generatedAt: generatedAt(), packageVersion: version,
     fixture: { schema: fixture.schema, path: safeFixturePath(opts.fixturesPath, opts.projectRoot), sha256: createHash('sha256').update(fixtureBytes).digest('hex'), cases: fixture.cases.length, catalogCount: fixture.catalog.length },
     codexCli: cliVersion, policy: { schema: CODEX_AUDITOR_MODEL_POLICY.schema, version: CODEX_AUDITOR_MODEL_POLICY.policyVersion },
+    auditorPromptVersion: CODEX_AUDITOR_PROMPT_VERSION,
     profiles: Object.fromEntries(Object.entries(selections).map(([profile, selection]) => [profile, {
       model: selection.effectiveModel,
       reasoningEffort: selection.effectiveReasoningEffort,
@@ -96,7 +98,7 @@ export async function runAuditorModelMatrixCommand({
       selection,
     }])), runs, summary: summarize(runs, opts.profiles), usageStatus: usage.status, tokenUsage: usage.summary,
     costStatus: 'not-available-chatgpt-plan', cost: null,
-    evaluation: { repeat: opts.repeat, profiles: opts.profiles, maxRuns: MAX_MODEL_MATRIX_RUNS },
+    evaluation: { repeat: opts.repeat, profiles: opts.profiles, maxRuns: MAX_MODEL_MATRIX_RUNS, recentTurns: contextOptions.recentTurns, bodyCap: contextOptions.bodyCap },
     executionOrdering: 'case-repeat-profile', promotionEligible: false, blockingReasons: blockingReasons(runs, usage.status),
   };
   const json = JSON.stringify(artifact, null, 2) + '\n';
@@ -106,7 +108,7 @@ export async function runAuditorModelMatrixCommand({
 }
 
 function parseArgs(argv) {
-  const opts = { fixturesPath: null, profiles: [], repeat: 1, projectRoot: process.cwd(), outputPath: null };
+  const opts = { fixturesPath: null, profiles: [], repeat: 1, projectRoot: process.cwd(), outputPath: null, recentTurns: null, bodyCap: null };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]; const value = () => { const v = argv[++i]; if (!v || v.startsWith('--')) throw new Error(`${arg} requires a value`); return v; };
     if (arg === '--fixtures') opts.fixturesPath = resolve(value());
@@ -114,10 +116,14 @@ function parseArgs(argv) {
     else if (arg === '--repeat') opts.repeat = Number(value());
     else if (arg === '--project') opts.projectRoot = resolve(value());
     else if (arg === '--output') opts.outputPath = resolve(value());
+    else if (arg === '--recent-turns') opts.recentTurns = Number(value());
+    else if (arg === '--body-cap') opts.bodyCap = Number(value());
     else throw new Error(`unknown auditor model-matrix option: ${arg}`);
   }
   if (!opts.fixturesPath) throw new Error('--fixtures FILE is required');
   if (!Number.isInteger(opts.repeat) || opts.repeat < 1) throw new Error('--repeat must be a positive integer');
+  if (opts.recentTurns !== null && (!Number.isInteger(opts.recentTurns) || opts.recentTurns < 0 || opts.recentTurns > 3)) throw new Error('--recent-turns must be 0, 1, 2, or 3');
+  if (opts.bodyCap !== null && (!Number.isInteger(opts.bodyCap) || opts.bodyCap <= 0)) throw new Error('--body-cap must be a positive integer');
   opts.profiles = opts.profiles.length ? opts.profiles : [...DEFAULT_PROFILES];
   if (new Set(opts.profiles).size !== opts.profiles.length || opts.profiles.some((profile) => !ALLOWED_PROFILES.includes(profile))) throw new Error('--profile must be baseline, luna, terra, or terra-medium without duplicates');
   return opts;
@@ -126,7 +132,7 @@ function parseArgs(argv) {
 function parseAndValidateFixture(raw) {
   let fixture; try { fixture = JSON.parse(raw); } catch { throw new Error('fixture must be valid JSON'); }
   objectOnly(fixture, ['schema', 'catalog', 'cases'], 'fixture');
-  if (fixture.schema !== 'spotter.auditor_model_fixtures.v1') throw new Error('unsupported fixture schema');
+  if (!['spotter.auditor_model_fixtures.v1', 'spotter.auditor_model_fixtures.v2'].includes(fixture.schema)) throw new Error('unsupported fixture schema');
   if (!Array.isArray(fixture.catalog) || !Array.isArray(fixture.cases) || fixture.cases.length === 0) throw new Error('fixture catalog and non-empty cases are required');
   const catalogNames = new Set();
   for (const tool of fixture.catalog) { objectOnly(tool, ['name', 'description'], 'catalog tool'); clean(tool.name, 'catalog name'); clean(tool.description, 'catalog description'); if (catalogNames.has(tool.name)) throw new Error('duplicate catalog name'); catalogNames.add(tool.name); }
@@ -135,7 +141,7 @@ function parseAndValidateFixture(raw) {
     objectOnly(item, ['id', 'stage', 'input', 'expected'], 'case'); clean(item.id, 'case id');
     if (ids.has(item.id)) throw new Error('duplicate case id'); ids.add(item.id);
     if (!['user_input', 'turn_end'].includes(item.stage)) throw new Error('case stage is invalid');
-    validateInput(item.stage, item.input); objectOnly(item.expected, ['pass', 'missingTools'], 'case expected');
+    validateInput(fixture.schema, item.stage, item.input); objectOnly(item.expected, ['pass', 'missingTools'], 'case expected');
     if (typeof item.expected.pass !== 'boolean' || !Array.isArray(item.expected.missingTools)
       || new Set(item.expected.missingTools).size !== item.expected.missingTools.length
       || item.expected.missingTools.some((name) => typeof name !== 'string' || !catalogNames.has(name))
@@ -145,8 +151,9 @@ function parseAndValidateFixture(raw) {
 }
 function objectOnly(value, keys, label) { if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(`${label} has invalid fields`); }
 function clean(value, label) { if (typeof value !== 'string' || value.length === 0 || value.trim() !== value) throw new Error(`${label} must be a clean non-empty string`); }
-function validateInput(stage, input) { if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('case input is invalid'); if (stage === 'user_input') { objectOnly(input, ['userInput'], 'user_input input'); clean(input.userInput, 'userInput'); } else { objectOnly(input, ['finalResponse', 'usedTools'], 'turn_end input'); clean(input.finalResponse, 'finalResponse'); if (!Array.isArray(input.usedTools) || input.usedTools.some((tool) => typeof tool !== 'string' || tool.length === 0 || tool.trim() !== tool) || new Set(input.usedTools).size !== input.usedTools.length) throw new Error('usedTools is invalid'); } }
-function toAuditorInput(item) { return item.stage === 'user_input' ? { stage: item.stage, userInput: item.input.userInput } : { stage: item.stage, finalResponse: item.input.finalResponse, usedTools: item.input.usedTools }; }
+function validateInput(schema, stage, input) { if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('case input is invalid'); if (stage === 'user_input') { objectOnly(input, schema === 'spotter.auditor_model_fixtures.v2' ? ['userInput', 'recentContext'] : ['userInput'], 'user_input input'); clean(input.userInput, 'userInput'); if (schema === 'spotter.auditor_model_fixtures.v2') { if (!Array.isArray(input.recentContext) || input.recentContext.length < 1 || input.recentContext.length > 3) throw new Error('recentContext must contain one to three turns'); for (const turn of input.recentContext) { objectOnly(turn, ['user', 'assistant'], 'recentContext turn'); clean(turn.user, 'recentContext user'); clean(turn.assistant, 'recentContext assistant'); } } } else { objectOnly(input, ['finalResponse', 'usedTools'], 'turn_end input'); clean(input.finalResponse, 'finalResponse'); if (!Array.isArray(input.usedTools) || input.usedTools.some((tool) => typeof tool !== 'string' || tool.length === 0 || tool.trim() !== tool) || new Set(input.usedTools).size !== input.usedTools.length) throw new Error('usedTools is invalid'); } }
+function resolveContextOptions(opts, schema) { if (schema === 'spotter.auditor_model_fixtures.v1') { if (opts.recentTurns !== null || opts.bodyCap !== null) throw new Error('--recent-turns and --body-cap require a v2 fixture'); return { recentTurns: null, bodyCap: null }; } return { recentTurns: opts.recentTurns ?? 2, bodyCap: opts.bodyCap ?? 1200 }; }
+function toAuditorInput(item, contextOptions) { if (item.stage !== 'user_input') return { stage: item.stage, finalResponse: item.input.finalResponse, usedTools: item.input.usedTools }; const input = { stage: item.stage, userInput: item.input.userInput }; if (contextOptions.recentTurns > 0 && item.input.recentContext) input.recentContext = item.input.recentContext.slice(-contextOptions.recentTurns).map((turn) => ({ user: turn.user.slice(-contextOptions.bodyCap), assistant: turn.assistant.slice(-contextOptions.bodyCap) })); return input; }
 function isCleanString(value) { return typeof value === 'string' && value.length > 0 && value.trim() === value; }
 function cleanStrings(values = []) { return [...new Set(values.filter(isCleanString))]; }
 function successRun({ order, item, repeat, profile, modelSelection, durationMs, schemaSuccess, actualPass, actualTools, invalidFindingCount, droppedTools, droppedToolCount, anomalyTypes, anomalyCount, tokenUsage }) { const expectedTools = item.expected.missingTools; const fp = [...actualTools.filter((tool) => !expectedTools.includes(tool)), ...droppedTools.filter((tool) => !expectedTools.includes(tool))]; const fn = expectedTools.filter((tool) => !actualTools.includes(tool)); return { order, caseId: item.id, repeat, profile, status: 'success', durationMs, schemaSuccess, exactMatch: schemaSuccess && actualPass === item.expected.pass && actualTools.length === expectedTools.length && fp.length === 0 && fn.length === 0 && droppedToolCount === 0 && anomalyCount === 0, expected: item.expected, actual: { pass: actualPass, missingTools: actualTools, invalidFindingCount, droppedCatalogExternalNames: droppedTools, droppedCatalogExternalNameCount: droppedToolCount, anomalies: anomalyTypes, anomalyCount }, falsePositiveTools: fp, falseNegativeTools: fn, modelSelection, tokenUsage }; }

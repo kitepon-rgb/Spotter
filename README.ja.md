@@ -146,6 +146,54 @@ flowchart LR
 
 両者に共通するのは **「主体に頼らない仕組み」**。併用できます。
 
+### 任意の Throughline auditor context canary
+
+新規の project install では auditor context は **disabled** が既定です。これは project が所有する
+opt-in であり、Spotter 全体の production 既定ではありません。現在の候補は Spotter リポジトリだけの
+canary です。auditor-context オプションなしで `spotter install` を再実行した場合、既存プロジェクトの
+設定は保持されます。無効化へ戻すには次を実行します。
+
+```bash
+spotter install -y --auditor-context disabled
+```
+
+project を opt-in するには、絶対パスの Throughline 実行ファイルと、必要なら繰り返し指定できる
+`--throughline-arg` を設定します。
+
+```bash
+spotter install -y --auditor-context throughline \
+  --throughline-command /absolute/path/to/throughline
+```
+
+Windows では shell injection を避けるため `.cmd` / `.bat` wrapper を意図的に拒否します。絶対パスの
+`node.exe` を command にし、絶対パスの `throughline.mjs` を繰り返し引数として渡してください。
+
+```powershell
+spotter install -y --auditor-context throughline `
+  --throughline-command 'C:\Program Files\nodejs\node.exe' `
+  --throughline-arg 'C:\absolute\path\to\throughline\bin\throughline.mjs'
+```
+
+この connector の AI 呼出しは Codex CLI のみです。コンテキストを argv には載せず、AI へは stdin 経由で
+渡します。Haiku はこの context path に未対応であり、呼び出しません。Throughline 結果が `fresh` の時だけ
+AI 呼出し候補になり、それ以外の status では AI を呼びません。enabled connector の障害は hidden fallback
+ではなく固定 warning として出します。
+
+Throughline から渡すのは fresh な完了済み L2 user/assistant pair だけです。直近 2 pair (N=2)、各 body は
+600 文字、合計は 4,000 文字に制限します。Spotter は Throughline の L2、`reason`、`raw` を親へ反射せず、
+親には安全な catalog tool ID から作る固定・非命令形の助言だけを渡します。`spotter doctor` は command / args
+を表示せず、auditor-context mode と固定の availability detail だけを表示します。
+
+v2 model-matrix では context choice を明示できます。
+
+```bash
+spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json \
+  --recent-turns 2 --body-cap 600
+```
+
+評価結論は現在 N=2 / 600 です。ただし rollout 承認ではありません。Spotter リポジトリ canary の
+7 日・30 fresh result gate は未完了です。
+
 ## よく使うコマンド
 
 ```bash
@@ -172,7 +220,7 @@ spotter codex-hook install
                          # Codex native hooks の修復 / 明示登録 (通常は spotter install が実行)
 spotter codex-hook diagnostics
                          # Codex hook の登録/readiness を診断。trust は /hooks で review
-spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v1.json
+spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600
                          # pinned auditor model profile を再現可能に比較する experimental eval
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ```

@@ -1,0 +1,1457 @@
+{
+  "schema": "spotter.auditor_model_matrix.v1",
+  "generatedAt": "2026-07-12T16:03:01.724Z",
+  "packageVersion": "1.4.19",
+  "fixture": {
+    "schema": "spotter.auditor_model_fixtures.v2",
+    "path": "test/fixtures/auditor-model-matrix.v2.json",
+    "sha256": "bc4197b533eabc94b52888de4cd4cec09fb451da2998ccb381699f74c790671e",
+    "cases": 9,
+    "catalogCount": 2
+  },
+  "codexCli": {
+    "status": "available",
+    "version": "codex-cli 0.144.1"
+  },
+  "policy": {
+    "schema": "spotter.codex_auditor_model_policy.v1",
+    "version": "3"
+  },
+  "auditorPromptVersion": "2",
+  "profiles": {
+    "baseline": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "medium",
+      "verifiedAt": "2026-07-12",
+      "verificationScope": "operational-smoke",
+      "status": "verified",
+      "selection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      }
+    }
+  },
+  "runs": [
+    {
+      "order": 1,
+      "caseId": "rate-limit-recovered",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3224,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18150,
+        "cachedInputTokens": 17664,
+        "outputTokens": 40,
+        "reasoningOutputTokens": 19,
+        "totalTokens": 18190
+      }
+    },
+    {
+      "order": 2,
+      "caseId": "rate-limit-recovered",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3039,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18150,
+        "cachedInputTokens": 17664,
+        "outputTokens": 47,
+        "reasoningOutputTokens": 26,
+        "totalTokens": 18197
+      }
+    },
+    {
+      "order": 3,
+      "caseId": "rate-limit-recovered",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 2563,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18150,
+        "cachedInputTokens": 17664,
+        "outputTokens": 45,
+        "reasoningOutputTokens": 24,
+        "totalTokens": 18195
+      }
+    },
+    {
+      "order": 4,
+      "caseId": "rate-limit-unresolved",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3464,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__troubleshooting__investigate"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__troubleshooting__investigate"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18149,
+        "cachedInputTokens": 17664,
+        "outputTokens": 84,
+        "reasoningOutputTokens": 24,
+        "totalTokens": 18233
+      }
+    },
+    {
+      "order": 5,
+      "caseId": "rate-limit-unresolved",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3691,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__troubleshooting__investigate"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__troubleshooting__investigate"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18149,
+        "cachedInputTokens": 17664,
+        "outputTokens": 87,
+        "reasoningOutputTokens": 15,
+        "totalTokens": 18236
+      }
+    },
+    {
+      "order": 6,
+      "caseId": "rate-limit-unresolved",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 8836,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__troubleshooting__investigate"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__troubleshooting__investigate"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 17799,
+        "cachedInputTokens": 17152,
+        "outputTokens": 90,
+        "reasoningOutputTokens": 22,
+        "totalTokens": 17889
+      }
+    },
+    {
+      "order": 7,
+      "caseId": "caveat-not-yet-used",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3460,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18148,
+        "cachedInputTokens": 17664,
+        "outputTokens": 81,
+        "reasoningOutputTokens": 20,
+        "totalTokens": 18229
+      }
+    },
+    {
+      "order": 8,
+      "caseId": "caveat-not-yet-used",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3717,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18148,
+        "cachedInputTokens": 17664,
+        "outputTokens": 91,
+        "reasoningOutputTokens": 22,
+        "totalTokens": 18239
+      }
+    },
+    {
+      "order": 9,
+      "caseId": "caveat-not-yet-used",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3852,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18148,
+        "cachedInputTokens": 17664,
+        "outputTokens": 66,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 18214
+      }
+    },
+    {
+      "order": 10,
+      "caseId": "caveat-already-used",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3415,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18149,
+        "cachedInputTokens": 17664,
+        "outputTokens": 51,
+        "reasoningOutputTokens": 30,
+        "totalTokens": 18200
+      }
+    },
+    {
+      "order": 11,
+      "caseId": "caveat-already-used",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3057,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18149,
+        "cachedInputTokens": 17664,
+        "outputTokens": 45,
+        "reasoningOutputTokens": 24,
+        "totalTokens": 18194
+      }
+    },
+    {
+      "order": 12,
+      "caseId": "caveat-already-used",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3058,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 20157,
+        "cachedInputTokens": 13056,
+        "outputTokens": 49,
+        "reasoningOutputTokens": 28,
+        "totalTokens": 20206
+      }
+    },
+    {
+      "order": 13,
+      "caseId": "tool-name-topic-only",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 2165,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18155,
+        "cachedInputTokens": 17664,
+        "outputTokens": 19,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 18174
+      }
+    },
+    {
+      "order": 14,
+      "caseId": "tool-name-topic-only",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 2302,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18155,
+        "cachedInputTokens": 0,
+        "outputTokens": 19,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 18174
+      }
+    },
+    {
+      "order": 15,
+      "caseId": "tool-name-topic-only",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 2424,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18155,
+        "cachedInputTokens": 17664,
+        "outputTokens": 19,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 18174
+      }
+    },
+    {
+      "order": 16,
+      "caseId": "context-injection-is-data",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3548,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18170,
+        "cachedInputTokens": 17664,
+        "outputTokens": 44,
+        "reasoningOutputTokens": 23,
+        "totalTokens": 18214
+      }
+    },
+    {
+      "order": 17,
+      "caseId": "context-injection-is-data",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 9396,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18170,
+        "cachedInputTokens": 17664,
+        "outputTokens": 41,
+        "reasoningOutputTokens": 20,
+        "totalTokens": 18211
+      }
+    },
+    {
+      "order": 18,
+      "caseId": "context-injection-is-data",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3033,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18170,
+        "cachedInputTokens": 17664,
+        "outputTokens": 44,
+        "reasoningOutputTokens": 23,
+        "totalTokens": 18214
+      }
+    },
+    {
+      "order": 19,
+      "caseId": "multiple-unresolved",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 4620,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search",
+          "mcp__troubleshooting__investigate"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search",
+          "mcp__troubleshooting__investigate"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18163,
+        "cachedInputTokens": 17664,
+        "outputTokens": 144,
+        "reasoningOutputTokens": 48,
+        "totalTokens": 18307
+      }
+    },
+    {
+      "order": 20,
+      "caseId": "multiple-unresolved",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 4817,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search",
+          "mcp__troubleshooting__investigate"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search",
+          "mcp__troubleshooting__investigate"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18163,
+        "cachedInputTokens": 17664,
+        "outputTokens": 135,
+        "reasoningOutputTokens": 33,
+        "totalTokens": 18298
+      }
+    },
+    {
+      "order": 21,
+      "caseId": "multiple-unresolved",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 5174,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search",
+          "mcp__troubleshooting__investigate"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search",
+          "mcp__troubleshooting__investigate"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 19963,
+        "cachedInputTokens": 9984,
+        "outputTokens": 133,
+        "reasoningOutputTokens": 35,
+        "totalTokens": 20096
+      }
+    },
+    {
+      "order": 22,
+      "caseId": "two-turn-context-required",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 4200,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18177,
+        "cachedInputTokens": 17664,
+        "outputTokens": 86,
+        "reasoningOutputTokens": 26,
+        "totalTokens": 18263
+      }
+    },
+    {
+      "order": 23,
+      "caseId": "two-turn-context-required",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3842,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18177,
+        "cachedInputTokens": 17664,
+        "outputTokens": 86,
+        "reasoningOutputTokens": 26,
+        "totalTokens": 18263
+      }
+    },
+    {
+      "order": 24,
+      "caseId": "two-turn-context-required",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3839,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ]
+      },
+      "actual": {
+        "pass": false,
+        "missingTools": [
+          "mcp__caveat__caveat_search"
+        ],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18177,
+        "cachedInputTokens": 17664,
+        "outputTokens": 100,
+        "reasoningOutputTokens": 34,
+        "totalTokens": 18277
+      }
+    },
+    {
+      "order": 25,
+      "caseId": "three-turn-old-topic-superseded",
+      "repeat": 1,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3248,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18182,
+        "cachedInputTokens": 17664,
+        "outputTokens": 44,
+        "reasoningOutputTokens": 23,
+        "totalTokens": 18226
+      }
+    },
+    {
+      "order": 26,
+      "caseId": "three-turn-old-topic-superseded",
+      "repeat": 2,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 3041,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18182,
+        "cachedInputTokens": 17664,
+        "outputTokens": 45,
+        "reasoningOutputTokens": 24,
+        "totalTokens": 18227
+      }
+    },
+    {
+      "order": 27,
+      "caseId": "three-turn-old-topic-superseded",
+      "repeat": 3,
+      "profile": "baseline",
+      "status": "success",
+      "durationMs": 2777,
+      "schemaSuccess": true,
+      "exactMatch": true,
+      "expected": {
+        "pass": true,
+        "missingTools": []
+      },
+      "actual": {
+        "pass": true,
+        "missingTools": [],
+        "invalidFindingCount": 0,
+        "droppedCatalogExternalNames": [],
+        "droppedCatalogExternalNameCount": 0,
+        "anomalies": [],
+        "anomalyCount": 0
+      },
+      "falsePositiveTools": [],
+      "falseNegativeTools": [],
+      "modelSelection": {
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveReasoningEffort": "medium",
+        "modelSource": "profile:baseline",
+        "effortSource": "profile:baseline",
+        "policySchema": "spotter.codex_auditor_model_policy.v1",
+        "policyVersion": "3",
+        "policyVerifiedAt": "2026-07-12",
+        "policyVerificationScope": "operational-smoke",
+        "effectiveVerifiedAt": "2026-07-12",
+        "effectiveStatus": "verified",
+        "effectiveVerificationScope": "operational-smoke",
+        "role": "high-frequency-structured-tool-auditor",
+        "availability": "unverified-until-invocation"
+      },
+      "tokenUsage": {
+        "inputTokens": 18182,
+        "cachedInputTokens": 17664,
+        "outputTokens": 40,
+        "reasoningOutputTokens": 19,
+        "totalTokens": 18222
+      }
+    }
+  ],
+  "summary": {
+    "total": 27,
+    "success": 27,
+    "error": 0,
+    "schemaSuccess": 27,
+    "exactMatch": 27,
+    "falsePositiveTools": 0,
+    "falseNegativeTools": 0,
+    "invalidFindingCount": 0,
+    "anomalyCount": 0,
+    "droppedCatalogExternalNameCount": 0,
+    "durationMs": {
+      "p50": 3460,
+      "p95": 8836
+    },
+    "timeoutCount": 0,
+    "timeoutRate": 0,
+    "byProfile": {
+      "baseline": {
+        "total": 27,
+        "success": 27,
+        "error": 0,
+        "schemaSuccess": 27,
+        "exactMatch": 27,
+        "falsePositiveTools": 0,
+        "falseNegativeTools": 0,
+        "invalidFindingCount": 0,
+        "anomalyCount": 0,
+        "droppedCatalogExternalNameCount": 0,
+        "durationMs": {
+          "p50": 3460,
+          "p95": 8836
+        },
+        "timeoutCount": 0,
+        "timeoutRate": 0
+      }
+    }
+  },
+  "usageStatus": "complete",
+  "tokenUsage": {
+    "observedRuns": 27,
+    "totalRuns": 27,
+    "totals": {
+      "inputTokens": 493787,
+      "cachedInputTokens": 446464,
+      "outputTokens": 1775,
+      "reasoningOutputTokens": 588,
+      "totalTokens": 495562
+    },
+    "totalTokensPerRun": {
+      "p50": 18222,
+      "p95": 20096
+    },
+    "byProfile": {
+      "baseline": {
+        "observedRuns": 27,
+        "totalRuns": 27,
+        "totals": {
+          "inputTokens": 493787,
+          "cachedInputTokens": 446464,
+          "outputTokens": 1775,
+          "reasoningOutputTokens": 588,
+          "totalTokens": 495562
+        },
+        "totalTokensPerRun": {
+          "p50": 18222,
+          "p95": 20096
+        }
+      }
+    }
+  },
+  "costStatus": "not-available-chatgpt-plan",
+  "cost": null,
+  "evaluation": {
+    "repeat": 3,
+    "profiles": [
+      "baseline"
+    ],
+    "maxRuns": 300,
+    "recentTurns": 2,
+    "bodyCap": 1200
+  },
+  "executionOrdering": "case-repeat-profile",
+  "promotionEligible": false,
+  "blockingReasons": [
+    "cost_not_available"
+  ]
+}

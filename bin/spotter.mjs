@@ -21,7 +21,9 @@ import { runSessionEnd } from '../src/hooks/session-end.mjs';
 const USAGE = `spotter — Claude Code tool-call auditor
 
 Usage:
-  spotter install [-y]                  register hooks in <cwd>/.claude/settings.json
+  spotter install [-y] [--auditor-context disabled|throughline]
+                                        [--throughline-command ABS] [--throughline-arg VALUE]
+                                        register hooks in <cwd>/.claude/settings.json
                                         and create <cwd>/.spotter/marker.json
                                         (run inside each project you want audited)
   spotter install --user [-y]           legacy: register globally in ~/.claude/settings.json
@@ -75,9 +77,8 @@ async function main() {
   const [cmd, ...rest] = argv;
   switch (cmd) {
     case 'install': {
-      const target = rest.includes('--user') ? 'user' : 'project';
-      const autoYes = rest.includes('-y') || rest.includes('--yes');
-      await runInstall({ target, autoYes });
+      const options = parseInstallArgs(rest);
+      await runInstall(options);
       return;
     }
     case 'uninstall': {
@@ -138,6 +139,60 @@ async function main() {
       process.stderr.write(`unknown command: ${cmd}\n${USAGE}`);
       process.exit(2);
   }
+}
+
+function parseInstallArgs(argv) {
+  let target = 'project';
+  let autoYes = false;
+  let mode = null;
+  let command = null;
+  const args = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--user') {
+      if (target === 'user') throw invalidInstallArgs();
+      target = 'user';
+    } else if (arg === '-y' || arg === '--yes') {
+      if (autoYes) throw invalidInstallArgs();
+      autoYes = true;
+    } else if (arg === '--auditor-context') {
+      if (mode !== null) throw invalidInstallArgs();
+      mode = argv[++index];
+      if (mode !== 'disabled' && mode !== 'throughline') throw invalidInstallArgs();
+    } else if (arg === '--throughline-command') {
+      if (command !== null) throw invalidInstallArgs();
+      command = argv[++index];
+      if (typeof command !== 'string' || command.length === 0) throw invalidInstallArgs();
+    } else if (arg === '--throughline-arg') {
+      const value = argv[++index];
+      if (typeof value !== 'string' || value.length === 0) throw invalidInstallArgs();
+      args.push(value);
+    } else {
+      throw invalidInstallArgs();
+    }
+  }
+  if (mode === null && (command !== null || args.length > 0)) throw invalidInstallArgs();
+  if (mode === 'disabled' && (command !== null || args.length > 0)) throw invalidInstallArgs();
+  if (mode === 'throughline' && (command === null || !isAbsoluteCommand(command) || isShellWrapper(command))) throw invalidInstallArgs();
+  const auditorContext = mode === null ? undefined : mode === 'disabled'
+    ? { mode: 'disabled' }
+    : { mode: 'throughline', command, args };
+  return { target, autoYes, auditorContext };
+}
+
+function isAbsoluteCommand(value) {
+  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value);
+}
+
+function isShellWrapper(value) {
+  return /\.(?:cmd|bat)$/i.test(value);
+}
+
+function invalidInstallArgs() {
+  const err = new Error('invalid install arguments');
+  err.stack = '';
+  err.exitCode = 2;
+  return err;
 }
 
 main().catch((err) => {

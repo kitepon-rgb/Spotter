@@ -246,7 +246,20 @@ export async function readFindingsJson(path) {
   if (Array.isArray(parsed)) return parsed;
   if (Array.isArray(parsed?.findings)) return parsed.findings;
   if (Array.isArray(parsed?.judgment?.findings)) return parsed.judgment.findings;
-  throw new TypeError('readFindingsJson: JSON must be an array, {findings}, or {judgment:{findings}}');
+  if (typeof parsed?.stage === 'string' && Array.isArray(parsed?.toolIds)) {
+    return parsed.toolIds.map((toolName, index) => ({
+      id: `spotter.${parsed.stage}.${index + 1}`,
+      stage: parsed.stage,
+      toolName,
+      reason: 'Spotter verified a tool candidate for independent risk review',
+      category: 'tool_miss',
+      severity: 'unknown',
+      confidence: 'unknown',
+      references: [],
+      source: 'spotter',
+    }));
+  }
+  throw new TypeError('readFindingsJson: JSON must be an array, {findings}, {judgment:{findings}}, or safe {stage,toolIds}');
 }
 
 async function runDiagnostics({ projectRoot, preset, execFileFn, spawnOptions }) {

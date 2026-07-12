@@ -55,6 +55,46 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
   }
 });
 
+test('startDaemon: non-fresh user input updates turn state without invoking auditor', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `d-${randomUUID()}`;
+  let haikuCalls = 0;
+  const haikuCaller = async () => {
+    haikuCalls += 1;
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  const running = await startDaemon({
+    sessionId,
+    tools,
+    haikuCaller,
+    haikuCallWindowMs: 0,
+    stopShortFinalMaxChars: 0,
+  });
+  try {
+    const observed = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '続けて', audit: false, context_status: 'stale' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(observed.ok, true);
+    assert.equal(observed.result.reason, 'auditor_context_not_fresh');
+    assert.equal(haikuCalls, 0);
+
+    const stopped = await sendRequest({
+      sessionId,
+      event: 'turn_end',
+      payload: { final_response: '十分に長い最終応答', stop_hook_active: false },
+      timeoutMs: 2_000,
+    });
+    assert.equal(stopped.ok, true);
+    assert.equal(haikuCalls, 1, 'existing Stop auditor must retain the observed turn state');
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('startDaemon: per-turn prompts carry only the stage delta (no catalog)', async () => {
   // v0.6.0: the daemon builds the preamble (role + schema + catalog) once at startup and
   // threads it into the Haiku caller. Per-turn prompts (what the daemon passes to the

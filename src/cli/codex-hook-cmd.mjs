@@ -28,13 +28,16 @@ import {
   hookEventsPath,
   summarizeHookEvents,
 } from '../core/hook-event-log.mjs';
+import {
+  loadAuditorContext,
+  readProjectAuditorContextConfig,
+} from '../core/auditor-context.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
 const SPOTTER_BIN = join(PACKAGE_ROOT, 'bin', 'spotter.mjs');
 const CODEX_HOOK_TIMEOUT_SEC = 60;
 const DEFAULT_CODEX_HOOK_AUDITOR_TIMEOUT_MS = 20_000;
-const SHORT_PROMPT_MAX_CHARS = 10;
 const DEFAULT_CODEX_STOP_SHORT_FINAL_MAX_CHARS = 120;
 const CODEX_HOOK_FEATURE_NAMES = ['hooks', 'codex_hooks'];
 
@@ -114,6 +117,8 @@ export async function runCodexUserPromptSubmitHook({
   createAuditorBackendFn = createAuditorBackend,
   recordHookEventFn = appendCodexHookEvent,
   discardLegacyPendingFn = discardLegacyPending,
+  readAuditorContextConfigFn = readProjectAuditorContextConfig,
+  loadAuditorContextFn = loadAuditorContext,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
 } = {}) {
@@ -122,16 +127,88 @@ export async function runCodexUserPromptSubmitHook({
   const projectRoot = findSpotterMarker(input.cwd);
   if (!projectRoot) return;
   const startedAt = Date.now();
+  let contextDurationMs = null;
 
   const prompt = requireString(input, 'prompt');
   const legacyPending = await discardLegacyPendingFn({ projectRoot, sessionId: codexSessionId(input) });
-  if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
+  let context;
+  const contextStartedAt = Date.now();
+  try {
+    const config = await readAuditorContextConfigFn(projectRoot);
+    contextDurationMs = Date.now() - contextStartedAt;
+    if (config.mode === 'disabled') {
+      await recordCodexHookEventSafe(recordHookEventFn, {
+        projectRoot,
+        event: {
+          hook: 'UserPromptSubmit',
+          status: 'skipped',
+          reason: 'context_disabled',
+          contextStatus: 'disabled',
+          contextDurationMs,
+          legacyPendingDiagnostic: legacyPending.diagnostic,
+          durationMs: Date.now() - startedAt,
+        },
+      }, writeError);
+      return;
+    }
+    context = await loadAuditorContextFn({
+      config,
+      host: 'codex',
+      sessionId: requireCodexSessionId(input),
+      projectRoot,
+      transcriptPath: requireString(input, 'transcript_path'),
+    });
+    contextDurationMs = Date.now() - contextStartedAt;
+  } catch (err) {
+    contextDurationMs = Date.now() - contextStartedAt;
+    const failure = projectBackendFailure(err?.code);
+    safeWriteError(writeError, failure.stderr);
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'UserPromptSubmit',
+        status: 'error',
+        code: failure.code,
+        reason: 'auditor_context',
+        contextDurationMs,
+        legacyPendingDiagnostic: legacyPending.diagnostic,
+        durationMs: Date.now() - startedAt,
+      },
+    }, writeError);
+    writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
+    return;
+  }
+  if (context.status === 'unavailable' || context.status === 'schema_mismatch') {
+    const failure = projectBackendFailure(context.status === 'unavailable'
+      ? 'E_AUDITOR_CONTEXT_UNAVAILABLE'
+      : 'E_AUDITOR_CONTEXT_SCHEMA');
+    safeWriteError(writeError, failure.stderr);
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'UserPromptSubmit',
+        status: 'error',
+        code: failure.code,
+        reason: 'auditor_context_status',
+        contextDurationMs,
+        legacyPendingDiagnostic: legacyPending.diagnostic,
+        durationMs: Date.now() - startedAt,
+      },
+    }, writeError);
+    writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
+    return;
+  }
+  if (context.status !== 'fresh') {
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
       event: {
         hook: 'UserPromptSubmit',
         status: 'skipped',
-        reason: 'short_prompt',
+        reason: 'context_not_fresh',
+        contextStatus: context.status,
+        contextTurns: 0,
+        contextChars: 0,
+        contextDurationMs,
         legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
       },
@@ -145,7 +222,12 @@ export async function runCodexUserPromptSubmitHook({
   try {
     catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
     backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
-    judgment = await backend.judge({ stage: 'user_input', userInput: prompt });
+    judgment = await backend.judge({
+      stage: 'user_input',
+      userInput: prompt,
+      recentContext: context.turns,
+      contextStatus: 'fresh',
+    });
   } catch (err) {
     const failure = projectBackendFailure(err?.code);
     safeWriteError(writeError, failure.stderr);
@@ -172,6 +254,10 @@ export async function runCodexUserPromptSubmitHook({
       backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
       pass: judgment.pass,
       missingTools: projectToolIds(judgment.findings.map((finding) => finding.toolName)),
+      contextStatus: 'fresh',
+      contextTurns: context.stats.returnedTurns,
+      contextChars: context.stats.chars,
+      contextDurationMs,
       ...compactCodexModelSelectionForEvent(judgment.meta?.modelSelection),
       legacyPendingDiagnostic: legacyPending.diagnostic,
       backendDurationMs: judgment.meta?.durationMs ?? null,
@@ -619,6 +705,14 @@ function compactCodexModelSelectionForEvent(selection) {
 function codexSessionId(payload) {
   const value = payload?.session_id ?? payload?.sessionId;
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function requireCodexSessionId(payload) {
+  const value = codexSessionId(payload);
+  if (value) return value;
+  const err = new Error('session_id is required');
+  err.code = 'E_AUDITOR_CONTEXT_INPUT';
+  throw err;
 }
 
 // v1.4.19: legacy pending migration is handled only by `discardLegacyPending` on

@@ -57,6 +57,7 @@ export async function runInstall({
   refreshFn = refresh,
   codexCliPresentFn = isCodexCliPresent,
   installCodexHooksFn = installCodexHooks,
+  auditorContext,
 } = {}) {
   const settingsPath = target === 'user'
     ? join(homedir(), '.claude', 'settings.json')
@@ -84,10 +85,14 @@ export async function runInstall({
     const markerDir = join(cwd, '.spotter');
     const markerPath = join(markerDir, 'marker.json');
     await mkdir(markerDir, { recursive: true });
+    const preservedAuditorContext = auditorContext === undefined
+      ? await readExistingAuditorContext(markerPath)
+      : auditorContext;
     const marker = {
       markerVersion: MARKER_VERSION,
       spotterVersion: SPOTTER_VERSION,
       installedAt: new Date().toISOString(),
+      auditorContext: preservedAuditorContext,
     };
     await writeFile(markerPath, JSON.stringify(marker, null, 2) + '\n', 'utf8');
     console.log(`  wrote ${markerPath}`);
@@ -168,6 +173,16 @@ export async function runInstall({
     for (const step of codexInstallNextSteps(cwd)) console.log(`  ${step}`);
   } else if (target === 'project' && !skipCodexHooks) {
     console.log('  Codex hooks are not active: rerun `spotter install` where `codex --version` succeeds');
+  }
+}
+
+async function readExistingAuditorContext(markerPath) {
+  try {
+    const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+    return marker?.auditorContext ?? { mode: 'disabled' };
+  } catch (err) {
+    if (err?.code === 'ENOENT') return { mode: 'disabled' };
+    throw err;
   }
 }
 

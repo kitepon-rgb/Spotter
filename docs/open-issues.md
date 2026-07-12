@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点（v1.4.19 published / global installed、2026-07-12）に **塞がっていない穴** と
+Spotter で現時点（v1.4.20 release candidate / v1.4.19 published・global installed、2026-07-13）に **塞がっていない穴** と
 **実測未検証の懸念** を優先度付きで記録する。repo で修正済みでも、未配布・未 install なら
 実環境では未解決として扱う。
 
@@ -14,6 +14,30 @@ Spotter で現時点（v1.4.19 published / global installed、2026-07-12）に *
   - **P0** — 次に実装着手する前に解決したい。放置が怖い
   - **P1** — 次の patch / 実測レーンで塞ぎたい
   - **P2** — 機会があれば
+
+---
+
+## P0 — 監査AIの文脈不足による過剰提案（repo実装済み・canary中）
+
+### 解決済み・撤回済みの話題へtoolを提案できる
+
+**背景**: 公開済みv1.4.19では親出力の自由文注入を廃止したが、監査AIの意味判定自体は現在のuser inputだけを
+中心に行う。2026-07-12に「レートリミット回復、再開」という解決済み状態へ
+`openai-api-troubleshooting`を提案した。固定・非命令形projectorにより暴走経路にはならないが、
+親AIが棄却すべき余計な助言であり、precision問題として残る。
+
+**調査結論**: promptは既にJSON限定・catalog限定・迷ったらpassを要求している。根本は、親AIが持つ
+直前の解決状態・方針変更・実施済み操作を監査AIへ渡していないこと。Throughline L2は要約ではなく、
+tool/thinking/systemをL3へ分離したuser/assistant本文である。DB直読みではなく、Throughline所有の
+read-only projectionからexact sessionの直近完了turnを取得する。
+
+**2026-07-12 repo実装**: Throughline所有のread-only projection、完了pair freshness、project opt-in、
+fresh以外での監査AI未呼出、固定親出力、Codex stdin transportを実装した。fixture評価から
+`N=2 / per-body 600 / total 4,000 chars`を採用候補とし、Spotterリポ限定canaryを開始した。
+
+**次アクション**: [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md)のPhase 5に従い、
+7日以上かつfresh 30件以上（期待finding/pass各10件以上）を人手ラベル付きで観測する。過検出・見逃し0と
+fresh以外の助言0を確認後、ownerがproduction default化を個別承認し、registry tarball smokeを行う。
 
 ---
 
