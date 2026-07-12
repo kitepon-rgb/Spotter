@@ -14,6 +14,7 @@ Archived:
 
 - [`03_current-state-recovery-plan.md`](03_current-state-recovery-plan.md): completed recovery, release, and model-evaluation plan
 - [`05_parent-session-safety-plan.md`](05_parent-session-safety-plan.md): completed parent-session output-boundary implementation plan
+- [`06_release-v1.4.19-plan.md`](06_release-v1.4.19-plan.md): completed v1.4.19 release and registry-install verification
 - [`release-notes-v1.4.19.md`](release-notes-v1.4.19.md): public release notes for v1.4.19
 - [`SPOTTER_CODEX_DUAL_SUPPORT.md`](SPOTTER_CODEX_DUAL_SUPPORT.md): Claude / Codex second-pass workflow brief
 - [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md): completed dual-support phase gates

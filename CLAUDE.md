@@ -16,12 +16,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v1.4.19 (release candidate 2026-07-12)**: 親セッションとの出力信頼境界を修正する。監査用AIの
+**v1.4.19 (published 2026-07-12)**: 親セッションとの出力信頼境界を修正する。監査用AIの
 `reason` / `raw`、backend message、provider stdout / stderr は Hook 出力へ渡さず、Claude / Codex
 共通のルールベース projector が catalog 照合済みの安全なツールIDだけを固定・非命令形の助言へ
 変換する。`Stop` finding / failure の次ターン pending 配送は廃止し、finding は構造Hook event、failureは
 allow-list済み固定 `systemMessage`・固定stderr・構造eventへ分離する。旧 pending は内容を読まずに
 same-session fileだけ削除する。`decision:"block"` / exit 2による継続や入力消去は追加しない。
+公開SHAは`5393919`、CIはmacOS/Linux/Windows × Node 22.5/22.xの6/6 green。`v1.4.19` tag、
+npm `latest`、GitHub Release、このMacのregistry由来global installを1.4.19へ同期した。
 
 **v1.4.18 (released 2026-07-12)**: Codex auditor model を versioned policy に集約し、production default を
 反復 fixture 評価で24/24 exact・FP/FN 0・timeout 0だった `gpt-5.6-terra × medium` へ昇格した。

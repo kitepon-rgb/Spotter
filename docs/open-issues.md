@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点（v1.4.19 release candidate、2026-07-12）に **塞がっていない穴** と
+Spotter で現時点（v1.4.19 published / global installed、2026-07-12）に **塞がっていない穴** と
 **実測未検証の懸念** を優先度付きで記録する。repo で修正済みでも、未配布・未 install なら
 実環境では未解決として扱う。
 
@@ -255,7 +255,7 @@ timeout 突破頻発なら緊急対処。
 
 | 課題 | 解決版 |
 |---|---|
-| 監査用AIの`reason`、backend/provider生出力、Stopの前turn指摘が親モデルcontextへ昇格して暴走を誘発できた。共通projectorがcatalog照合・grammar検証済みtool IDだけを固定・非命令形助言へ変換し、failureは固定Hook出力、Stop findingは構造eventに限定。pending新規作成と次turn配送を廃止し、旧pendingは非読取unlink。全447件中445 pass/2 skip、敵対的再監査blocker 0、local global 1.4.19へ反映 | v1.4.19 release candidate |
+| 監査用AIの`reason`、backend/provider生出力、Stopの前turn指摘が親モデルcontextへ昇格して暴走を誘発できた。共通projectorがcatalog照合・grammar検証済みtool IDだけを固定・非命令形助言へ変換し、failureは固定Hook出力、Stop findingは構造eventに限定。pending新規作成と次turn配送を廃止し、旧pendingは非読取unlink。全447件中445 pass/2 skip、敵対的再監査blocker 0、registry由来global installへ反映 | v1.4.19 published |
 | Codex `SessionStart` に `async:true` を生成して現行 CLI が handler を skip し、diagnostics も `available` と誤成功していた。installer-owned entry を canonical `{type,command,timeout}` へ正規化し、feature / registered / compatible / canonical / observed / readiness を分離。trust は `/hooks` review を案内 | v1.4.17 published |
 | Claude Stop backend failure が degraded event だけで warning pending を積まず、backend が回復した次 turn に過去の未監査を通知できなかった。Claude / Codex 両 host で warning を host-neutral pending に dedupe 保存し、次 prompt で finding と同時に1回 drain。pending / stderr / event writer failure も non-blocking かつ loud。v1.4.19で親文脈へ配送しない安全境界へ置換 | v1.4.17 published、v1.4.19で置換 |
 | Codex used-tools が legacy `function_call` だけを読み、現行 shell `custom_tool_call`、MCP、agent call を数えず short Stop を誤 skip し得た。bounded current-turn readerで全既知形を認識し、missing / oversize / schema drift は anomaly として監査を継続 | v1.4.17 published |

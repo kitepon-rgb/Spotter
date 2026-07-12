@@ -1,6 +1,6 @@
 # 06 v1.4.19 リリースプラン
 
-状態: 実行中
+状態: 完了
 作成日: 2026-07-12
 対象: `main` / npm `claude-spotter@1.4.19` / GitHub Release / global install
 
@@ -27,14 +27,23 @@
 - [x] full test、diff check、pack内容、秘密混入を再検証する
 - [x] 敵対的release監査のrollback指摘を修正し、公開blocker 0を確認する
 - [x] 文書更新をpathspec明示でコミットする
-- [ ] `main`をpushし、remote SHA一致を確認する
-- [ ] CIがgreenになるまで確認する
-- [ ] 公開対象SHAへ`v1.4.19` tagを作成・pushする
-- [ ] `npm publish`し、registry version・dist-tag・tarballを確認する
-- [ ] GitHub Releaseを作成し、tag・release・npmを照合する
-- [ ] npm公開版をglobal installし、version・主要ファイル・Hook診断を確認する
-- [ ] open issues / CHANGELOG / repository statusへ公開結果を記録する
-- [ ] 最終文書コミットをpushし、計画をarchiveへ移す
+- [x] `main`をpushし、remote SHA一致を確認する
+- [x] CIがgreenになるまで確認する
+- [x] 公開対象SHAへ`v1.4.19` tagを作成・pushする
+- [x] `npm publish`し、registry version・dist-tag・tarballを確認する
+- [x] GitHub Releaseを作成し、tag・release・npmを照合する
+- [x] npm公開版をglobal installし、version・主要ファイル・Hook診断を確認する
+- [x] open issues / CHANGELOG / repository statusへ公開結果を記録する
+- [x] 最終文書コミットをpushし、計画をarchiveへ移す
+
+## 完了記録
+
+- 公開SHA: `53939199fa8bcd68eb01705137538f754d1a2b17`
+- CI: 6/6 green（macOS / Linux / Windows、Node 22.5 / 22.x）
+- npm: `claude-spotter@1.4.19`、`latest=1.4.19`
+- GitHub Release: `https://github.com/kitepon-rgb/Spotter/releases/tag/v1.4.19`
+- global install: registry由来の通常directory、`spotter 1.4.19`
+- Hook diagnostics: 3件installed / compatible / canonical、modelは`gpt-5.6-terra × medium`
 
 ## 合格条件
 

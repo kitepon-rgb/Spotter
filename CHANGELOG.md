@@ -29,8 +29,10 @@ AI/backend/provider sentinel、unsafe ID、legacy pending非読取unlink、Stop�
 読込例外の固定degradationを確認した。敵対的再監査は初回BLOCKER 2件（Codex読込例外の境界外、
 UI可視性の過剰主張）を検出・修正し、再監査BLOCKER 0。`npm pack --dry-run`は62 files、global
 `spotter 1.4.19`へlocal installし、projector smoke・Hook diagnostics・global UserPromptSubmit smokeを
-確認した。公開前release gateとしてfull test、pack、秘密混入、CI、registry tarballを再検証し、
-`v1.4.19` tag・npm `latest`・GitHub Release・global installを同一versionへ揃える。
+確認した。公開前release gateでfull test、pack、秘密混入を再検証し、公開SHA`5393919`のCIは
+macOS/Linux/Windows × Node 22.5/22.xの6/6 green。`v1.4.19` tag、npm `latest`、
+[GitHub Release](https://github.com/kitepon-rgb/Spotter/releases/tag/v1.4.19)、registry由来global installを
+1.4.19へ揃え、global projector smokeとHook diagnosticsもgreen。
 
 ## 1.4.18
 
