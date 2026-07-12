@@ -1,0 +1,60 @@
+name: Codex model policy check
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.5.0'
+      - id: check
+        name: Fetch official model metadata
+        run: |
+          node scripts/check-codex-model-policy.mjs > model-policy-check.json
+          node --input-type=module <<'EOF'
+          import { readFile } from 'node:fs/promises';
+          const artifact = JSON.parse(await readFile('model-policy-check.json', 'utf8'));
+          console.log(`status=${artifact.status}`);
+          console.log(`family=${artifact.detectedFamily.version}`);
+          await import('node:fs/promises').then(({ appendFile }) => appendFile(
+            process.env.GITHUB_OUTPUT,
+            `status=${artifact.status}\nfamily=${artifact.detectedFamily.version}\n`,
+          ));
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-model-policy-check
+          path: model-policy-check.json
+          if-no-files-found: error
+      - name: Create evaluation proposal issue
+        if: steps.check.outputs.status == 'update-available'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: 'Evaluate Codex auditor model family ${{ steps.check.outputs.family }}'
+        run: |
+          if gh issue list --state open --search "$ISSUE_TITLE in:title" --json title --jq '.[] | select(.title == env.ISSUE_TITLE) | .title' | grep -qx "$ISSUE_TITLE"; then
+            exit 0
+          fi
+          node --input-type=module <<'EOF' > issue-body.md
+          import { readFile } from 'node:fs/promises';
+          const artifact = JSON.parse(await readFile('model-policy-check.json', 'utf8'));
+          console.log('公式ソースで評価候補の新しい完全3種 family を検知しました。');
+          console.log('');
+          console.log(`- Sources: ${artifact.sources.join(', ')}`);
+          console.log(`- 現在 policy: ${artifact.policy.production} (version ${artifact.policy.version})`);
+          console.log(`- 新 family: ${artifact.detectedFamily.models.join(', ')}`);
+          console.log('');
+          console.log('同じ fixture で Luna low / Terra low を比較し、品質不足時のみ Terra medium を評価してください。');
+          console.log('この workflow は policy の書換え・production の自動昇格・model 呼出を行いません。');
+          EOF
+          gh issue create --title "$ISSUE_TITLE" --body-file issue-body.md
