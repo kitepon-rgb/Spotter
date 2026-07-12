@@ -1,6 +1,6 @@
 # 07 — Throughline L2を使った監査文脈・精度向上計画
 
-状態: default-on実装・文書化済み / v1.4.21 release gate実行中
+状態: v1.4.21 default-on配布・global適用済み / 実運用効果測定中
 作成日: 2026-07-12
 対象: Spotter `UserPromptSubmit`監査 / Throughline L2 read-only connector / Claude・Codex両host
 
@@ -355,7 +355,7 @@ gateが循環する。2026-07-13のowner裁定により、default-onで使いな
 - [x] installerでThroughline executableをabsolute pathへ解決し、新規installをdefault-onにする
 - [x] 明示disabled維持、Throughline不在、再install、Windows executableの移行fixtureを追加する
 - [x] README、SLO、open issues、release notesへdefault-on・送信境界・即時OFF手順を反映する
-- [ ] full test / CI / registry tarballからClaude・Codex両hostのfresh install smokeを行い、patch releaseする
+- [x] full test / CI / registry tarballからClaude・Codex両hostのfresh install smokeを行い、patch releaseする
 - [ ] 7日以上かつfresh監査30件以上（期待finding 10件以上・期待pass 10件以上）を人手ラベル付きで観測する
 - [ ] stale率、connector latency、context利用時の過検出/見逃しを確認する
 - [ ] 観測結果からdefault-on維持・修正継続・default-off rollbackを裁定する

@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点（v1.4.20 published・global installed、2026-07-13）に **塞がっていない穴** と
+Spotter で現時点（v1.4.21 published・global installed、2026-07-13）に **塞がっていない穴** と
 **実測未検証の懸念** を優先度付きで記録する。repo で修正済みでも、未配布・未 install なら
 実環境では未解決として扱う。
 
@@ -17,7 +17,7 @@ Spotter で現時点（v1.4.20 published・global installed、2026-07-13）に *
 
 ---
 
-## P0 — 監査AIの文脈不足による過剰提案（default-on release待ち）
+## P0 — 監査AIの文脈不足による過剰提案（default-on実運用測定中）
 
 ### 解決済み・撤回済みの話題へtoolを提案できる
 
@@ -39,10 +39,12 @@ fresh以外での監査AI未呼出、固定親出力、Codex stdin transportを�
 **2026-07-13方針変更**: Spotterリポ1件だけのopt-inでは母数が集まらず、観測後default化というgateが
 循環するため、ownerがdefault-onで実運用しながら効果測定する方式を承認した。
 
+**v1.4.21配布済み**: markerへ`default / explicit`由来を追加して明示OFFを保護しつつ、Throughlineを
+解決できるproject installをdefault-onにした。registry版fresh installもgreen。
+
 **次アクション**: [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md)のPhase 5に従い、
-markerへ`default / explicit`由来を追加して明示OFFを保護しつつ、Throughlineを解決できるproject installを
-default-onにする実装は完了した。patchを配布後、7日以上かつfresh 30件以上（期待finding/pass各10件以上）を
-人手ラベル付きで観測し、default-on維持・修正継続・default-off rollbackを裁定する。
+7日以上かつfresh 30件以上（期待finding/pass各10件以上）を人手ラベル付きで観測し、default-on維持・
+修正継続・default-off rollbackを裁定する。
 
 ---
 

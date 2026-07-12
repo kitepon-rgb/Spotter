@@ -24,10 +24,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - enabled connector の障害は固定 warning。親への出力は safe catalog tool ID からの固定・非命令助言だけで、reason / raw / L2 を反射しない。`spotter doctor` は mode と固定 availability detail だけを示す。
 - `spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600` が v2 fixture の context choice 評価入口。現時点の結論は N=2 / 600 で、昇格承認ではない。
 
-**v1.4.21 (release candidate 2026-07-13)**: Throughline監査文脈をdefault-onへ変更する。marker v2へ
+**v1.4.21 (published 2026-07-13)**: Throughline監査文脈をdefault-onへ変更する。marker v2へ
 `origin:default|explicit`を追加し、旧既定disabledだけを移行、明示OFFは維持する。POSIXはPATH上の実体を
 absolute realpathへ固定し、Windows npm shimは`node.exe + throughline.mjs`へ変換する。不在時は固定理由付き
-disabledでcurrent-onlyへfallbackしない。default-onのまま7日 / fresh 30件を測り、維持・修正・rollbackを裁定する。
+disabledでcurrent-onlyへfallbackしない。公開commit `5026ace`のCIは6/6 green、npm `latest`、tag /
+GitHub Release、このMacのregistry由来global installを1.4.21へ同期した。registry版fresh installで
+marker v2 / `origin:default` / connector availableを実測済み。default-onのまま7日 / fresh 30件を測り、
+維持・修正・rollbackを裁定する。
 
 **v1.4.20 (published 2026-07-13)**: Throughline所有のread-only projectionからexact sessionの
 freshな直近完了L2だけを取得し、Codex CLIへstdinで渡すproject opt-inを追加する。fresh以外では監査AIを

@@ -8,6 +8,14 @@
 - **不在時は明示disabled。** Throughlineが見つからない場合は固定理由付きdisabledとし、current-only監査や別backendへfallbackしない。installerとdoctorが状態・OFF手順を表示する。
 - **実運用効果測定。** default-onで7日以上・fresh 30件以上を集め、過検出・見逃し・stale率・latencyから維持、修正、default-off rollbackを判断する。L2本文は評価ログへ保存しない。
 
+### 検証・公開
+
+478 tests（476 pass / 2 skip）、macOS/Linux/Windows × Node 22.5/22.xのCI 6/6、packの秘密・
+開発者固有path scan、隔離tarball installを通過。公開commitは`5026ace`。npm `claude-spotter@1.4.21`、
+tag / GitHub Release `v1.4.21`、registry由来global installを同期した。registry版の空projectへ
+`spotter install -y`を実行し、marker v2がThroughlineのglobal実体を`origin:default`で設定し、
+doctorがconnector availableを返すことを確認した。
+
 ## 1.4.20 — 2026-07-13
 
 ### Added
