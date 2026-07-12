@@ -2,7 +2,7 @@
 
 調査日: 2026-07-12
 
-確度: **仕様判断は高、`gpt-5.6-luna × low` の採用判断は live 評価未完了の候補**
+確度: **仕様判断は高、`gpt-5.6-terra × low` は repeat=3 の第一候補だがproduction昇格は未完了**
 
 ## 出典
 
@@ -51,8 +51,9 @@ OpenAI の現行仕様では `gpt-5.6` alias は flagship の `gpt-5.6-sol` へ�
 - `medium` は low に品質不足の実測が出た場合だけ追加する
 - `gpt-5.6` / `gpt-5.6-sol` は高頻度の分類監査に必要な改善が実測されない限り採用しない
 
-Spotter の処理は高頻度・構造化された軽量監査なので、現時点の第一候補は `gpt-5.6-luna × low`。
-ただし「新しいから採用」ではなく、上記評価を通過して初めて既定値へ昇格させる。
+Spotter の処理は高頻度・構造化された軽量監査なので、仕様だけからの初期第一候補は
+`gpt-5.6-luna × low` とした。ただし後述のrepeat=3実測では再現性がなく、第一候補を
+`gpt-5.6-terra × low` へ変更した。「新しいから採用」ではなく、評価を通過して初めて既定値へ昇格させる。
 
 ## 2026-07-12 operational smoke
 
@@ -63,6 +64,17 @@ Spotter の処理は高頻度・構造化された軽量監査なので、現時
 全12件が `E_CODEX_CLI_EXIT`。bounded artifact の外で同条件を1回だけ安全に切り分けた結果、原因は
 Codex CLI の usage limit であり、model 品質・model slug availability・schema 遵守は測れていない。
 したがって error 所要時間を model latency と比較せず、production は `gpt-5.4-mini × low` のまま維持する。
+
+## 2026-07-12 Pro20 quota recovery
+
+`--ignore-user-config` を維持したbaseline 4件が全件成功したためquota回復を確認し、同一fixture SHAと
+orderingでrepeat=3、計36 runを実行した。詳細artifactは
+[`evals/2026-07-12-pro20-repeat3.json`](evals/2026-07-12-pro20-repeat3.json)、解釈は
+[`evals/2026-07-12-pro20-repeat3.md`](evals/2026-07-12-pro20-repeat3.md) に固定した。
+
+`terra × low` は12/12 exact、FP/FN 0、p50 3528 ms、p95 4992 ms。baselineは10/12 exact、
+`luna × low` は8/12 exactだった。この実測によりLunaの初期第一候補を棄却し、Terraを次候補とする。
+ただしtoken/cost未取得・SLO未合意のためproduction defaultは変更しない。
 
 ## リリース境界
 

@@ -335,9 +335,9 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 
 ### Phase 5. Auditor model policy と GPT-5.6 移行（独立挙動変更レーン 4）
 
-- [ ] 現行 `gpt-5.4-mini × low` を代表 fixture で測り、移行 baseline を固定する
-- [ ] 第一候補 `gpt-5.6-luna × low` と比較対象 `gpt-5.6-terra × low` を同じ fixture で測る
-- [ ] `medium` は low に品質不足の実測がある場合だけ評価へ追加する
+- [x] 現行 `gpt-5.4-mini × low` を代表 fixture で測り、移行 baseline を固定する
+- [x] 第一候補 `gpt-5.6-luna × low` と比較対象 `gpt-5.6-terra × low` を同じ fixture で測る
+- [x] `medium` は low に品質不足の実測がある場合だけ評価へ追加する（Terra lowが12/12 exactのため追加なし）
 - [x] model slug を各所に散らさず、auditor policy manifest/module を単一の正本にする
 - [x] policy に version、意味論的 role、具体 model、effort、`verifiedAt`、必要な互換条件を持たせる
 - [x] 選択優先順位を「明示 override（env / 将来の project config） > 製品 policy」で固定する
@@ -351,9 +351,14 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
   FP/FN・anomaly・run bound を敵対的に回帰化する
 - [x] repeat=1 の operational smoke を実行し、usage limit で全12件 error だった事実を artifact 化する
 - [ ] generic `E_CODEX_CLI_EXIT` から usage limit を bounded actionable code に分類する（model 昇格とは別 commit）
-- [ ] `--ignore-user-config` を維持した isolated CLI の quota 回復を確認する（通常 CLI の成功だけで代用しない）
-- [ ] isolated CLI quota 回復後に同一 fixture SHA / ordering で live 比較を再実行する
+- [x] `--ignore-user-config` を維持した isolated CLI の quota 回復を確認する（通常 CLI の成功だけで代用しない）
+- [x] isolated CLI quota 回復後に同一 fixture SHA / ordering で live 比較を再実行する
 - [ ] 合格した model / effort だけを独立 commit で昇格し、変更理由と評価結果を記録する
+
+2026-07-12 Pro20回復後のrepeat=3（36 run）では、Terra lowが12/12 exact・FP/FN 0・
+p50 3528 ms・p95 4992 msで最良。baselineは10/12、Luna lowは8/12 exactだったため、
+Lunaの初期第一候補を棄却してTerra lowを次候補とする。token/cost未取得・SLO未合意のため昇格は保留。
+詳細は [`rag/openai-model-policy/evals/2026-07-12-pro20-repeat3.md`](../rag/openai-model-policy/evals/2026-07-12-pro20-repeat3.md)。
 
 Gate: schema / JSON 遵守が 100%、既存 fixture の指摘品質が非劣化で、p50 / p95 / timeout rate /
 token・cost が合意 SLO 内にあること。diagnostics が effective 値と選択元を正確に表示し、非対応 model が
