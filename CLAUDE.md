@@ -16,8 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v1.4.22 (release candidate 2026-07-13)**: v1.4.21のdefault-on裁定を公開文書へ正しく反映するdocs-only
-patch。7日 / fresh 30件の測定は精度改善にだけ使い、ON/OFFを再審査しない。
+**v1.4.22 (published 2026-07-13)**: v1.4.21のdefault-on裁定を公開文書へ正しく反映するdocs-only
+patch。7日 / fresh 30件の測定は精度改善にだけ使い、ON/OFFを再審査しない。公開commitは`3c7c820`。
+npm `latest`、tag / GitHub Release、このMacのregistry由来global installを1.4.22へ同期した。
 
 ### Throughline auditor context default-on 契約
 

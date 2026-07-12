@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter v1.4.22 release candidate（v1.4.21 published / global installed、2026-07-13）の未完事項だけを記録する。
+Spotter v1.4.22（published / global installed、2026-07-13）の未完事項だけを記録する。
 完了済みの実装・過去バージョンの観測・採用しなかった案はCHANGELOGと`docs/archive/`を参照する。
 
 ## 運用ルール

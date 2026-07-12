@@ -3,6 +3,7 @@
 ## 1.4.22 — 2026-07-13
 
 - **default-on裁定の文書修正。** v1.4.21の実装どおりdefault-onは確定事項であり、7日・30 fresh resultの測定は精度改善にだけ使う。ON/OFFの再審査やdefault-off rollbackを選択肢としていた誤記をREADME、正典、SLO、計画、課題台帳から削除した。
+- **公開。** 478 tests（476 pass / 2 skip）、CI 6/6 green。公開commit`3c7c820`をnpm `claude-spotter@1.4.22`、tag / GitHub Release、registry由来global installへ同期した。
 
 ## 1.4.21 — 2026-07-13
 
