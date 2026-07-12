@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { MAX_MODEL_MATRIX_RUNS, runAuditorModelMatrixCommand, percentile } from '../src/cli/auditor-model-matrix-cmd.mjs';
 import { resolveCodexAuditorModelSelection } from '../src/core/codex-auditor-model-policy.mjs';
+import { parseAuditorResponse } from '../src/core/auditor-response.mjs';
 
 const fixture = {
   schema: 'spotter.auditor_model_fixtures.v1',
@@ -81,27 +82,90 @@ test('model-matrix rejects profile environment conflicts before spawning', async
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('model-matrix serializes errors without stdout or stderr bodies and fixed percentiles', async () => {
+test('model-matrix serializes only allow-listed error fields and fixed percentiles', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-model-matrix-error-'));
   try {
     const path = join(dir, 'fixture.json'); await writeFile(path, JSON.stringify(fixture));
     const out = [];
     await runAuditorModelMatrixCommand({
       argv: ['--fixtures', path, '--profile', 'baseline'], env: {}, getCodexCliVersionFn: async () => ({ status: 'error', message: 'missing' }),
-      createBackendFn: ({ modelProfile }) => ({ modelSelection: selection(modelProfile), judge: async () => { throw Object.assign(new Error('x'.repeat(1200)), { code: 'E_TIMEOUT', backend: 'codex-cli', stage: 'user_input', diagnostics: { stdout: 'secret output', stderr: 'secret error', lastMessageCheck: 'present', processCountMethod: 'ps', stdoutTruncated: true } }); } }),
+      createBackendFn: ({ modelProfile }) => ({ modelSelection: selection(modelProfile), judge: async () => { throw Object.assign(new Error('BACKEND_ERROR_SECRET'), { code: 'E_CODEX_CLI_SCHEMA', name: 'ERROR_NAME_SECRET', backend: 'BACKEND_NAME_SECRET', stage: 'user_input', diagnostics: { stdout: 'secret output', stderr: 'secret error', lastMessageCheck: 'missing_last_message', processCountMethod: 'PROCESS_METHOD_SECRET', stdoutTruncated: true, modelSelection: { effectiveModel: 'MODEL_SELECTION_SECRET' } } }); } }),
       writeOutput: (text) => out.push(text),
     });
     const artifact = JSON.parse(out.join(''));
     assert.equal(artifact.runs[0].error.diagnostics.stdoutBytes, 13);
     assert.equal(artifact.runs[0].error.diagnostics.stderrBytes, 12);
     assert.deepEqual(artifact.runs[0].actual, { pass: null, missingTools: [], invalidFindingCount: 0, droppedCatalogExternalNames: [], droppedCatalogExternalNameCount: 0, anomalies: [], anomalyCount: 0 });
-    assert.equal(artifact.runs[0].error.message.length, 1000);
-    assert.equal(artifact.runs[0].error.diagnostics.lastMessageCheck, 'present');
-    assert.equal(artifact.runs[0].error.diagnostics.processCountMethod, 'ps');
+    assert.equal(artifact.runs[0].error.code, 'E_CODEX_CLI_SCHEMA');
+    assert.equal(artifact.runs[0].error.name, 'AuditorBackendError');
+    assert.equal(artifact.runs[0].error.message, 'codex-cli returned an invalid auditor result');
+    assert.equal(artifact.runs[0].error.diagnostics.lastMessageCheck, 'missing_last_message');
+    assert.equal(Object.hasOwn(artifact.runs[0].error.diagnostics, 'processCountMethod'), false);
+    assert.equal(Object.hasOwn(artifact.runs[0].error.diagnostics, 'modelSelection'), false);
     assert.equal(artifact.runs[0].error.diagnostics.stdoutTruncated, true);
-    assert.doesNotMatch(JSON.stringify(artifact), /secret output|secret error/);
+    assert.doesNotMatch(JSON.stringify(artifact), /BACKEND_ERROR_SECRET|ERROR_NAME_SECRET|BACKEND_NAME_SECRET|PROCESS_METHOD_SECRET|MODEL_SELECTION_SECRET|secret output|secret error/);
     assert.equal(percentile([1, 2, 3, 4], 0.5), 2);
     assert.equal(percentile([1, 2, 3, 4], 0.95), 4);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('model-matrix never persists raw schema error text or unknown error metadata', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-model-matrix-error-secret-'));
+  try {
+    const path = join(dir, 'fixture.json'); await writeFile(path, JSON.stringify(fixture));
+    const responses = [
+      () => parseAuditorResponse('not-json SCHEMA_RAW_SECRET_DO_NOT_PERSIST', {
+        backend: 'codex-cli', stage: 'user_input', errorCode: 'E_CODEX_CLI_SCHEMA',
+      }),
+      () => { throw Object.assign(new Error('UNKNOWN_MESSAGE_SECRET'), { code: 'E_UNKNOWN_CODE_SECRET', name: 'UNKNOWN_NAME_SECRET', backend: 'UNKNOWN_BACKEND_SECRET', stage: 'UNKNOWN_STAGE_SECRET', diagnostics: { completionReason: 'UNKNOWN_DIAGNOSTIC_SECRET' } }); },
+    ];
+    for (const response of responses) {
+      const artifact = await runAuditorModelMatrixCommand({
+        argv: ['--fixtures', path, '--profile', 'baseline'], env: {},
+        getCodexCliVersionFn: async () => ({ status: 'unavailable' }),
+        createBackendFn: ({ modelProfile }) => ({ modelSelection: selection(modelProfile), judge: async () => response() }),
+        writeOutput: () => {},
+      });
+      const serialized = JSON.stringify(artifact);
+      assert.doesNotMatch(serialized, /SCHEMA_RAW_SECRET_DO_NOT_PERSIST|UNKNOWN_MESSAGE_SECRET|E_UNKNOWN_CODE_SECRET|UNKNOWN_NAME_SECRET|UNKNOWN_BACKEND_SECRET|UNKNOWN_STAGE_SECRET|UNKNOWN_DIAGNOSTIC_SECRET/);
+      if (response === responses[0]) {
+        assert.equal(artifact.runs[0].error.code, 'E_CODEX_CLI_SCHEMA');
+        assert.equal(artifact.runs[0].error.message, 'codex-cli returned an invalid auditor result');
+      } else {
+        assert.deepEqual(artifact.runs[0].error, {
+          code: 'E_AUDITOR_MODEL_MATRIX', name: 'Error', message: 'auditor model-matrix run failed', backend: 'codex-cli', stage: 'unknown',
+        });
+      }
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('model-matrix stores only project-relative fixture paths and omits project roots', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-model-matrix-path-safe-'));
+  try {
+    const projectRoot = join(dir, 'project');
+    const fixtureDir = join(projectRoot, 'fixtures');
+    await mkdir(fixtureDir, { recursive: true });
+    const internalPath = join(fixtureDir, 'fixture.json');
+    const externalPath = join(dir, 'external-fixture.json');
+    await writeFile(internalPath, JSON.stringify(fixture));
+    await writeFile(externalPath, JSON.stringify(fixture));
+    const run = (path) => runAuditorModelMatrixCommand({
+      argv: ['--fixtures', path, '--profile', 'baseline', '--project', projectRoot], env: {},
+      getCodexCliVersionFn: async () => ({ status: 'unavailable' }),
+      createBackendFn: ({ modelProfile }) => ({
+        modelSelection: selection(modelProfile),
+        judge: async () => ({ pass: true, findings: [], meta: { modelSelection: selection(modelProfile) } }),
+      }),
+      writeOutput: () => {},
+    });
+    const internal = await run(internalPath);
+    assert.equal(internal.fixture.path, 'fixtures/fixture.json');
+    assert.equal(Object.hasOwn(internal.evaluation, 'projectRoot'), false);
+    assert.doesNotMatch(JSON.stringify(internal), new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    const external = await run(externalPath);
+    assert.equal(external.fixture.path, '<external-fixture>');
+    assert.doesNotMatch(JSON.stringify(external), new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

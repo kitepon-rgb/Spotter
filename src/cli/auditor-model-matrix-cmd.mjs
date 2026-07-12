@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { version } from '../version.mjs';
 import { createCodexCliAuditorBackend } from '../core/codex-cli-backend.mjs';
 import { CODEX_AUDITOR_MODEL_POLICY, resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
@@ -81,7 +81,7 @@ export async function runAuditorModelMatrixCommand({
   }
   const artifact = {
     schema: 'spotter.auditor_model_matrix.v1', generatedAt: generatedAt(), packageVersion: version,
-    fixture: { schema: fixture.schema, path: opts.fixturesPath, sha256: createHash('sha256').update(fixtureBytes).digest('hex'), cases: fixture.cases.length, catalogCount: fixture.catalog.length },
+    fixture: { schema: fixture.schema, path: safeFixturePath(opts.fixturesPath, opts.projectRoot), sha256: createHash('sha256').update(fixtureBytes).digest('hex'), cases: fixture.cases.length, catalogCount: fixture.catalog.length },
     codexCli: cliVersion, policy: { schema: CODEX_AUDITOR_MODEL_POLICY.schema, version: CODEX_AUDITOR_MODEL_POLICY.policyVersion },
     profiles: Object.fromEntries(Object.entries(selections).map(([profile, selection]) => [profile, {
       model: selection.effectiveModel,
@@ -91,7 +91,7 @@ export async function runAuditorModelMatrixCommand({
       status: selection.effectiveStatus ?? null,
       selection,
     }])), runs, summary: summarize(runs, opts.profiles), usageStatus: 'not-available', tokenUsage: null, cost: null,
-    evaluation: { repeat: opts.repeat, profiles: opts.profiles, projectRoot: opts.projectRoot, maxRuns: MAX_MODEL_MATRIX_RUNS },
+    evaluation: { repeat: opts.repeat, profiles: opts.profiles, maxRuns: MAX_MODEL_MATRIX_RUNS },
     executionOrdering: 'case-repeat-profile', promotionEligible: false, blockingReasons: blockingReasons(runs),
   };
   const json = JSON.stringify(artifact, null, 2) + '\n';
@@ -145,8 +145,24 @@ function toAuditorInput(item) { return item.stage === 'user_input' ? { stage: it
 function isCleanString(value) { return typeof value === 'string' && value.length > 0 && value.trim() === value; }
 function cleanStrings(values = []) { return [...new Set(values.filter(isCleanString))]; }
 function successRun({ order, item, repeat, profile, modelSelection, durationMs, schemaSuccess, actualPass, actualTools, invalidFindingCount, droppedTools, droppedToolCount, anomalyTypes, anomalyCount }) { const expectedTools = item.expected.missingTools; const fp = [...actualTools.filter((tool) => !expectedTools.includes(tool)), ...droppedTools.filter((tool) => !expectedTools.includes(tool))]; const fn = expectedTools.filter((tool) => !actualTools.includes(tool)); return { order, caseId: item.id, repeat, profile, status: 'success', durationMs, schemaSuccess, exactMatch: schemaSuccess && actualPass === item.expected.pass && actualTools.length === expectedTools.length && fp.length === 0 && fn.length === 0 && droppedToolCount === 0 && anomalyCount === 0, expected: item.expected, actual: { pass: actualPass, missingTools: actualTools, invalidFindingCount, droppedCatalogExternalNames: droppedTools, droppedCatalogExternalNameCount: droppedToolCount, anomalies: anomalyTypes, anomalyCount }, falsePositiveTools: fp, falseNegativeTools: fn, modelSelection }; }
-function safeError(err) { const diagnostics = compact(err?.diagnostics); const message = typeof err?.message === 'string' ? err.message : String(err); return { code: typeof err?.code === 'string' ? err.code : 'E_AUDITOR_MODEL_MATRIX', name: typeof err?.name === 'string' ? err.name : 'Error', message: message.slice(0, 1000), backend: typeof err?.backend === 'string' ? err.backend : 'codex-cli', stage: typeof err?.stage === 'string' ? err.stage : 'unknown', ...(diagnostics ? { diagnostics } : {}) }; }
-function compact(value) { if (!value || typeof value !== 'object' || Array.isArray(value)) return null; const out = {}; for (const key of ['durationMs', 'processCount', 'exitCode', 'completionReason', 'lastMessageCheck', 'processCountMethod', 'stdoutTruncated', 'stderrTruncated']) { if (typeof value[key] === 'number' || typeof value[key] === 'boolean' || value[key] === null || ['completionReason', 'lastMessageCheck', 'processCountMethod'].includes(key) && typeof value[key] === 'string') out[key] = value[key]; } if (value.modelSelection && typeof value.modelSelection === 'object') out.modelSelection = { effectiveModel: value.modelSelection.effectiveModel ?? null, effectiveReasoningEffort: value.modelSelection.effectiveReasoningEffort ?? null, policyVersion: value.modelSelection.policyVersion ?? null }; for (const key of ['stdout', 'stderr']) if (typeof value[key] === 'string') out[`${key}Bytes`] = Buffer.byteLength(value[key]); return out; }
+const SAFE_RUN_ERRORS = Object.freeze({
+  E_CODEX_CLI_AUTH: { name: 'AuditorBackendError', message: 'codex-cli authentication failed; run codex login' },
+  E_CODEX_CLI_EXIT: { name: 'AuditorBackendError', message: 'codex-cli invocation exited unsuccessfully' },
+  E_CODEX_CLI_MODEL_POLICY: { name: 'CodexAuditorModelPolicyError', message: 'codex-cli model policy validation failed' },
+  E_CODEX_CLI_NO_FINAL_JSON: { name: 'AuditorBackendError', message: 'codex-cli did not produce a final JSON result' },
+  E_CODEX_CLI_SCHEMA: { name: 'AuditorBackendError', message: 'codex-cli returned an invalid auditor result' },
+  E_CODEX_CLI_SPAWN: { name: 'AuditorBackendError', message: 'codex-cli invocation could not start' },
+  E_CODEX_CLI_TIMEOUT: { name: 'AuditorBackendError', message: 'codex-cli invocation timed out' },
+  E_AUDITOR_MODEL_MATRIX: { name: 'Error', message: 'auditor model-matrix run failed' },
+});
+const SAFE_DIAGNOSTIC_ENUMS = Object.freeze({
+  completionReason: new Set(['last_message_before_process_close']),
+  lastMessageCheck: new Set(['schema_valid', 'missing_last_message', 'schema_invalid_last_message']),
+  processCountMethod: new Set(['direct_child_spawn', 'direct_child_exec_file', 'spawn_failed', 'not_available', 'not_instrumented']),
+});
+function safeFixturePath(fixturePath, projectRoot) { const path = relative(projectRoot, fixturePath); if (path === '') return '.'; if (path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) return '<external-fixture>'; return path.split(sep).join('/'); }
+function safeError(err) { const code = Object.hasOwn(SAFE_RUN_ERRORS, err?.code) ? err.code : 'E_AUDITOR_MODEL_MATRIX'; const safe = SAFE_RUN_ERRORS[code]; const diagnostics = compact(err?.diagnostics); const stage = ['user_input', 'turn_end', 'configuration'].includes(err?.stage) ? err.stage : 'unknown'; return { code, name: safe.name, message: safe.message, backend: 'codex-cli', stage, ...(diagnostics ? { diagnostics } : {}) }; }
+function compact(value) { if (!value || typeof value !== 'object' || Array.isArray(value)) return null; const out = {}; for (const key of ['durationMs', 'processCount', 'exitCode']) if (typeof value[key] === 'number' && Number.isFinite(value[key])) out[key] = value[key]; for (const key of ['stdoutTruncated', 'stderrTruncated']) if (typeof value[key] === 'boolean') out[key] = value[key]; for (const [key, allowed] of Object.entries(SAFE_DIAGNOSTIC_ENUMS)) if (allowed.has(value[key])) out[key] = value[key]; for (const key of ['stdout', 'stderr']) if (typeof value[key] === 'string' || Buffer.isBuffer(value[key])) out[`${key}Bytes`] = Buffer.byteLength(value[key]); return Object.keys(out).length ? out : null; }
 export function percentile(values, ratio) { if (!values.length) return null; const sorted = [...values].sort((a, b) => a - b); return sorted[Math.ceil(sorted.length * ratio) - 1]; }
 function summarize(rows, profiles) { const one = (items) => { const durations = items.map((item) => item.durationMs); const timeout = items.filter((item) => item.error?.code === 'E_CODEX_CLI_TIMEOUT').length; return { total: items.length, success: items.filter((item) => item.status === 'success').length, error: items.filter((item) => item.status === 'error').length, schemaSuccess: items.filter((item) => item.schemaSuccess).length, exactMatch: items.filter((item) => item.exactMatch).length, falsePositiveTools: items.reduce((sum, item) => sum + item.falsePositiveTools.length, 0), falseNegativeTools: items.reduce((sum, item) => sum + item.falseNegativeTools.length, 0), invalidFindingCount: items.reduce((sum, item) => sum + item.actual.invalidFindingCount, 0), anomalyCount: items.reduce((sum, item) => sum + item.actual.anomalyCount, 0), droppedCatalogExternalNameCount: items.reduce((sum, item) => sum + item.actual.droppedCatalogExternalNameCount, 0), durationMs: { p50: percentile(durations, 0.5), p95: percentile(durations, 0.95) }, timeoutCount: timeout, timeoutRate: items.length ? timeout / items.length : 0 }; }; return { ...one(rows), byProfile: Object.fromEntries(profiles.map((profile) => [profile, one(rows.filter((row) => row.profile === profile))])) }; }
 function blockingReasons(runs) { const reasons = ['usage_not_available']; if (runs.some((run) => run.status === 'error')) reasons.push('run_error'); if (runs.some((run) => !run.schemaSuccess)) reasons.push('schema_failure'); if (runs.some((run) => !run.exactMatch)) reasons.push('exact_mismatch'); if (runs.some((run) => run.actual.anomalyCount > 0 || run.actual.droppedCatalogExternalNameCount > 0)) reasons.push('quality_anomaly'); return reasons; }
