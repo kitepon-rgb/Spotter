@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.18 (unreleased)
+## 1.4.18 (unreleased development)
 
 auditor model の更新を model 名の場当たり的な置換から切り離し、versioned policy と再現可能な比較 eval を
 導入する。production default は評価完了まで `gpt-5.4-mini × low` のままとし、`latest` alias や
@@ -20,12 +20,15 @@ Codex CLI の暗黙既定、失敗時 fallback では自動昇格しない。
 
 ### 検証
 
-model-matrix の targeted test 27 / 27 pass、全体 422 / 420 pass / 0 fail / 2 skip。
+`auditor-model-matrix-cmd` / `auditor-cmd` / `cli` の targeted test 29 / 29 pass、全体
+424 / 422 pass / 0 fail / 2 skip。
 循環・非文字列 backend 応答、model selection 不一致、version 出力の秘密混入、dirty fixture、filtered
-hallucination を敵対的に再検証し、blocker 0 を確認した。代表 fixture による live 比較と OS CI matrix は
+hallucination を敵対的に再検証し、blocker 0 を確認した。代表 fixture の repeat=1 operational smoke は
+baseline / Luna / Terra の全12件が Codex CLI usage limit で `E_CODEX_CLI_EXIT` となったため、model 品質・
+latency・availability の比較には使わず、production default を維持した。live 再評価と OS CI matrix は
 release 前に実行する。
 
-## 1.4.17
+## 1.4.17 (unreleased release candidate)
 
 v1.4.16 で実装済みだった stale Unix socket recovery を、v1.4.16 tag を改変せずこの patch の実配布候補に含める。
 daemon 異常死後の orphan socket を次回起動前に安全に除去する回復経路が、初めて配布物へ入る。
@@ -48,8 +51,9 @@ daemon 異常死後の orphan socket を次回起動前に安全に除去する�
 
 ### 検証
 
-targeted test と adversarial review を実施し、最終 full suite と OS CI matrix は release 前に実行予定。
-件数は最終結果の確定後に記録する。
+`1c67698` の clean worktree から npm pack / temp prefix install / CLI version / Hook install・reinstall を
+smoke し、`node --test` は 383 / 381 pass / 0 fail / 2 skip。targeted test と adversarial review も
+blocker 0。OS CI matrix と publish 後の三者一致確認は release 前後に残る。
 
 ## 1.4.16
 

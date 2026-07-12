@@ -8,9 +8,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 課題を解決したら open-issues.md から項目を消し、CHANGELOG にリリース番号とともに記録する運用。
 
-進行中の hook 挙動 parity 移植 (Codex → Claude の short-skip / deferred delivery / JSONL event log) は [docs/SPOTTER_HOOK_PARITY_TODO.md](docs/SPOTTER_HOOK_PARITY_TODO.md) で進捗管理する。
+現行の復旧・配布・model 評価 TODO は
+[docs/SPOTTER_CURRENT_STATE_RECOVERY_PLAN.md](docs/SPOTTER_CURRENT_STATE_RECOVERY_PLAN.md) で管理する。
+`docs/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳で、archive 移動待ち。
 
 ## Repository Status
+
+**v1.4.18 (unreleased)**: Codex auditor model を versioned policy に集約。production default は
+`gpt-5.4-mini × low` のまま、評価 profile として `gpt-5.6-luna × low` / `gpt-5.6-terra × low` を
+定義した。backend は model selection を生成時に一度だけ解決し、成功・失敗・diagnostics に effective
+selection と検証状態を残す。`spotter auditor model-matrix` は versioned fixture の hash、Codex CLI
+version、schema / exact、FP/FN、p50/p95、timeout、anomaly を bounded artifact に記録するが、
+`promotionEligible:false` 固定で production を自動変更しない。2026-07-12 の live operational smoke は
+Codex CLI usage limit で全12 run が `E_CODEX_CLI_EXIT` となり、model 品質は未測定。quota 回復・token/cost・
+合意 SLO が揃うまで昇格禁止。詳細は [RAG](rag/openai-model-policy/spotter-auditor-model-policy.md)。
+
+**v1.4.17 (release candidate / unpublished)**: Codex `SessionStart async:true` を canonical sync command
+handler へ修正し、upgrade normalization と readiness diagnostics を追加。Claude / Codex Stop backend
+failure は warning pending を次の same-session prompt へ1回配送する。Codex used-tools は current-turn の
+shell / MCP / agent call を bounded に認識し、未知 transcript を anomaly にする。clean pack / temp install
+smoke は RC boundary `1c67698` で green。main HEAD は既に v1.4.18 development なので、v1.4.17 は
+`1c67698` 起点の release branch で **v1.4.17 専用** README / CHANGELOG を作る。main の
+`auditor model-matrix` / v1.4.18 profile 記述を backport せず、release SHA に実在する CLI と照合する。
+model commits を含まない SHA を CI / tag / publish 対象にする。npm publish / GitHub Release /
+global install / `/hooks` review は未実施。
 
 **v1.4.16** (2026-06-04): **daemon 異常死後の stale socket で永久に起動不能になる回復経路バグを根治**。
 daemon が graceful shutdown を経ず死ぬ (SIGKILL / crash / マシンスリープで SessionEnd 未発火) と
@@ -65,7 +86,7 @@ Codex CLI の latency 優位は確定済みだったため、opt-in を撤廃し
 codex-sidecar は `spotter codex *` の明示 second-pass workflow 専用に固定 (primary chain には
 入れない)。`SPOTTER_AUDITOR_BACKEND_POLICY` 環境変数は legacy 値 (`current` / `next`) を
 back-compat で受理するが selection には影響しない。`SPOTTER_AUDITOR_BACKEND=haiku` の明示固定は
-引き続き有効。Codex host の primary backend (`codex-cli` 固定) と監査用子プロセスのモデル指定
+引き続き有効。Codex host の auto-selected primary backend (`codex-cli`) と監査用子プロセスのモデル指定
 (`gpt-5.4-mini` / `model_reasoning_effort="low"`) は変更なし。
 
 **v1.4.9** (2026-05-08): **Codex hooks feature 名の現行 CLI 追従**。現行 Codex CLI は
@@ -211,25 +232,28 @@ refresh の local → global → investigate cache path でも Claude / Codex �
 - **Claude 呼び出しは session-scoped + preamble-once + 事後回復** (v0.6.0 で更新): `claude -p --session-id <uuid>` で初回セッション確立、以降 `--resume` で再接続。**初回のみ preamble (role + schema + few-shot + catalog) を送り、以降は per-turn delta のみ**送ることで session を肥大化させない (v0.5.x は毎回 full 送信していて resumed が first より遅いという逆の結果が出ていた)。role collapse は `parseHaikuResponse` が `E_HAIKU_SCHEMA` を返した瞬間に `callHaiku.reset()` で session-id を rotate、次回呼び出しで preamble が新 session に自動で再送される。当該ターンは silent pass。**これは §0 の silent fallback 禁止違反ではなく、「想定済み異常 = 記録 + 正常リターン」の適用**。
 - **隔離実行**: Spotter の workdir (`~/.spotter/workdir/`) には **CLAUDE.md を置かない**。プロジェクト文脈に引きずられないことが品質保証の要件。
 - **ツールカタログは host-local tool-db**: Claude daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。Codex native hooks は `<project>/.spotter/tool-db.codex.json` だけを読む。グローバル DB も host 別の description 再利用キャッシュで、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使う。global は audit 入力には混ぜない。Claude refresh は `claude mcp list` と Claude skills / sub-agents、Codex refresh は `codex mcp list/get` と Codex skills を discovery し、片方の refresh がもう片方の local / global DB を prune / overwrite してはいけない。
-- **Stop hook の介入**: Claude host では `decision: "block"` + `reason` で Bell に継続応答を生成させる。`stop_hook_active: true` を見たら即 pass することで max 1 回ループを担保 (Claude Code 側の機構で自動)。Codex native `Stop` は immediate block ではなく deferred delivery: 指摘を `.spotter/codex-pending/` に保存し、次の same-session `UserPromptSubmit` の `additionalContext` で提示する。`decision:"block"` は実測で final answer 後の `Stop Blocked` / exit code 1 になったため使わない。
+- **Stop hook の介入**: Claude / Codex とも immediate block ではなく host-neutral deferred delivery を使う。指摘または backend failure warning を `.spotter/pending/<sessionId>.json` に de-duplicate して積み、次の same-session `UserPromptSubmit` の `additionalContext` で1回だけ提示する。`stop_hook_active:true` は再入を即 pass。現行 Codex 仕様は `reason` continuation を提供するため、旧実測の `Stop Blocked` と UI / transcript を再 characterization するまでは pending を維持する。
 
 ## §0 実装規範 (最重要)
 
 コードを書く前にこの 3 点を内面化すること。プラン §14 の詳細版だが、実装時に効くのはここ:
 
-1. **フォールバック禁止**. daemon 起動失敗 / socket 疎通失敗 / Haiku 呼び出し失敗 / tool-db / frontmatter パース失敗 / カタログ欠損は **全て throw**. `try/catch` で潰すコードはレビューで棄却される。例外は SessionEnd の cleanup 失敗 (warn ログのみ、セッション終了は止めない) と PostToolUse 等の非ブロッキング系のみ。
-2. **「daemon が死んでたら pass」は最悪の失敗モード**. ユーザーは Spotter が守ってる気になって実は素の Bell、という状況は silent fallback で起こる。hook が daemon 疎通できなければ exit code 1 + stderr にメッセージ。
+1. **フォールバック禁止**. daemon 起動失敗 / socket 疎通失敗 / auditor 呼び出し失敗 / tool-db / frontmatter パース失敗を `pass` に偽装しない。core は structured error を throw し、別 backend / model へ silent retry しない。host hook はその error を catch して `degraded` event + user-visible warning に変換し、host 自体を凍結しない。SessionEnd cleanup と telemetry は non-blocking だが失敗を stderr / event log に残す。
+2. **「daemon が死んでたら pass」は最悪の失敗モード**. ユーザーは Spotter が守っていると思うのに実は未監査、という状況を作らない。v1.4.15 以降の UserPromptSubmit は malformed envelope 以外を `[Spotter からの警告]` + exit 0 で loud degradation し、プロンプト消去を避ける。Stop failure は warning pending に積み、次 prompt で配送する。exit 2 は malformed hook envelope に限定する。
 3. **動かすためだけの暫定コード禁止**. スタブ・TODO のみの関数・型が曖昧なコードを本流に混ぜない。MVP スコープを狭めるのは OK (v0.2 に送る)、**範囲内は常に完成形**。暫定コードを書く必要があるなら代替設計と一緒に提示してから書く。
 
-想定済み異常 (例: カタログに該当ツールなし) は記録 + 正常リターン。**想定外**は throw + stderr + exit code 2。この分類を曖昧にしない。
+想定済み異常 (例: カタログに該当ツールなし) は記録 + 正常リターン。**想定外**は core で throw し、
+hook boundary が event 契約に従って loud degradation へ変換する。exit code 2 は malformed hook envelope
+など host が処理を続けてはいけない入力契約違反に限定する。この分類を曖昧にしない。
 
 ## Current Stack / Runtime Requirements
 
 現行実装はこれらを満たすこと:
 
 - **Node.js 22.5+** (組み込み fetch, test runner 使用)
-- **Claude Code 2.0+** (Stop hook block 挙動)
-- **Claude Max plan** (現行 Claude-backed auditor path が `claude -p` で Haiku を起動するため)
+- **Claude Code 2.0+**
+- **Codex CLI** (Codex host の auto-selected primary backend。Claude host でも PATH にあれば既定で選択)
+- **Claude Max plan** (`SPOTTER_AUDITOR_BACKEND=haiku` または Codex CLI 不在時の Claude fallback path が `claude -p` を使う場合)
 - **ゼロ依存志向**. 依存追加時は理由をコミットログに記録。
 - パッケージング: npm package は `claude-spotter`、global install は `npm install -g claude-spotter`、CLI 名は `spotter`、MIT ライセンス。
 
@@ -246,6 +270,8 @@ spotter codex risk-check --findings <file> [--host-agent <agent>]
 spotter codex review / explore / opinion --findings <file> [--host-agent <agent>]
 spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path> (--preserve-worktree | --remove-worktree)
 spotter codex-hook install / uninstall / diagnostics   # Codex native hooks; SessionStart refreshes Codex DB
+spotter auditor judge / matrix                         # experimental primary-backend smoke
+spotter auditor model-matrix --fixtures <file>         # pinned model profiles の再現可能な比較 eval
 spotter daemon start              # 内部用 (hook から呼ばれる)
 spotter hook <event>              # 内部用 (Claude Code hook から呼ばれる)
 ```
@@ -257,12 +283,14 @@ spotter hook <event>              # 内部用 (Claude Code hook から呼ばれ�
 完了済みの移行計画と実測ログは [docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md)
 に保持する。
 `spotter codex-hook *` は Codex native hooks 用の adapter であり、Codex host の
-primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査専用の子 Codex は
-`--model gpt-5.4-mini`、`model_reasoning_effort="low"`、hook auditor timeout 20s を既定にし、短い Codex `Stop`
+primary auditor backend は既定で Codex CLI (`codex exec`) を使う。監査専用の子 Codex は versioned
+auditor policy の production selection（現在 `gpt-5.4-mini × low`）と hook auditor timeout 20s を使い、短い Codex `Stop`
 応答は重複監査せず skip する。Codex `SessionStart` は `spotter db refresh --host-agent codex`
 を detached 起動し、Claude DB には触れない。`SPOTTER_CODEX_CLI_MODEL` /
 `SPOTTER_CODEX_CLI_REASONING_EFFORT` / `SPOTTER_CODEX_HOOK_AUDITOR_TIMEOUT_MS` /
 `SPOTTER_CODEX_STOP_SHORT_FINAL_MAX_CHARS` で実測用に上書き可能。
+model override は unverified として diagnostics に残る。`gpt-5.6-luna × low` / `gpt-5.6-terra × low`
+は model-matrix 専用 profile で、eval artifact から自動で production へ昇格しない。
 
 テストランナーは Node 組み込み (`node --test`)。現行 CI は `.github/workflows/ci.yml` で Node 22.5 / 22.x の Linux / Windows / macOS matrix を `node --test` で走らせる。
 

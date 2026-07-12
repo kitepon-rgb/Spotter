@@ -1,6 +1,8 @@
 # Open Issues
 
-Spotter で現時点 (v1.4.5 時点, 2026-05-06) に **塞がっていない穴** と **実測未検証の懸念** を優先度付きで記録する。
+Spotter で現時点（v1.4.18 development tree、2026-07-12）に **塞がっていない穴** と
+**実測未検証の懸念** を優先度付きで記録する。repo で修正済みでも、未配布・未 install なら
+実環境では未解決として扱う。
 
 **この doc は「今ここにある課題」の唯一の真実源**。バージョンごとのリリースノート ([CHANGELOG.md](../CHANGELOG.md)) は歴史記録なので、現状把握はここを参照し、新規作業に入る前に必ず目を通すこと。
 
@@ -10,26 +12,57 @@ Spotter で現時点 (v1.4.5 時点, 2026-05-06) に **塞がっていない穴*
 - 解決したら: 該当項目を消し、commit / リリース番号を CHANGELOG に記録
 - 優先度:
   - **P0** — 次に実装着手する前に解決したい。放置が怖い
-  - **P1** — v0.1x の範囲で塞ぎたい
+  - **P1** — 次の patch / 実測レーンで塞ぎたい
   - **P2** — 機会があれば
 
 ---
 
-## P0 — 緊急対処タスク (2026-04-20 実測で確認)
+## P0 — 配布と実環境 activation
 
-実セッションの daemon ログで確認済みの実害。観測タスクと違い、既に壊れている / 見えないターンを生む恐れがあるため、優先的に対処する。
+### repo の修正が npm / global install / Hook 設定へ届いていない
 
-### E_HAIKU_TIMEOUT の再発率観測 (v0.13.1 で 45s に緩和済み)
+**背景**: v1.4.16 の stale Unix socket recovery、v1.4.17 candidate の Codex Hook canonicalization /
+readiness diagnostics / Stop warning delivery / current-turn used-tools は repo と test では実装済み。
+しかし 2026-07-12 の実機 `/opt/homebrew/bin/spotter` は `1.4.15` のまま。global
+`~/.codex/hooks.json` の Spotter `SessionStart` には旧 `async:true` が残り、現行 Codex CLI は
+`async hooks are not supported yet` として skip する。スクリーンショットと `codex exec` の両方で再現した。
+repo の generator が直っていても、global package update と再 install なしに実機警告は消えない。
 
-**背景**: v0.13.0 までの daemon は `DEFAULT_HAIKU_TIMEOUT_MS = 30_000` で Haiku 応答を待っていたが、ローカル実測ログ `daemon-80b5c0af-700f-47af-a3ac-796144823a7d.log` line 15 で `E_HAIKU_TIMEOUT` を観測。同ログ line 20 でも `mode=first, duration_ms=20948` と timeout の 70% 域まで達していた。v0.13.1 で Haiku timeout を 45s、hook 側 IPC timeout を 50s に引き上げ済み ([daemon.mjs:53](../src/daemon/daemon.mjs#L53), [hooks/user-prompt.mjs:24](../src/hooks/user-prompt.mjs#L24), [hooks/stop.mjs:18](../src/hooks/stop.mjs#L18))。
+**影響**: Codex `UserPromptSubmit` / `Stop` は旧 global entry で動き得るが、`SessionStart` refresh は停止し、
+Codex tool-db drift が自動追従しない。v1.4.16 の永久 resurrect 不能修正も通常利用者へ届いていない。
 
-**Haiku 4.5 の高速化ダイヤル** (2026-04-20 公式 docs 確認):
-- `--effort` は Opus 4.7 / Opus 4.6 / Sonnet 4.6 のみ対応、**Haiku 4.5 は effort 非対応** ([model-config docs](https://code.claude.com/docs/en/model-config#adjust-effort-level))
-- Haiku 4.5 は **extended thinking 対応だが adaptive thinking 非対応** ([models/overview](https://platform.claude.com/docs/en/docs/about-claude/models/overview) 比較表)
-- `claude -p` に thinking 直接フラグ無し。API デフォルトで thinking は OFF
-- つまり「Haiku をさらに速くするつまみ」は存在せず、timeout 緩和しか打ち手が無い
+**次アクション**: v1.4.17 RC code boundary `1c67698` から release branch を作り、v1.4.17 専用の
+README / CHANGELOG を作る。現 main の `auditor model-matrix` / v1.4.18 model profile 記述をそのまま
+backport せず、release SHA に実在する公開 CLI だけを記載する。pack / temp install で README と
+`spotter --help` / subcommand help の一致を確認し、model policy / eval commit を含まない SHA を固定する。その SHA で OS CI
+matrix を通し、owner の明示承認後に npm / GitHub Release / remote へ同期する。main HEAD は既に
+v1.4.18 development なので v1.4.17 の CI / tag 対象にしない。実機 `~/.codex/` を backup して global package を更新し、各 project で `spotter install` を
+再実行、`/hooks` review、新 session で `SessionStart: refresh_spawned` が1件だけ記録されることを確認する。
+既存 Throughline / Caveat / Callout hook を保持する。publish / push / global 書換えは未承認。
 
-**次アクション**: v0.13.1 リリース後の daemon ログで `E_HAIKU_TIMEOUT` が 45s でも発生するか集計。`spotter diagnostics logs --json` で `anomalies.haikuInvocationFailures.byCode.E_HAIKU_TIMEOUT` と duration を確認する。発生率が下がらなければ (b) retry or (c) 動的延長を検討。発生率がゼロに近ければこの項目は closable。
+---
+
+## P1 — backend / daemon の信頼性と SLO
+
+### Primary auditor の latency / failure / cost SLO が未確定
+
+**背景**: auto selection では Claude host は Codex CLI が PATH にあれば `codex-cli`、なければ Haiku、
+Codex host は `codex-cli` を選ぶ。明示 backend override は host より優先し、一度選択した backend が
+失敗しても別 backend へ fallback しない。2026-07-12 の
+project-local Codex event では UserPromptSubmit p50 約5.8s、平均7.4s、最大20.0s。daemon logs の
+codex-cli 949 calls は平均6.3s、timeout 3、auth 6。Haiku fallback path には過去 20〜45s 域の
+first/resumed 観測がある。backend ごと・stage ごとの合意 SLO がないため、timeout / model / workload の
+変更を成功と判定できない。
+
+v1.4.18 の `spotter auditor model-matrix` で `gpt-5.4-mini × low`、`gpt-5.6-luna × low`、
+`gpt-5.6-terra × low` を同一 fixture で計測できる基盤は入った。ただし初回 operational smoke 12件は
+Codex CLI usage limit で全て `E_CODEX_CLI_EXIT`。model 品質・availability・latency は未測定で、
+token / cost も `not-available`。generic exit code では quota の対処が artifact だけから分からない。
+
+**次アクション**: quota 回復後に同一 fixture / hash / ordering で再実行する。schema 100%、baseline 非劣化、
+p50/p95、timeout rate、token/cost の SLO を先に合意し、通過した selection だけを独立 commit で昇格する。
+`E_CODEX_CLI_USAGE_LIMIT` のような bounded actionable classification は model 昇格と別 commit で検討する。
+timeout 延長や別 model retry だけで解決扱いにしない。
 
 ### daemon プロセスが shutdown ログなしに死ぬ (v1.3.0 で根因が大半解消した可能性、再観測中)
 
@@ -49,7 +82,7 @@ v0.12.0 の UserPromptSubmit auto-resurrect が次のユーザー入力で `E_UN
 
 ---
 
-## P0 — 実運用観測タスク
+## P1 — 判定品質の実運用観測
 
 v0.7.0 〜 v1.0.0 で tool-db が 5 件 (手書き抽象カタログ) → 57 件 (MCP + deferred + baseline) → **268 件** (MCP + スキル + サブエージェント) に拡大した。さらに v0.13.0 で Stop 判定軸を「要請充足チェック」から「ツール適用機会の監査」に転換、v1.0.0 でカタログ対象を Claude Code 本体側から切り離した。これらの変化を実測で評価する。
 
@@ -102,7 +135,7 @@ Haiku を維持。Haiku 明示利用は `SPOTTER_AUDITOR_BACKEND=haiku` か `cur
 外して構わない (受理はするが selection には影響しない)。`SPOTTER_AUDITOR_BACKEND=haiku` の明示固定
 は引き続き有効。codex-sidecar は `spotter codex *` の明示 second-pass workflow 専用で primary
 chain には入れない (現セッションでも `[caveat:codex-sidecar] advisory unavailable: sidecar
-command failed` を観測)。Codex host (`codex-cli` 固定) と監査用子プロセスのモデル指定
+command failed` を観測)。Codex host の auto selection (`codex-cli`) と監査用子プロセスのモデル指定
 (`gpt-5.4-mini` / `model_reasoning_effort="low"`) は変更なし。
 
 **2026-05-08 完了 (v1.4.8 Hook behavior parity)**: Codex 改修で確定した hook 挙動 3 種を
@@ -225,7 +258,23 @@ timeout 突破頻発なら緊急対処。
 
 Codex native `Stop` は現状 immediate block ではなく deferred delivery。`Stop` で見つかった不足ツールは `.spotter/pending/` に保存され、次の same-session `UserPromptSubmit` の `additionalContext` で Codex に提示される。2026-05-06 の実測では `decision:"block"` を返すと final answer 後に `Stop Blocked` / exit code 1 となり、Claude Code のような綺麗な継続応答にはならなかったため、Caveat と同じ pending queue 方式を採用している。v1.4.8 以降は Claude / Codex で host-neutral pending queue を共有する。
 
-**次アクション**: Codex native hooks が将来 `Stop` で non-blocking continuation / additional context を正式提供したら、pending queue を immediate delivery に置き換えるか再検討する。それまでは deferred であることを README / contract に明記しておく。
+**2026-07-12 更新**: 現行 Codex Hook 仕様は `Stop` の `reason` を continuation prompt として扱う。
+したがって「Codex に continuation surface がない」という旧前提は失効した。ただし旧実機の
+`Stop Blocked` 観測も残るため、文書だけを根拠に pending を置き換えない。
+
+**次アクション**: isolated project で `systemMessage` / `reason` continuation / pending delivery の
+UI・transcript・`stop_hook_active` max-1 を Codex CLI と app の両方で characterization する。挙動差を
+明文化して個別承認を得るまでは deferred delivery を維持する。
+
+### repo-local `.codex/hooks.json` の ownership 未確定
+
+**背景**: 未追跡 `.codex/hooks.json` は Codex source に Claude 用 `spotter hook ...` 4経路を置いた
+ローカル試作。正規 user-global `spotter codex-hook ...` 3経路と ownership / payload / transcript contract が
+異なる。Codex は複数 source の matching Hook を全て実行するため、trust すると二重監査・異種 adapter
+並行・再帰リスクになる。
+
+**次アクション**: 現状は commit / trust せず保持する。正規 generator と重複しない形で削除するか、
+正式 adapter へ置換するかを owner が明示裁定する。global Hook 修復の代用には使わない。
 
 ### CI 回帰テスト整備 (v0.4+)
 
@@ -241,11 +290,16 @@ Codex native `Stop` は現状 immediate block ではなく deferred delivery。`
 
 ### Stop 失敗がセッション最終ターンだとサイレント非監査 (2026-06-02 v1.4.15 review で発見)
 
-**背景**: v1.4.15 で `Stop` hook の backend/transport 失敗を `die(exit 2 = 継続強制)` から `degraded` 記録 + exit 0 に変えた。loud な警告は次の `UserPromptSubmit` が `[Spotter からの警告]` で配信する設計だが、これは v1.4.8 の deferred-delivery と同じ性質を持つ: セッションがその後の `UserPromptSubmit` を迎えずに終わると、その最終ターンの Stop 失敗 (= 監査できなかった事実) は永久に surface されない。codex ログイン失効のような永続失敗なら同ターンの `UserPromptSubmit` 冒頭で既に警告済みなので実害は限定的だが、「backend が UserPromptSubmit では生きていて Stop までの間に落ち、かつそれが最終ターン」の窓では未通知になる。
+**背景**: v1.4.17 candidate で Claude / Codex 両 Stop の backend/transport failure を warning pending に
+積み、次の same-session `UserPromptSubmit` が finding と同時に1回 drain するよう修正した。これで
+「backend が次 turn までに回復したため過去の失敗通知が消える」穴は解消した。一方、セッションがその後の
+`UserPromptSubmit` を迎えず終了すると、配送先が存在しないため最終ターンの Stop failure は surface できない。
 
 **影響**: 最終ターン 1 回分の「監査できなかった」通知欠落のみ。pass を偽装する silent fallback ではない (verdict は生成されていない)。§12.4 の「応答後に surface する手段がない」限界と同じクラス。
 
-**次アクション**: P2 (機会があれば)。Claude Code が `Stop` で non-blocking な additionalContext / user-visible notice を正式提供したら、Stop 失敗時にその場で警告を出すよう再評価する。それまでは deferred であることを contract に明記 (済) で許容。
+**次アクション**: P2。Claude / Codex の `Stop` で non-blocking user-visible notice を安全に出せる
+surface を実機 characterization し、使える場合だけ即時 warning を検討する。それまでは最終 turn 限界を
+contract に明記して許容する。
 
 ---
 
@@ -253,6 +307,10 @@ Codex native `Stop` は現状 immediate block ではなく deferred delivery。`
 
 | 課題 | 解決版 |
 |---|---|
+| Codex `SessionStart` に `async:true` を生成して現行 CLI が handler を skip し、diagnostics も `available` と誤成功していた。installer-owned entry を canonical `{type,command,timeout}` へ正規化し、feature / registered / compatible / canonical / observed / readiness を分離。trust は `/hooks` review を案内 | v1.4.17 candidate (repo 修正済み・実機反映待ち) |
+| Claude Stop backend failure が degraded event だけで warning pending を積まず、backend が回復した次 turn に過去の未監査を通知できなかった。Claude / Codex 両 host で warning を host-neutral pending に dedupe 保存し、次 prompt で finding と同時に1回 drain。pending / stderr / event writer failure も non-blocking かつ loud | v1.4.17 candidate |
+| Codex used-tools が legacy `function_call` だけを読み、現行 shell `custom_tool_call`、MCP、agent call を数えず short Stop を誤 skip し得た。bounded current-turn readerで全既知形を認識し、missing / oversize / schema drift は anomaly として監査を継続 | v1.4.17 candidate |
+| auditor model slug が backend に直接 pin され、次世代 model の比較・昇格 gate がなかった。versioned policy、semantic evaluation profiles、effective selection diagnostics、safe model-matrix artifact を追加。production は評価完了まで `gpt-5.4-mini × low` を維持 | v1.4.18 development |
 | daemon が異常死 (SIGKILL / crash / マシンスリープで SessionEnd 未発火) すると graceful `stop()` の socket unlink が走らず、`~/.spotter/runtime/session-<id>.sock` が orphan として残留。以後の resurrect / SessionStart は `assertNoLiveDaemon` (PID 死亡を確認) を通過して `server.listen(path)` に進むが、stale socket で `EADDRINUSE` → `daemon listening` 到達前に die → **auto-resurrect しても毎回同じ socket で crash-loop = そのセッションが永久に未監査**。実測: Kikoeru session `83d7aa04` が 16:26 起動後に異常死、18:43–19:14 の 5 回 restart が全部 backend 選択直後で停止、hook は毎ターン `E_UNREACHABLE` / `E_RESURRECT_FAILED` で degraded (「一時無効のまま」)。修正: `transport.mjs` に `removeStaleSocketFile` を新設し、`startDaemon` が `assertNoLiveDaemon` 通過後・`listen` 前に stale socket を unlink (Unix only、ENOENT は no-op、Windows named pipe は owner 終了で自動消滅するので no-op)。回帰テスト 3 件 (EADDRINUSE 再現→解消 / ENOENT no-op / Windows no-op) | v1.4.16 (実装済・未リリース) |
 | codex auditor のログイン失効 (`token_revoked` / `refresh_token_reused` / `401`) で codex が異常終了すると、(A) 失効痕跡を捨てて全部 `E_CODEX_CLI_EXIT` に潰し auth を区別せず、(B) `UserPromptSubmit` hook が daemon エラーを `die(exit 2)` していたため、Claude Code が入力時 hook の exit 2 を **プロンプト消去** 扱いして毎ターン入力が消え「Claude が一切反応しない」状態になっていた bug。codex 非ゼロ終了の stdout+stderr をスキャンして `E_CODEX_CLI_AUTH` (`codex login` 案内) に分類 + hook 失敗を `die(exit 2)` から `[Spotter からの警告]` additionalContext + exit 0 の loud degradation に転換 (UserPromptSubmit / Stop / PreToolUse) | v1.4.15 |
 | Codex hooks 登録後の初回 Codex セッションが、`SessionStart` の detached refresh 完了前に `UserPromptSubmit` を走らせると空 / 未作成の `.spotter/tool-db.codex.json` で監査し得た問題。Codex CLI が見える `spotter install` で Codex hooks 登録後に `refresh({hostAgent:"codex"})` も同期 seed し、SessionStart refresh は以後の drift 追従に限定 | v1.4.6 |

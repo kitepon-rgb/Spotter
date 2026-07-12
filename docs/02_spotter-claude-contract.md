@@ -9,7 +9,9 @@
 
 - 現状課題と観測タスク: [`open-issues.md`](open-issues.md)
 - カタログ / tool-db 設計: [`01_catalog-design.md`](01_catalog-design.md)
-- 進行中の hook parity 移植 TODO: [`SPOTTER_HOOK_PARITY_TODO.md`](SPOTTER_HOOK_PARITY_TODO.md)
+- 現在の復旧・配布・model 評価 TODO: [`SPOTTER_CURRENT_STATE_RECOVERY_PLAN.md`](SPOTTER_CURRENT_STATE_RECOVERY_PLAN.md)
+
+`SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳で、archive 移動待ち。現行 contract の正本ではない。
 
 完了済み計画と歴史記録:
 
@@ -39,6 +41,10 @@ Public CLI:
 - `spotter codex-hook install [--codex-home <dir>]` (Codex native hooks)
 - `spotter codex-hook uninstall [--codex-home <dir>]`
 - `spotter codex-hook diagnostics [--codex-home <dir>] [--project <dir>]`
+- `spotter auditor judge --stage <stage> --input <file> [...]` (experimental)
+- `spotter auditor matrix --stage <stage> --input <file> [...]` (experimental)
+- `spotter auditor model-matrix --fixtures <file> [--profile baseline|luna|terra]...
+  [--repeat <n>] [--project <dir>] [--output <file>]` (experimental)
 - `spotter --help | -h`
 - `spotter --version | -v`
 
@@ -68,6 +74,11 @@ current Codex adapter installs user-level `~/.codex/hooks.json` entries for `Ses
 (while still recognizing legacy `codex_hooks` diagnostics output), keeps `.spotter/marker.json`
 project gating, exits early when `SPOTTER_PARENT_PID` is set, and selects Codex CLI as the
 default primary auditor backend.
+Installer-owned command handlers use only the current canonical fields `{type, command, timeout}`.
+`SessionStart` must not use `async:true`: Codex currently skips async command hooks. Upgrade install
+normalizes obsolete installer-owned fields without changing other products' hooks. Diagnostics separates
+feature / registered / compatible / canonical / observed / readiness. Hook trust is not inferred from an
+internal file; install and diagnostics direct the user to review `/hooks` and start a fresh session.
 When `spotter install` sees Codex CLI and registers Codex hooks, it also synchronously seeds
 `.spotter/tool-db.codex.json` so the first Codex session has a host-local catalog. Codex
 `SessionStart` does not start a daemon; it only launches a detached
@@ -77,12 +88,13 @@ description cache at `~/.spotter/tool-db.json`. Codex global cache writes go to
 `~/.spotter/tool-db.codex.json`. Codex `Stop` does not
 block the just-finished answer. It uses deferred delivery: Spotter context is queued under
 `.spotter/pending/` (host-neutral, shared with Claude Stop deferred delivery as of v1.4.8) and surfaced on the next same-session `UserPromptSubmit`.
-This is intentional. Real Codex hook smoke showed that `decision:"block"` after final
-answer becomes `Stop Blocked` / exit code 1 rather than a clean continuation, so the
-Codex adapter follows the pending-queue pattern until Codex exposes a non-blocking
-Stop continuation / additional-context surface. Backend errors are also written to
-stderr so one-shot `codex exec` runs do not hide the failure. Codex hook auditor calls use
-`--model gpt-5.4-mini`, `model_reasoning_effort="low"`, and a 20s timeout by default. Short `Stop` final responses with
+This remains an explicit product choice. A 2026-05 smoke showed `decision:"block"` after final
+answer as `Stop Blocked` / exit code 1. The current Codex hook contract now describes `reason` as a
+continuation prompt, so immediate continuation must be re-characterized before replacing the pending queue;
+the old claim that Codex exposes no continuation is no longer valid. Backend errors are also written to
+stderr and queued as warnings so one-shot `codex exec` and the next same-session prompt do not hide the failure.
+Codex hook auditor calls use the production model policy (currently `gpt-5.4-mini × low`) and a 20s timeout.
+Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
 
 - Claude `SessionStart`
@@ -94,7 +106,7 @@ no used tools are skipped to avoid duplicate post-answer latency.
 - Codex `SessionStart`
   - returns early when `SPOTTER_PARENT_PID` is set.
   - returns outside a project containing `.spotter/marker.json`.
-  - otherwise starts detached `spotter db refresh --host-agent codex` and returns without waiting.
+  - otherwise starts exactly one detached `spotter db refresh --host-agent codex` and returns without waiting.
 - `UserPromptSubmit`
   - returns early for child calls, subagent calls, outside-project calls.
   - drains `<projectRoot>/.spotter/pending/<sessionId>.json` before deciding short-prompt skip.
@@ -125,8 +137,10 @@ no used tools are skipped to avoid duplicate post-answer latency.
     UserPromptSubmit's `additionalContext`.
   - `stop_hook_active:true` triggers daemon early-pass; nothing is queued.
   - backend / transport errors record `status:"degraded"` and **exit 0** (no continuation forced —
-    a Stop exit 2 would block the model from stopping). No pending is queued (no verdict was
-    produced); the loud `[Spotter からの警告]` is surfaced by the next UserPromptSubmit. This is not
+    a Stop exit 2 would block the model from stopping). A warning entry is de-duplicated into the same
+    session pending queue even though no verdict was produced; the loud `[Spotter からの警告]` is surfaced
+    exactly once by the next UserPromptSubmit, alongside any finding. Pending write failure is itself
+    reported to stderr and the event log without rejecting the non-blocking Stop path. This is not
     a silent pass — but note the inherent deferred-delivery limit: if the session ends before any
     next UserPromptSubmit, that last turn's Stop failure is never surfaced (tracked in open-issues).
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
@@ -250,21 +264,30 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
 
 Primary auditor backend は `UserPromptSubmit` / `Stop` 相当の主判定を返す経路です。
 この backend は hook hot path 上で `{pass, missing_tools}` または `SpotterJudgment` を返し、
-Claude-facing projection の入力になります。現行 default は Claude Haiku です。
+host-facing projection の入力になります。auto selection では、Claude host は configuration-time に
+Codex CLI が PATH にあれば `codex-cli`、なければ `haiku`、Codex host は `codex-cli` を選ぶ。
+`SPOTTER_AUDITOR_BACKEND` の明示 override は host auto selection より優先する。一度選んだ backend が
+runtime で失敗しても、別 backend へ silent retry しない。
 
 Second-pass workflow は、主判定で得た `SpotterFinding[]` を別の観点で確認する経路です。
 `spotter codex risk-check|review|explore|opinion|work` はここに属し、`codex-sidecar`
 を呼ぶ場合でも hook の主判定そのものを置き換えません。daemon からの `risk-check`
 dispatch も opt-in かつ detached であり、hook response は Codex を待ちません。
 
-Codex host の primary auditor backend は v1.4.5 時点で Codex CLI (`codex exec`) が既定です。
-Claude host の `current` policy は現行 Haiku-compatible path を既定として維持します。
-v1.4.7 以降、Claude host の opt-in `next` policy
-(`SPOTTER_AUDITOR_BACKEND_POLICY=next`) は primary auditor を Codex CLI に切り替えます
-(reason `policy_next_claude_codex_cli`)。Codex CLI が unavailable / timeout / schema invalid /
-non-zero exit の場合は `AuditorBackendError` を hidden fallback せず構造化エラーとして表面化します。
-Claude host で Haiku を選べるのは `current` policy または `SPOTTER_AUDITOR_BACKEND=haiku`
-明示時のみです。完了済みの migration 計画と smoke 結果は
+`SPOTTER_AUDITOR_BACKEND_POLICY=current|next` は互換のため受理するが、v1.4.10 以降 selection には
+影響しない。`SPOTTER_AUDITOR_BACKEND=haiku|codex-cli|codex-sidecar` の明示 override は auto selection
+より優先する。unavailable / timeout / schema invalid / non-zero exit は `AuditorBackendError` として
+表面化する。
+
+Codex CLI auditor の production selection は
+[`codex-auditor-model-policy.mjs`](../src/core/codex-auditor-model-policy.mjs) の versioned policy が正本。
+現在は `gpt-5.4-mini × low`。env override は policy より優先するが unverified と表示する。
+`gpt-5.6-luna × low` と `gpt-5.6-terra × low` は semantic evaluation profile であり、production へ
+自動昇格しない。`gpt-5.6` / CLI default / `~/.codex/models_cache.json` を暗黙継承せず、model 不在や
+quota を含む invocation failure で別 model へ fallback しない。`spotter auditor model-matrix` は
+再現可能な比較 artifact を作るが、token / cost と合意 SLO が揃うまで promotion を許可しない。
+
+完了済みの primary backend migration 計画と smoke 結果は
 [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md) に保管しています。
 
 ## Regression Coverage
@@ -281,6 +304,11 @@ Claude host で Haiku を選べるのは `current` policy または `SPOTTER_AUD
   input shapes.
 - `test/codex-risk-dispatch.test.mjs`: daemon-side detached dispatch input files, env gates,
   and recursion-blocking child env.
+- `test/codex-hook-cmd.test.mjs`: canonical hook generation / upgrade ownership、readiness、
+  Stop warning pending、bounded current-turn transcript integration。
+- `test/codex-auditor-model-policy.test.mjs`: versioned policy、override precedence、profile isolation。
+- `test/auditor-model-matrix-cmd.test.mjs`: fixture validation、selection truthfulness、safe artifact、
+  FP/FN / anomaly scoring、ordering / run bounds。
 - `test/daemon-log-diagnostics.test.mjs`: read-only daemon log aggregation for precision
   diagnostics and operational anomaly signals.
 - `test/transport.test.mjs`: IPC response shape and transport errors.
