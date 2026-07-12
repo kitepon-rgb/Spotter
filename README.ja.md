@@ -15,7 +15,7 @@
 
 Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。記録すべき決定を memory / caveat MCP に残さない、docs lookup MCP を呼ばずに古い知識で応答する、ブラウザ自動化 MCP で確認せず UI 状態を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
 
-Spotter はツールカタログを完全に把握した別エージェント (Claude Haiku 4.5) をセッション毎に常駐させ、Claude の発話予定と応答を並走監査します。見落としを検出すると透明化された指摘として Claude に届け、補正応答を促します。**Claude が自覚して呼ぶ**設計は本プロダクトの存在意義を破壊するため、Claude から呼ぶのではなく hook 経由で Claude の意思と独立に検出する構造を取っています。
+Spotter はツールカタログを完全に把握した別の監査エージェントで、ユーザー入力と主役 AI の応答を並走監査します。自動選択では Claude host は Codex CLI があればそれを、なければ session-scoped Haiku を選び、Codex host は Codex CLI を既定にします。明示 backend override は host より優先しますが、runtime failure で別 backend へ黙って切り替えません。見落としは透明化された指摘として次に利用できる文脈へ届けます。**主役 AI が自覚して自己監査する**設計は本プロダクトの存在意義を破壊するため、hook 経由でその意思と独立に検出します。
 
 <p align="center">
   <img src=".github/concept.svg" alt="Claude が答え、Spotter が見ている" width="80%">
@@ -59,6 +59,7 @@ Homebrew で Node が更新されても Codex hook が古い Node パスに取�
 `v0.3.0` 以降は**プロジェクト単位の明示的 install** を採用しています (v0.2 までの `postinstall` 自動登録はデーモン増殖の主因だったため撤回)。各プロジェクトの `.claude/settings.json` に hook を登録し、そのプロジェクトでの Claude Code セッションのみで有効になります。
 Codex CLI が使える環境では、同じ `spotter install` が user-level の Codex native hooks も登録します。実際に動くプロジェクトは `spotter install` が作る `.spotter/marker.json` で制限されるため、無関係な Codex セッションでは Spotter は起動しません。
 Codex 側では現行の `[features].hooks = true` を有効化し、互換のため旧 `codex_hooks` diagnostics output も認識します。
+Spotter が所有する Codex handler は現行の同期 command schema で生成します。install / upgrade 後は `/hooks` で review して新しい Codex session を開いてください。`spotter codex-hook diagnostics` は登録と readiness を診断しますが、trust を内部状態から推測しません。
 
 Spotter を upgrade した後、release note で hook 設定変更が案内されている場合は、各 install 済みプロジェクトで `spotter install` を再実行してください。global package update でコード経路は変わりますが、既存 `.claude/settings.json` の timeout 値は自動では書き換わりません。
 
@@ -80,8 +81,8 @@ spotter codex-hook install
 
 - **Node.js 22.5 以上**
 - **Claude Code 2.0 以上**
-- **現行 Claude-backed auditor path では Claude Max プラン** (`claude -p` で Haiku を起動するため)
-- **Codex native hooks では Codex CLI**。Codex host の監査は既定で `codex exec` を使い、Haiku へ fallback しません
+- **Codex CLI**。Codex native hooks の既定 backend と Claude host の優先 auditor path で使います。自動選択後の runtime failure で Haiku へ fallback しません
+- **Claude Max プラン**は Claude host が Haiku path を選ぶ場合だけ必要です（Codex CLI 不在、または `SPOTTER_AUDITOR_BACKEND=haiku` 明示時）
 
 ## アーキテクチャ
 
@@ -126,7 +127,7 @@ flowchart LR
     SK --> DB
     AG --> DB
     BL --> DB
-    DB --> H[Haiku 監査<br/>session-scoped, preamble-once]
+    DB --> H[独立 auditor<br/>Codex CLI があれば優先<br/>なければ session-scoped Haiku]
 ```
 
 監査対象のツール (name + description) は host-local に分離されます。Claude は `<project>/.spotter/tool-db.json`、Codex は `<project>/.spotter/tool-db.codex.json` を使います。**daemon が監査に使うのは Claude local DB のみ**で、Codex native hooks は Codex local DB を読みます。グローバル description cache も host ごとに分離され、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使います。これらは同じ host の他プロジェクト間でだけ再利用され、監査入力には混ぜません。各 host-local DB は **その host の現時点の discovery 結果と一致** (refresh 時に prune される) するため、別プロジェクトや別 host のツールリストで上書きされることはありません。
@@ -170,7 +171,7 @@ spotter codex work --findings findings.json --instruction "docs 更新" --approv
 spotter codex-hook install
                          # Codex native hooks の修復 / 明示登録 (通常は spotter install が実行)
 spotter codex-hook diagnostics
-                         # Codex hooks feature と Spotter hook 登録を診断
+                         # Codex hook の登録/readiness を診断。trust は /hooks で review
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ```
 
@@ -184,8 +185,10 @@ SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root 
 `spotter codex risk-check` に渡します。hook 応答は Codex を待ちません。
 配線だけ確認する場合は `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` を併用します。
 
-Primary auditor backend policy: Claude hooks は現行の Haiku compatibility path を既定のまま維持します。
-Codex native hooks は Codex CLI を既定 backend とし、Haiku へ fallback しません。
+Primary auditor backend policy: Claude hooks の auto selection は PATH に Codex CLI があれば Codex CLI、
+なければ Haiku compatibility path。Codex native hooks の auto selection は Codex CLI です。
+`SPOTTER_AUDITOR_BACKEND` の明示 override はどちらの host でも優先し、runtime failure では別 backend へ
+hidden fallback しません。
 Codex 側の SessionStart hook は `.spotter/tool-db.codex.json` を bg refresh し、Claude DB には触れません。
 Codex CLI auditor の子プロセスは、hook 判定を安く速く保つため既定で `gpt-5.4-mini` と
 `model_reasoning_effort="low"` を明示指定します。実測や制御された実験では
@@ -202,9 +205,9 @@ Codex CLI auditor の子プロセスは、hook 判定を安く速く保つため
 
 ## 既知の制約
 
-- v1.4.8 以降、Claude / Codex 両 host で `Stop` hook は **遅延配送 (deferred delivery)** に統一されました。`Stop` で見落としツールを検出した場合、Spotter は `<projectRoot>/.spotter/pending/<sessionId>.json` に指摘を積み、次の same-session `UserPromptSubmit` で `additionalContext` として配信します。当ターンの最初の応答は transcript にそのまま残るため、`decision:"block"` で補正サイクルを回す方式の「最終応答が補正中心になって元の文脈が迷子」問題が解消します (Codex 側は `Stop Blocked` / exit code 1 回避も兼ねる)
+- v1.4.8 以降、Claude / Codex 両 host で `Stop` hook は **遅延配送 (deferred delivery)** に統一されています。`Stop` で見落としツールを検出した場合、Spotter は `<projectRoot>/.spotter/pending/<sessionId>.json` に指摘を積み、次の same-session `UserPromptSubmit` で `additionalContext` として配信します。当ターンの最初の応答は transcript にそのまま残ります
 - pending ファイルは Claude / Codex が同じパス (`.spotter/pending/`) を共有します。host-neutral 設計です
-- **JSON スキーマ違反は v0.5.0 以降「想定済み異常」として silent pass + session renew で回復**します (role collapse 検知パス、daemon ログに `role_collapse_reset` を残す)。**v1.4.15 以降、auditor/daemon の失敗 (Haiku timeout / codex ログイン失効 / transport エラー) はプロンプトをブロックしません**: `UserPromptSubmit` hook が `[Spotter からの警告]` を `additionalContext` で出して exit 0 するため、Claude はプロンプトを受け取れます — 当ターンが未監査になるだけで、その事実は伝えられます (codex ログイン失効時は `codex login` を案内)。timeout は v0.5.0 で 30s、v0.13.1 で 45s に拡張済み
+- **Haiku の JSON スキーマ違反は v0.5.0 以降「想定済み異常」として session renew + `role_collapse_reset` で回復**します。**v1.4.15 以降、auditor/daemon の失敗はプロンプトをブロックしません**: `UserPromptSubmit` は `[Spotter からの警告]` を出して exit 0。v1.4.17 では `Stop` 失敗も warning pending に積み、次の same-session prompt で1回配信します。直後に session が終わる場合だけ、配送先となる次 prompt がありません
 
 <details>
 <summary><strong>📋 最近のハイライト</strong></summary>

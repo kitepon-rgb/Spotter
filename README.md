@@ -15,7 +15,7 @@
 
 Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It may skip a project memory MCP when a decision should be recorded, answer from stale memory instead of a docs-lookup MCP, or reason about UI state without a browser-automation MCP. The model can't always tell when it doesn't know — so the tool stays unused.
 
-Spotter pins a second agent (Claude Haiku 4.5) next to Claude. The second agent has the full tool catalog memorized and audits both the user's prompt and Claude's reply in parallel. When it spots a missed tool, it injects a transparent recommendation into Claude's context and, if needed, asks Claude to amend its answer. **Claude is never asked to self-audit** — that would defeat the entire premise. Detection happens through hooks, independent of Claude's intent.
+Spotter runs a separate auditor with the full tool catalog and checks both the user's prompt and the primary agent's reply. Automatic selection uses Codex CLI on a Claude host when available, otherwise the session-scoped Haiku path; on a Codex host it defaults to Codex CLI. An explicit backend override takes precedence, but a runtime failure never silently switches backend. When Spotter finds a missed tool, it injects a transparent recommendation into the next available context. **The primary agent is never asked to self-audit** — that would defeat the premise. Detection happens through hooks, independent of the primary agent's intent.
 
 <p align="center">
   <img src=".github/concept.svg" alt="Claude answers · Spotter watches" width="80%">
@@ -59,6 +59,7 @@ Codex hooks working across Homebrew Node upgrades.
 Since `v0.3.0`, Spotter requires **explicit per-project install** (the earlier `postinstall` auto-registration was the leading cause of orphan daemons). `spotter install` writes hooks into the project's `.claude/settings.json`; the audit is then active only in Claude Code sessions for that project.
 When the Codex CLI is available, the same `spotter install` also registers user-level Codex native hooks. Project activation still depends on the same per-project `.spotter/marker.json`, so unrelated Codex sessions do not trigger Spotter.
 For Codex, install enables the current `[features].hooks = true` flag and still recognizes older `codex_hooks` diagnostics output for compatibility.
+Installer-owned Codex handlers use the current synchronous command schema. After install or upgrade, review them with `/hooks`, then open a fresh Codex session; `spotter codex-hook diagnostics` reports registration/readiness but does not guess hook trust.
 
 After upgrading Spotter, re-run `spotter install` in each installed project when release notes mention hook setting changes. The global package update changes the code path, but existing `.claude/settings.json` timeout values are not rewritten automatically.
 
@@ -80,8 +81,8 @@ spotter codex-hook install
 
 - **Node.js 22.5+**
 - **Claude Code 2.0+**
-- **Claude Max plan** for the current Claude-backed auditor path (Spotter spawns Haiku via `claude -p`)
-- **Codex CLI** for Codex native hooks. Codex host auditing uses `codex exec` by default and does not fall back to Haiku
+- **Codex CLI** for the default Codex-native backend and the preferred Claude-host auditor path. The auto-selected Codex backend does not fall back to Haiku after a runtime failure
+- **Claude Max plan** only when a Claude host selects the Haiku path (Codex CLI is absent or `SPOTTER_AUDITOR_BACKEND=haiku` is explicit)
 
 ## Architecture
 
@@ -126,7 +127,7 @@ flowchart LR
     SK --> DB
     AG --> DB
     BL --> DB
-    DB --> H[Haiku audit<br/>session-scoped, preamble-once]
+    DB --> H[Independent auditor<br/>Codex CLI when available<br/>otherwise session-scoped Haiku]
 ```
 
 The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`, while Codex uses `<project>/.spotter/tool-db.codex.json`. **The daemon audits against the Claude local DB only**, and Codex native hooks read the Codex local DB. Global description caches are host-specific too: Claude uses `~/.spotter/tool-db.json`, while Codex uses `~/.spotter/tool-db.codex.json`. They are shared only across projects for the same host and are never audit sources. Each host-local DB matches that host's **current** discovery snapshot for the project (stale entries are pruned on refresh), so tools from another project or another host cannot overwrite this session's audit catalog.
@@ -171,7 +172,7 @@ spotter codex work --findings findings.json --instruction "Update docs" --approv
 spotter codex-hook install
                          # repair / explicitly register Codex native hooks (normally handled by spotter install)
 spotter codex-hook diagnostics
-                         # check Codex hooks feature and Spotter hook entries
+                         # check Codex hook registration/readiness; trust is reviewed with /hooks
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
 ```
 
@@ -185,9 +186,10 @@ When enabled, the daemon dispatches `pass:false` findings to `spotter codex risk
 in a detached process. Hook responses do not wait for Codex. Add
 `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` to exercise the wiring without calling Codex.
 
-Primary auditor backend policy: Claude hooks keep the current Haiku-compatible path by
-default. Codex native hooks use Codex CLI by default and do not fall back to Haiku;
-their SessionStart hook refreshes `.spotter/tool-db.codex.json` in the background
+Primary auditor backend policy: Claude hooks automatically select Codex CLI when it is available on PATH,
+otherwise the Haiku-compatible path. Codex native hooks automatically select Codex CLI. An explicit
+`SPOTTER_AUDITOR_BACKEND` override wins on either host; runtime failure never triggers a hidden fallback.
+The Codex SessionStart hook refreshes `.spotter/tool-db.codex.json` in the background
 without touching the Claude DB.
 Codex CLI auditor child processes explicitly use `gpt-5.4-mini` with
 `model_reasoning_effort="low"` by default so hook checks stay cheap and fast;
@@ -205,9 +207,9 @@ those values for smoke tests or controlled experiments.
 
 ## Known limitations
 
-- The `Stop` hook fires **after** Claude's first answer has already been streamed to the user. When Spotter sends Claude back, the user sees both the original answer and the corrected one. Detection accuracy in `UserPromptSubmit` (the *pre-response* stage) is therefore Spotter's primary axis of quality
+- The `Stop` hook fires **after** the first answer has already been streamed. Spotter therefore queues a finding for the next same-session prompt instead of rewriting that answer. Detection accuracy in `UserPromptSubmit` (the *pre-response* stage) remains the primary quality axis
 - `Stop` hook is **deferred** for both Claude and Codex hosts as of v1.4.8. When Spotter finds a missed tool at `Stop`, it appends the finding to `<projectRoot>/.spotter/pending/<sessionId>.json` and surfaces it on the next same-session `UserPromptSubmit` as `additionalContext`. The original assistant message stays as the turn's final transcript entry — no `decision:"block"` re-generation cycle. The same pending file is shared by Claude and Codex (host-neutral path)
-- **Since v0.5.0, JSON schema violations from Haiku are treated as expected-anomalies** (silent pass + session renew, logged as `role_collapse_reset`) — this is the role-collapse recovery path. **Since v1.4.15, an auditor/daemon failure (Haiku timeout, codex login expiry, transport error) no longer blocks your prompt**: the `UserPromptSubmit` hook surfaces a loud `[Spotter からの警告]` via `additionalContext` and exits 0, so Claude still receives the prompt — only this turn goes unaudited, and you're told so (codex login expiry names the `codex login` fix). Timeouts were also raised twice (30s in v0.5.0, 45s in v0.13.1)
+- **Since v0.5.0, JSON schema violations from Haiku are treated as expected anomalies** (session renew + `role_collapse_reset`). **Since v1.4.15, an auditor/daemon failure no longer blocks the prompt**: `UserPromptSubmit` emits a loud `[Spotter からの警告]` and exits 0. In v1.4.17, a `Stop` failure is queued as the same kind of warning and delivered once on the next same-session prompt. If the session ends immediately, no later prompt exists and that final warning cannot be surfaced
 
 <details>
 <summary><strong>📋 Recent highlights</strong></summary>

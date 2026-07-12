@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.17
+## 1.4.17 (unreleased release candidate)
 
 v1.4.16 で実装済みだった stale Unix socket recovery を、v1.4.16 tag を改変せずこの patch の実配布候補に含める。
 daemon 異常死後の orphan socket を次回起動前に安全に除去する回復経路が、初めて配布物へ入る。
@@ -23,8 +23,9 @@ daemon 異常死後の orphan socket を次回起動前に安全に除去する�
 
 ### 検証
 
-targeted test と adversarial review を実施し、最終 full suite と OS CI matrix は release 前に実行予定。
-件数は最終結果の確定後に記録する。
+`1c67698` の clean worktree から npm pack / temp prefix install / CLI version / Hook install・reinstall を
+smoke し、`node --test` は 383 / 381 pass / 0 fail / 2 skip。targeted test と adversarial review も
+blocker 0。OS CI matrix と publish 後の三者一致確認は release 前後に残る。
 
 ## 1.4.16
 
