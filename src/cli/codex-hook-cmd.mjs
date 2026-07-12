@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuditorBackend } from '../core/auditor-backend.mjs';
-import { codexLastAssistantMessage, readCodexUsedTools } from '../core/codex-transcript.mjs';
+import { codexLastAssistantMessage, readCodexToolUsage } from '../core/codex-transcript.mjs';
 import { legacyResultFromJudgment } from '../core/judgment.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
 import { spawnRefreshDetached } from '../hooks/spawn-daemon.mjs';
@@ -185,7 +185,7 @@ export async function runCodexStopHook({
   readInput = readStdinJson,
   readLocalFn = readLocal,
   createAuditorBackendFn = createAuditorBackend,
-  readCodexUsedToolsFn = readCodexUsedTools,
+  readCodexToolUsageFn = readCodexToolUsage,
   recordHookEventFn = appendCodexHookEvent,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
@@ -199,8 +199,11 @@ export async function runCodexStopHook({
 
   const transcriptPath = requireString(input, 'transcript_path');
   const finalResponse = codexLastAssistantMessage(input) ?? '(no final response available)';
-  const usedTools = await readCodexUsedToolsFn(transcriptPath);
-  if (shouldSkipShortCodexStop({ finalResponse, usedTools, env: process.env })) {
+  const toolUsage = await readCodexToolUsageFn(transcriptPath);
+  const usedTools = Array.isArray(toolUsage?.usedTools) ? toolUsage.usedTools : [];
+  const toolUsageEvent = compactCodexToolUsageForEvent(toolUsage);
+  if (toolUsageEvent.toolUsageAnomalyCount === 0
+    && shouldSkipShortCodexStop({ finalResponse, usedTools, env: process.env })) {
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
       event: {
@@ -208,6 +211,7 @@ export async function runCodexStopHook({
         status: 'skipped',
         reason: 'short_final_no_tools',
         usedToolCount: usedTools.length,
+        ...toolUsageEvent,
         durationMs: Date.now() - startedAt,
       },
     }, writeError);
@@ -234,6 +238,7 @@ export async function runCodexStopHook({
         backend: err?.backend ?? null,
         code: err?.code ?? 'E_INTERNAL',
         usedToolCount: usedTools.length,
+        ...toolUsageEvent,
         durationMs: Date.now() - startedAt,
       },
     }, writeError);
@@ -249,6 +254,7 @@ export async function runCodexStopHook({
         pass: true,
         missingTools: [],
         usedToolCount: usedTools.length,
+        ...toolUsageEvent,
         backendDurationMs: judgment.meta?.durationMs ?? null,
         durationMs: Date.now() - startedAt,
       },
@@ -270,10 +276,33 @@ export async function runCodexStopHook({
       pass: false,
       missingTools: judgment.findings.map((finding) => finding.toolName),
       usedToolCount: usedTools.length,
+      ...toolUsageEvent,
       backendDurationMs: judgment.meta?.durationMs ?? null,
       durationMs: Date.now() - startedAt,
     },
   }, writeError);
+}
+
+function compactCodexToolUsageForEvent(toolUsage) {
+  const anomalies = Array.isArray(toolUsage?.anomalies)
+    ? toolUsage.anomalies
+      .filter((entry) => entry && typeof entry.code === 'string')
+      .map((entry) => ({
+        code: entry.code,
+        ...(Number.isInteger(entry.line) && entry.line > 0 ? { line: entry.line } : {}),
+      }))
+    : [];
+  const stats = {};
+  for (const key of ['lines', 'parsedLines', 'toolCalls', 'recognized', 'anomalies']) {
+    const value = toolUsage?.stats?.[key];
+    if (Number.isFinite(value)) stats[key] = value;
+  }
+  return {
+    toolUsageAnomalyCount: anomalies.length,
+    toolUsageAnomalies: anomalies,
+    toolUsageScope: typeof toolUsage?.scope === 'string' ? toolUsage.scope : 'unavailable',
+    toolUsageStats: stats,
+  };
 }
 
 export async function runCodexHookInstallCommand({

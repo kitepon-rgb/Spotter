@@ -650,9 +650,9 @@ test('runCodexStopHook: queues turn_end miss for next UserPromptSubmit context',
         last_assistant_message: longFinalResponse,
       }),
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
-      readCodexUsedToolsFn: async (transcriptPath) => {
+      readCodexToolUsageFn: async (transcriptPath) => {
         assert.equal(transcriptPath, '/tmp/transcript.jsonl');
-        return [];
+        return { usedTools: [], anomalies: [], stats: {} };
       },
       createAuditorBackendFn: ({ backend, hostAgent }) => {
         assert.equal(backend, 'codex-cli');
@@ -711,7 +711,7 @@ test('runCodexStopHook: backend error is queued for next UserPromptSubmit contex
         last_assistant_message: longFinalResponse,
       }),
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
-      readCodexUsedToolsFn: async () => [],
+      readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
       createAuditorBackendFn: () => ({
         judge: async () => {
           throw new AuditorBackendError('E_CODEX_CLI_TIMEOUT', 'codex-cli did not respond', {
@@ -750,6 +750,7 @@ test('runCodexStopHook: backend error is queued for next UserPromptSubmit contex
 test('runCodexStopHook: skips short final responses with no used tools', async () => {
   const project = await makeProject();
   const out = [];
+  const events = [];
   try {
     await runCodexStopHook({
       readInput: async () => ({
@@ -758,17 +759,173 @@ test('runCodexStopHook: skips short final responses with no used tools', async (
         transcript_path: '/tmp/transcript.jsonl',
         last_assistant_message: '短い回答です。',
       }),
-      readCodexUsedToolsFn: async () => [],
+      readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
       readLocalFn: async () => {
         throw new Error('short final response should not load catalog');
       },
       createAuditorBackendFn: () => {
         throw new Error('short final response should not invoke backend');
       },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
       writeOutput: (text) => out.push(text),
     });
 
     assert.deepEqual(out, []);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'skipped');
+    assert.equal(events[0].reason, 'short_final_no_tools');
+    assert.equal(events[0].toolUsageAnomalyCount, 0);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: current custom_tool_call prevents a false short-final skip', async () => {
+  const project = await makeProject();
+  const transcript = join(project, '.spotter', 'current-rollout.jsonl');
+  const events = [];
+  let auditedInput = null;
+  try {
+    await writeFile(transcript, JSON.stringify({
+      type: 'response_item',
+      payload: { type: 'custom_tool_call', name: 'exec', call_id: 'exec-1', arguments: 'private command' },
+    }) + '\n', 'utf8');
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-spotter-current-tool',
+        transcript_path: transcript,
+        last_assistant_message: '短い回答です。',
+      }),
+      readLocalFn: async () => [],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async (input) => {
+          auditedInput = input;
+          return { pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } };
+        },
+      }),
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+    });
+
+    assert.deepEqual(auditedInput.usedTools, ['exec']);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'success');
+    assert.equal(events[0].usedToolCount, 1);
+    assert.equal(events[0].toolUsageAnomalyCount, 0);
+    assert.equal(events[0].toolUsageStats.recognized, 1);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: prior-turn tool and anomaly do not disable the current short-final skip', async () => {
+  const project = await makeProject();
+  const transcript = join(project, '.spotter', 'multi-turn-rollout.jsonl');
+  const events = [];
+  try {
+    await writeFile(transcript, [
+      JSON.stringify({ type: 'turn_context', payload: { turn_id: 'previous' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'old-call' } }),
+      'malformed previous-turn line',
+      JSON.stringify({ type: 'turn_context', payload: { turn_id: 'current' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', content: 'current short answer' } }),
+    ].join('\n'), 'utf8');
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-spotter-current-clean',
+        transcript_path: transcript,
+        last_assistant_message: '短い回答です。',
+      }),
+      readLocalFn: async () => { throw new Error('prior-turn tool must not force a current audit'); },
+      createAuditorBackendFn: () => { throw new Error('prior-turn anomaly must not force a current audit'); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+    });
+
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'skipped');
+    assert.equal(events[0].usedToolCount, 0);
+    assert.equal(events[0].toolUsageAnomalyCount, 0);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: transcript anomaly prevents skip and records only safe diagnostics', async () => {
+  const project = await makeProject();
+  const transcript = join(project, '.spotter', 'future-rollout.jsonl');
+  const events = [];
+  let auditCalls = 0;
+  try {
+    await writeFile(transcript, [
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'future_tool_call', name: 'future', arguments: 'secret prompt body' },
+      }),
+      'malformed line with private body',
+    ].join('\n'), 'utf8');
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-spotter-future-tool',
+        transcript_path: transcript,
+        last_assistant_message: '短い回答です。',
+      }),
+      readLocalFn: async () => [],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async (input) => {
+          auditCalls += 1;
+          assert.deepEqual(input.usedTools, []);
+          return { pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } };
+        },
+      }),
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+    });
+
+    assert.equal(auditCalls, 1);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'success');
+    assert.equal(events[0].toolUsageAnomalyCount, 2);
+    assert.deepEqual(events[0].toolUsageAnomalies, [
+      { code: 'E_CODEX_TOOL_CALL_TYPE_UNKNOWN', line: 1 },
+      { code: 'E_CODEX_TRANSCRIPT_JSON_PARSE', line: 2 },
+    ]);
+    assert.doesNotMatch(JSON.stringify(events[0]), /secret prompt body|private body/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: missing transcript is observation failure and never a no-tools skip', async () => {
+  const project = await makeProject();
+  const events = [];
+  let auditCalls = 0;
+  try {
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'sess-spotter-missing-transcript',
+        transcript_path: join(project, '.spotter', 'missing-rollout.jsonl'),
+        last_assistant_message: '短い回答です。',
+      }),
+      readLocalFn: async () => [],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async () => {
+          auditCalls += 1;
+          return { pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } };
+        },
+      }),
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+    });
+
+    assert.equal(auditCalls, 1);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'success');
+    assert.equal(events[0].toolUsageScope, 'unavailable');
+    assert.deepEqual(events[0].toolUsageAnomalies, [{ code: 'E_CODEX_TRANSCRIPT_NOT_FOUND' }]);
   } finally {
     await rm(project, { recursive: true, force: true });
   }

@@ -38,6 +38,7 @@ export {
 export {
   codexLastAssistantMessage,
   codexToolInputText,
+  readCodexToolUsage,
   readCodexUsedTools,
 } from './core/codex-transcript.mjs';
 export { assertHostAgent, detectHostAgent as detectNeutralHostAgent } from './core/host-agent.mjs';
