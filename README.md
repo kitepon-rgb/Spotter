@@ -146,19 +146,19 @@ The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`
 
 Both share the principle of **"don't rely on the primary agent to do it itself."** They compose well — you can run them together.
 
-### Optional Throughline auditor context canary
+### Throughline auditor context (default-on)
 
-Fresh project installs keep auditor context **disabled**. This is a project-owned
-opt-in, not a production-wide default: the current candidate is a canary in the
-Spotter repository only. Re-running `spotter install` without auditor-context
-options preserves the project's existing setting. Disable it again with:
+When `spotter install` can resolve Throughline on PATH to an absolute executable,
+auditor context is enabled by default. A normal reinstall migrates legacy markers
+whose disabled state came from the old default. An explicit project opt-out is
+stored with `origin: explicit` and is never silently re-enabled. Disable it with:
 
 ```bash
 spotter install -y --auditor-context disabled
 ```
 
-To opt a project in, configure a direct absolute Throughline executable and any
-leading arguments with repeatable `--throughline-arg`:
+When automatic discovery is unavailable, configure a direct absolute Throughline
+executable and any leading arguments with repeatable `--throughline-arg`:
 
 ```bash
 spotter install -y --auditor-context throughline \
@@ -195,8 +195,8 @@ spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.js
   --recent-turns 2 --body-cap 600
 ```
 
-Current evaluation conclusion is N=2 / 600. It is not a rollout approval: the
-Spotter-repository canary still lacks its 7-day and 30-fresh-result gates.
+The evaluated setting is N=2 / 600. Default-on operation now collects the 7-day,
+30-fresh-result sample used to decide whether to keep, adjust, or roll back the default.
 
 ## Common commands
 

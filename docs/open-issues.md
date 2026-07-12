@@ -17,7 +17,7 @@ Spotter で現時点（v1.4.20 published・global installed、2026-07-13）に *
 
 ---
 
-## P0 — 監査AIの文脈不足による過剰提案（repo実装済み・canary中）
+## P0 — 監査AIの文脈不足による過剰提案（default-on release待ち）
 
 ### 解決済み・撤回済みの話題へtoolを提案できる
 
@@ -36,9 +36,13 @@ fresh以外での監査AI未呼出、固定親出力、Codex stdin transportを�
 `N=2 / per-body 600 / total 4,000 chars`を採用候補とし、Spotterリポ限定canaryを開始した。公開後も
 新規projectは`disabled`で、明示opt-inなしにL2を監査backendへ送らない。
 
+**2026-07-13方針変更**: Spotterリポ1件だけのopt-inでは母数が集まらず、観測後default化というgateが
+循環するため、ownerがdefault-onで実運用しながら効果測定する方式を承認した。
+
 **次アクション**: [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md)のPhase 5に従い、
-7日以上かつfresh 30件以上（期待finding/pass各10件以上）を人手ラベル付きで観測する。過検出・見逃し0と
-fresh以外の助言0を確認後、ownerがproduction default化を個別承認し、registry tarball smokeを行う。
+markerへ`default / explicit`由来を追加して明示OFFを保護しつつ、Throughlineを解決できるproject installを
+default-onにする実装は完了した。patchを配布後、7日以上かつfresh 30件以上（期待finding/pass各10件以上）を
+人手ラベル付きで観測し、default-on維持・修正継続・default-off rollbackを裁定する。
 
 ---
 

@@ -16,13 +16,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-### Throughline auditor context opt-in 契約
+### Throughline auditor context default-on 契約
 
-- 新規 project install の `auditorContext` は `disabled`。`spotter install` を auditor-context 指定なしで再実行した場合は既存設定を保持する。v1.4.20で配布するproject所有のopt-inであり、全productionの既定化ではない。Spotter repo canaryは開始済みだが、7日 / 30 fresh result gateは未完了。
-- opt-in は `spotter install --auditor-context throughline --throughline-command <absolute>` と repeatable `--throughline-arg <value>`。Windows の `.cmd` / `.bat` は shell injection 回避のため拒否し、absolute `node.exe` + absolute `throughline.mjs` を `--throughline-arg` で渡す。
+- `spotter install`はPATH上のThroughlineをabsolute executableへ解決できる場合、project-owned markerで既定ONにする。旧既定disabledは再install時に移行し、明示disabledは`origin:explicit`として永続保持する。
+- 自動解決できない場合は固定理由付きdisabledとし、current-onlyへfallbackしない。手動設定は`spotter install --auditor-context throughline --throughline-command <absolute>`とrepeatable `--throughline-arg <value>`。Windowsのnpm `.cmd` / `.bat`は直接実行せず、absolute `node.exe` + absolute `throughline.mjs`へ変換する。
 - Throughline connector は fresh な completed L2 user/assistant pair だけを N=2、body 600 chars、total 4000 chars で読み、Codex CLI に stdin で渡す（argv に本文を置かない）。Haiku context path は未対応で AI を呼ばない。fresh 以外も AI を呼ばない。
 - enabled connector の障害は固定 warning。親への出力は safe catalog tool ID からの固定・非命令助言だけで、reason / raw / L2 を反射しない。`spotter doctor` は mode と固定 availability detail だけを示す。
 - `spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600` が v2 fixture の context choice 評価入口。現時点の結論は N=2 / 600 で、昇格承認ではない。
+
+**v1.4.21 (release candidate 2026-07-13)**: Throughline監査文脈をdefault-onへ変更する。marker v2へ
+`origin:default|explicit`を追加し、旧既定disabledだけを移行、明示OFFは維持する。POSIXはPATH上の実体を
+absolute realpathへ固定し、Windows npm shimは`node.exe + throughline.mjs`へ変換する。不在時は固定理由付き
+disabledでcurrent-onlyへfallbackしない。default-onのまま7日 / fresh 30件を測り、維持・修正・rollbackを裁定する。
 
 **v1.4.20 (published 2026-07-13)**: Throughline所有のread-only projectionからexact sessionの
 freshな直近完了L2だけを取得し、Codex CLIへstdinで渡すproject opt-inを追加する。fresh以外では監査AIを
@@ -30,7 +35,7 @@ freshな直近完了L2だけを取得し、Codex CLIへstdinで渡すproject opt
 tool ID由来の固定助言だけを返す。`N=2 / body 600 / total 4,000`はcontext fixture 27/27 exactを独立2回、
 FP/FN 0で通過し、connector 20/20 fresh・p95 107.52ms。公開commit `7cbc3a1`のCIは6/6 green、
 npm `latest`、tag / GitHub Release、このMacのregistry由来global installを1.4.20へ同期した。
-production default昇格はcanary gate後の別裁定とする。
+このreleaseでは初期安全境界としてopt-in配布し、後続v1.4.21でdefault-onへ移行する。
 
 **v1.4.19 (published 2026-07-12)**: 親セッションとの出力信頼境界を修正する。監査用AIの
 `reason` / `raw`、backend message、provider stdout / stderr は Hook 出力へ渡さず、Claude / Codex

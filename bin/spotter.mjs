@@ -25,6 +25,8 @@ Usage:
                                         [--throughline-command ABS] [--throughline-arg VALUE]
                                         register hooks in <cwd>/.claude/settings.json
                                         and create <cwd>/.spotter/marker.json
+                                        (Throughline on PATH enables context by default;
+                                         pass disabled for a persistent project opt-out)
                                         (run inside each project you want audited)
   spotter install --user [-y]           legacy: register globally in ~/.claude/settings.json
                                         (NOT RECOMMENDED — fires for every Claude Code session
@@ -175,8 +177,8 @@ function parseInstallArgs(argv) {
   if (mode === 'disabled' && (command !== null || args.length > 0)) throw invalidInstallArgs();
   if (mode === 'throughline' && (command === null || !isAbsoluteCommand(command) || isShellWrapper(command))) throw invalidInstallArgs();
   const auditorContext = mode === null ? undefined : mode === 'disabled'
-    ? { mode: 'disabled' }
-    : { mode: 'throughline', command, args };
+    ? { mode: 'disabled', origin: 'explicit' }
+    : { mode: 'throughline', command, args, origin: 'explicit' };
   return { target, autoYes, auditorContext };
 }
 

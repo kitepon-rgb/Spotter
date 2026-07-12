@@ -12,10 +12,11 @@
 // Install seeds the DB automatically via `refresh` (project-mode only — user-mode
 // has no projectRoot so DB seeding is skipped there).
 
-import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, access, realpath } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, delimiter, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { version as SPOTTER_VERSION } from '../version.mjs';
@@ -29,7 +30,7 @@ const SPOTTER_BIN = join(PACKAGE_ROOT, 'bin', 'spotter.mjs');
 
 const SPOTTER_HOME = join(homedir(), '.spotter');
 
-const MARKER_VERSION = '1';
+const MARKER_VERSION = '2';
 
 // v1.3.0: UserPromptSubmit / Stop を 60s に統一。理由:
 // - daemon 側 Haiku timeout は 45s (DEFAULT_HAIKU_TIMEOUT_MS @ daemon.mjs)
@@ -58,6 +59,7 @@ export async function runInstall({
   codexCliPresentFn = isCodexCliPresent,
   installCodexHooksFn = installCodexHooks,
   auditorContext,
+  resolveDefaultAuditorContextFn = resolveDefaultAuditorContext,
 } = {}) {
   const settingsPath = target === 'user'
     ? join(homedir(), '.claude', 'settings.json')
@@ -86,8 +88,8 @@ export async function runInstall({
     const markerPath = join(markerDir, 'marker.json');
     await mkdir(markerDir, { recursive: true });
     const preservedAuditorContext = auditorContext === undefined
-      ? await readExistingAuditorContext(markerPath)
-      : auditorContext;
+      ? await readExistingAuditorContext(markerPath, resolveDefaultAuditorContextFn)
+      : { ...auditorContext, origin: 'explicit' };
     const marker = {
       markerVersion: MARKER_VERSION,
       spotterVersion: SPOTTER_VERSION,
@@ -96,6 +98,13 @@ export async function runInstall({
     };
     await writeFile(markerPath, JSON.stringify(marker, null, 2) + '\n', 'utf8');
     console.log(`  wrote ${markerPath}`);
+    console.log(`  auditor context: ${preservedAuditorContext.mode} (${preservedAuditorContext.origin})`);
+    if (preservedAuditorContext.mode === 'throughline') {
+      console.log('  sends bounded completed user/assistant text to the selected Codex auditor; disable with:');
+      console.log('    spotter install -y --auditor-context disabled');
+    } else if (preservedAuditorContext.reason === 'throughline_unavailable') {
+      console.log('  Throughline was not found; context auditing remains disabled (no current-only fallback)');
+    }
   }
 
   // 4. compute desired settings.json with hooks
@@ -176,13 +185,72 @@ export async function runInstall({
   }
 }
 
-async function readExistingAuditorContext(markerPath) {
+async function readExistingAuditorContext(markerPath, resolveDefaultAuditorContextFn) {
   try {
     const marker = JSON.parse(await readFile(markerPath, 'utf8'));
-    return marker?.auditorContext ?? { mode: 'disabled' };
+    const existing = marker?.auditorContext;
+    if (existing?.mode === 'throughline') {
+      return { ...existing, origin: existing.origin ?? 'explicit' };
+    }
+    if (existing?.mode === 'disabled' && existing.origin === 'explicit') {
+      return existing;
+    }
+    return resolveDefaultAuditorContextFn();
   } catch (err) {
-    if (err?.code === 'ENOENT') return { mode: 'disabled' };
+    if (err?.code === 'ENOENT') return resolveDefaultAuditorContextFn();
     throw err;
+  }
+}
+
+export async function resolveDefaultAuditorContext({
+  env = process.env,
+  platform = process.platform,
+  nodePath = process.execPath,
+  accessFn = access,
+  realpathFn = realpath,
+} = {}) {
+  const pathValue = platform === 'win32' ? (env.Path ?? env.PATH ?? '') : (env.PATH ?? '');
+  const pathSeparator = platform === 'win32' ? ';' : delimiter;
+  const names = platform === 'win32'
+    ? ['throughline.exe', 'throughline.cmd', 'throughline.bat', 'throughline']
+    : ['throughline'];
+
+  for (const directory of pathValue.split(pathSeparator).filter(Boolean)) {
+    for (const name of names) {
+      const candidate = join(directory, name);
+      if (!await canExecute(candidate, accessFn)) continue;
+      const extension = extname(candidate).toLowerCase();
+      if (extension === '.cmd' || extension === '.bat') {
+        const script = join(directory, 'node_modules', 'throughline', 'bin', 'throughline.mjs');
+        if (!await canRead(script, accessFn)) continue;
+        return { mode: 'throughline', command: nodePath, args: [script], origin: 'default' };
+      }
+      return {
+        mode: 'throughline',
+        command: await realpathFn(candidate),
+        args: [],
+        origin: 'default',
+      };
+    }
+  }
+  return { mode: 'disabled', origin: 'default', reason: 'throughline_unavailable' };
+}
+
+async function canExecute(path, accessFn) {
+  try {
+    await accessFn(path, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function canRead(path, accessFn) {
+  try {
+    await accessFn(path, fsConstants.R_OK);
+    return true;
+  } catch {
+    return false;
   }
 }
 

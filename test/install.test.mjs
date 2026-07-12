@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { codexInstallNextSteps, runInstall } from '../src/cli/install.mjs';
+import { codexInstallNextSteps, resolveDefaultAuditorContext, runInstall } from '../src/cli/install.mjs';
 import { runUninstall } from '../src/cli/uninstall.mjs';
 import { mkdtemp, readFile, writeFile, rm, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -140,12 +140,19 @@ test('install: preserves pre-existing unrelated hooks', async () => {
 test('install (project): writes .spotter/marker.json with version metadata', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-marker-'));
   try {
-    await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
+    await runInstall({
+      target: 'project', autoYes: true, cwd: dir, skipRefresh: true,
+      resolveDefaultAuditorContextFn: async () => ({
+        mode: 'throughline', command: '/opt/throughline/bin/throughline', args: [], origin: 'default',
+      }),
+    });
     const marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
-    assert.equal(marker.markerVersion, '1');
+    assert.equal(marker.markerVersion, '2');
     assert.ok(typeof marker.spotterVersion === 'string' && marker.spotterVersion.length > 0);
     assert.ok(typeof marker.installedAt === 'string' && marker.installedAt.length > 0);
-    assert.deepEqual(marker.auditorContext, { mode: 'disabled' });
+    assert.deepEqual(marker.auditorContext, {
+      mode: 'throughline', command: '/opt/throughline/bin/throughline', args: [], origin: 'default',
+    });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -159,14 +166,14 @@ test('install (project): preserves existing auditorContext unless explicitly rep
     await writeFile(join(dir, '.spotter', 'marker.json'), JSON.stringify({ markerVersion: '1', auditorContext: existing }), 'utf8');
     await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true });
     let marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
-    assert.deepEqual(marker.auditorContext, existing);
+    assert.deepEqual(marker.auditorContext, { ...existing, origin: 'explicit' });
 
     await runInstall({
       target: 'project', autoYes: true, cwd: dir, skipRefresh: true,
       auditorContext: { mode: 'disabled' },
     });
     marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
-    assert.deepEqual(marker.auditorContext, { mode: 'disabled' });
+    assert.deepEqual(marker.auditorContext, { mode: 'disabled', origin: 'explicit' });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -178,10 +185,66 @@ test('install (project): writes explicit Throughline auditorContext configuratio
   try {
     await runInstall({ target: 'project', autoYes: true, cwd: dir, skipRefresh: true, auditorContext });
     const marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
-    assert.deepEqual(marker.auditorContext, auditorContext);
+    assert.deepEqual(marker.auditorContext, { ...auditorContext, origin: 'explicit' });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('install (project): migrates legacy default-disabled markers but preserves explicit opt-out', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-marker-context-migrate-'));
+  const resolved = { mode: 'throughline', command: '/opt/throughline/bin/throughline', args: [], origin: 'default' };
+  try {
+    await mkdir(join(dir, '.spotter'), { recursive: true });
+    await writeFile(join(dir, '.spotter', 'marker.json'), JSON.stringify({
+      markerVersion: '1', auditorContext: { mode: 'disabled' },
+    }), 'utf8');
+    await runInstall({
+      target: 'project', autoYes: true, cwd: dir, skipRefresh: true,
+      resolveDefaultAuditorContextFn: async () => resolved,
+    });
+    let marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
+    assert.deepEqual(marker.auditorContext, resolved);
+
+    await runInstall({
+      target: 'project', autoYes: true, cwd: dir, skipRefresh: true,
+      auditorContext: { mode: 'disabled' },
+    });
+    await runInstall({
+      target: 'project', autoYes: true, cwd: dir, skipRefresh: true,
+      resolveDefaultAuditorContextFn: async () => resolved,
+    });
+    marker = JSON.parse(await readFile(join(dir, '.spotter', 'marker.json'), 'utf8'));
+    assert.deepEqual(marker.auditorContext, { mode: 'disabled', origin: 'explicit' });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolveDefaultAuditorContext: unavailable is explicit and Windows npm shims use node.exe plus throughline.mjs', async () => {
+  assert.deepEqual(
+    await resolveDefaultAuditorContext({ env: { PATH: '' } }),
+    { mode: 'disabled', origin: 'default', reason: 'throughline_unavailable' },
+  );
+
+  const readable = new Set([
+    join('C:\\npm', 'throughline.cmd'),
+    join('C:\\npm', 'node_modules', 'throughline', 'bin', 'throughline.mjs'),
+  ]);
+  const result = await resolveDefaultAuditorContext({
+    env: { Path: 'C:\\npm' },
+    platform: 'win32',
+    nodePath: 'C:\\Program Files\\nodejs\\node.exe',
+    accessFn: async (path) => {
+      if (!readable.has(path)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    },
+  });
+  assert.deepEqual(result, {
+    mode: 'throughline',
+    command: 'C:\\Program Files\\nodejs\\node.exe',
+    args: [join('C:\\npm', 'node_modules', 'throughline', 'bin', 'throughline.mjs')],
+    origin: 'default',
+  });
 });
 
 test('install (project): re-run refreshes marker (installedAt updates on each install)', async () => {

@@ -54,6 +54,13 @@ p50 4.024秒 / p95 4.361秒だった。事後的なtimeout感度は3秒で23/24�
 
 tool使用ログは補助証拠に限る。月次または30 findingごとに妥当率、過検出率、見逃し件数を集計する。
 
+## Throughline文脈default-on rollout
+
+2026-07-13以降は、default-onのまま7日以上かつfresh監査30件以上を測る。期待findingと期待passを
+各10件以上含め、`妥当 / 過検出 / 見逃し / context不足`で人手ラベルする。`contextStatus / turns /
+chars / latency`だけを集計し、L2本文は保存しない。過検出、見逃し、親出力への本文漏洩、再帰異常の
+いずれかを確認したprojectは、評価期間を待たず`spotter install -y --auditor-context disabled`で即時OFFにする。
+
 ## 2026-07-12 初期スナップショット
 
 Codex project-local履歴は UserPromptSubmit 27件がp50 5.132秒 / p95 12.138秒 / timeout 1件、

@@ -86,6 +86,16 @@ test('inspectAuditorContextConfiguration: missing field and disabled mode are ex
     assert.deepEqual(await inspectAuditorContextConfiguration({ projectRoot: project }), {
       ok: true, mode: 'disabled', detail: 'disabled',
     });
+    await writeMarker(project, { auditorContext: { mode: 'disabled', origin: 'explicit' } });
+    assert.deepEqual(await inspectAuditorContextConfiguration({ projectRoot: project }), {
+      ok: true, mode: 'disabled', detail: 'explicit project opt-out',
+    });
+    await writeMarker(project, {
+      auditorContext: { mode: 'disabled', origin: 'default', reason: 'throughline_unavailable' },
+    });
+    assert.deepEqual(await inspectAuditorContextConfiguration({ projectRoot: project }), {
+      ok: true, mode: 'disabled', detail: 'default disabled: Throughline unavailable',
+    });
   } finally {
     await rm(project, { recursive: true, force: true });
   }

@@ -146,19 +146,18 @@ flowchart LR
 
 両者に共通するのは **「主体に頼らない仕組み」**。併用できます。
 
-### 任意の Throughline auditor context canary
+### Throughline auditor context（既定ON）
 
-新規の project install では auditor context は **disabled** が既定です。これは project が所有する
-opt-in であり、Spotter 全体の production 既定ではありません。現在の候補は Spotter リポジトリだけの
-canary です。auditor-context オプションなしで `spotter install` を再実行した場合、既存プロジェクトの
-設定は保持されます。無効化へ戻すには次を実行します。
+`spotter install`はPATH上のThroughlineを絶対パスへ解決できる場合、auditor contextを既定で有効化します。
+旧版の既定`disabled` markerも通常の再installで有効化されます。過去に明示的に無効化したprojectは
+`origin: explicit`として保持され、勝手に再有効化されません。無効化するには次を実行します。
 
 ```bash
 spotter install -y --auditor-context disabled
 ```
 
-project を opt-in するには、絶対パスの Throughline 実行ファイルと、必要なら繰り返し指定できる
-`--throughline-arg` を設定します。
+自動解決できない環境で手動設定する場合は、絶対パスのThroughline実行ファイルと、必要なら
+繰り返し指定できる`--throughline-arg`を設定します。
 
 ```bash
 spotter install -y --auditor-context throughline \
@@ -191,8 +190,7 @@ spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.js
   --recent-turns 2 --body-cap 600
 ```
 
-評価結論は現在 N=2 / 600 です。ただし rollout 承認ではありません。Spotter リポジトリ canary の
-7 日・30 fresh result gate は未完了です。
+評価結論はN=2 / 600です。既定ONの実運用で7日・30 fresh resultを集め、維持・修正・rollbackを判断します。
 
 ## よく使うコマンド
 

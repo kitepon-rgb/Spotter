@@ -1,6 +1,6 @@
 # 07 — Throughline L2を使った監査文脈・精度向上計画
 
-状態: v1.4.20 / Throughline v0.6.1配布済み / Spotterリポ限定canary継続
+状態: default-on実装・文書化済み / v1.4.21 release gate実行中
 作成日: 2026-07-12
 対象: Spotter `UserPromptSubmit`監査 / Throughline L2 read-only connector / Claude・Codex両host
 
@@ -172,7 +172,7 @@ user inputにtool名や明示的な操作が書かれていても、fresh contex
 L2は要約やmetadataではなく、過去のuser/assistant本文である。これを監査backendへ加えることは、現在のuser inputだけを
 送る契約からの拡張になる。
 
-- 初期実装はproject-owned configによる明示opt-inだけにし、Throughlineを導入済みという事実やglobal envだけでは有効化しない。
+- v1.4.20の初期実装はproject-owned configによる明示opt-inとして配布した。これは安全境界を先に固定するための初期release境界であり、恒久的なrollout方針ではない。
 - 送信先はそのturnで選択済みの監査backendだけとし、別の要約AIや補助providerへ複製しない。
 - L3、tool I/O、thinking、system/developer role、添付内容は送らない。
 - L2本文をSpotterのlog、Hook event、diagnostics、model-matrix artifactへ保存しない。
@@ -181,7 +181,22 @@ L2は要約やmetadataではなく、過去のuser/assistant本文である。�
 - Haikuの永続session historyへL2を保存しない。保存を避けられない実装は初版で有効化しない。
 - context blockはprompt injectionを含み得るuntrusted dataとして扱い、親へ反射しない回帰testを必須にする。
 - release notesと設定文書に、送られる範囲・送信先・無効化方法を明記する。
-- production default化は精度gateだけでなく、このデータ境界をownerが個別承認した後に限る。
+- 2026-07-13にownerがdefault-on実運用rolloutを承認した。installerはL2送信範囲・送信先・OFF手順を表示し、project-owned markerへ有効化由来を保存する。
+
+### 9. default-onは由来付きproject設定としてrolloutする
+
+Spotterリポ1件だけのopt-inでは必要な実運用母数が集まらず、「母数が集まった後にdefault化する」という
+gateが循環する。2026-07-13のowner裁定により、default-onで使いながら効果を測り、維持またはrollbackを
+判断する方式へ変更する。
+
+- Throughline executableをinstallerが安全にabsolute pathへ解決できる新規project installは、既定で`throughline`を設定する。
+- global envやruntimeのPATH推測で毎turn有効化せず、決定したcommandはproject-owned markerへ固定する。
+- markerへ`origin: "default" | "explicit"`を追加し、旧既定disabledとユーザー明示disabledを区別する。
+- markerVersion 1で`auditorContext.mode=disabled`だけを持つ既存projectは、旧既定値として再install時にdefault-onへ移行する。
+- `spotter install --auditor-context disabled`は`origin:"explicit"`を保存し、以後の通常reinstallでもOFFを維持する。
+- Throughlineを解決できない環境はcurrent-only監査へfallbackしない。installを継続して固定診断付き`disabled`とし、doctorで理由を示す。
+- installerは、過去のuser/assistant本文だけを選択済み監査backendへ送ること、L3/tool/thinkingを送らないこと、project単位のOFF手順を表示する。
+- 緊急停止は`spotter install -y --auditor-context disabled`。既定ONの維持判断を待たず、過検出・漏洩・再帰異常のどれか1件で対象projectを即OFFにできる。
 
 ## 反対仮説の検証
 
@@ -264,14 +279,15 @@ L2は要約やmetadataではなく、過去のuser/assistant本文である。�
 
 どのNもgateを満たさなければproductionへ入れず、prompt/schemaまたはfixture設計へ戻る。
 
-### 実運用canary
+### default-on実運用rollout
 
-- Spotter repoでproject-owned opt-inし、7日以上かつfresh監査30件以上を観測する。
+- default-onを配布し、実際にSpotterを使うprojectで7日以上かつfresh監査30件以上を観測する。
 - 30件には人手で期待findingとしたcaseを10件以上、期待passとしたcaseを10件以上含める。母数0は不合格。
 - 人手ラベルは`妥当 / 過検出 / 見逃し / context不足`。
 - `contextStatus / turns / chars / latency`だけを集計し、L2本文は記録しない。
-- fresh context取得時の過検出0、既知の未解決tool利用の見逃し0を確認してからownerがproduction有効化を裁定する。
+- fresh context取得時の過検出0、既知の未解決tool利用の見逃し0を目標とし、期間終了後にdefault-on維持・修正継続・default-off rollbackを裁定する。
 - fresh以外で監査AI呼出・親助言が0であることを確認する。
+- 観測中も異常1件で対象projectを即OFFにできる。L2本文そのものは評価記録へ保存しない。
 
 ## 実装フェーズとTODO
 
@@ -331,14 +347,18 @@ L2は要約やmetadataではなく、過去のuser/assistant本文である。�
 - [x] exact / FP / FN / latency / token usageをsafe artifactへ記録する
 - [x] 最小合格値をownerへ提示し、`N=2 / per-body 600 / total 4,000 chars`をproduction候補として採用する
 
-### Phase 5 — Canaryとproduction裁定
+### Phase 5 — default-on実運用rolloutと効果測定
 
 - [x] Spotter repo限定opt-in smokeを行う
+- [x] ownerが「default-onで実運用しながら測定」する方針を承認する
+- [x] markerへ`default / explicit`由来を追加し、旧既定disabledだけを安全に移行する
+- [x] installerでThroughline executableをabsolute pathへ解決し、新規installをdefault-onにする
+- [x] 明示disabled維持、Throughline不在、再install、Windows executableの移行fixtureを追加する
+- [x] README、SLO、open issues、release notesへdefault-on・送信境界・即時OFF手順を反映する
+- [ ] full test / CI / registry tarballからClaude・Codex両hostのfresh install smokeを行い、patch releaseする
 - [ ] 7日以上かつfresh監査30件以上（期待finding 10件以上・期待pass 10件以上）を人手ラベル付きで観測する
 - [ ] stale率、connector latency、context利用時の過検出/見逃しを確認する
-- [ ] production有効化の挙動変更をownerが個別承認する
-- [ ] 承認後にdefault policy、README、SLO、open issues、release notesを更新する
-- [ ] registry tarballからClaude/Codex両hostのfresh install smokeを行う
+- [ ] 観測結果からdefault-on維持・修正継続・default-off rollbackを裁定する
 
 ### 実装・評価結果（2026-07-12）
 
@@ -349,13 +369,13 @@ L2は要約やmetadataではなく、過去のuser/assistant本文である。�
 - connector実測: 20/20 fresh、p50 98.68ms、p95 107.52ms、最大110.95ms
 - Spotter repoの実hook smoke: `fresh`、2turn、1,236 chars、connector 102ms、全体4,919ms、固定助言だけを返却
 - full test: Spotter 476 tests（474 pass / 2 skip）、Throughline 580 tests（全pass）、両リポ`git diff --check` green
-- production default化は未実施。7日・fresh 30件のcanary、人手ラベル、owner承認、registry tarball smokeが残る
+- v1.4.20は明示opt-inで配布済み。2026-07-13にdefault-on実運用rolloutへ方針変更し、移行実装・patch release・7日 / fresh 30件の効果測定が残る
 
 ### 緊急配布裁定（2026-07-13）
 
 現行公開版より本変更の安全境界を先に届ける価値が高いとのowner裁定により、7日canary完了前に
-Spotter v1.4.20 / Throughline v0.6.1として配布する。ただしcontext機能はproject opt-inのままとし、
-production default昇格gateは短縮しない。
+Spotter v1.4.20 / Throughline v0.6.1として配布した。この時点ではcontext機能をproject opt-inのままとしたが、
+2026-07-13の後続裁定でdefault-on実運用rolloutへ変更した。
 
 - [x] 両リポのversion・CHANGELOG・正典をrelease candidateへ同期する
 - [x] full test、`npm pack`、秘密・絶対path・配布物欠落を検証する
@@ -400,7 +420,7 @@ production default昇格gateは短縮しない。
 - parent output template、Stop delivery、failure固定出力を変更すること
 - Throughlineの既存handoff window 20、DB schema、hook lifecycleを置き換えること
 - ThroughlineをSpotterのhard npm依存にすること。context providerが無い場合は監査を明示disabledにし、current-onlyへ戻さない
-- opt-inなしで過去の会話本文を監査backendへ送ること
+- project-owned markerを作らず、global envや毎turnのPATH推測だけで過去の会話本文を監査backendへ送ること
 
 ## 完了条件
 
@@ -409,5 +429,5 @@ production default昇格gateは短縮しない。
 3. 親セッションへは従来どおり検証済みtool ID由来の固定助言以外が出ない。
 4. 実験で選んだ最小Nがcontext-sensitive fixtureを2回ともFP/FN 0で通す。
 5. 既存fixture・Claude/Codex hook・Throughline handoffに回帰がない。
-6. 7日以上かつ所定母数のCanaryでfresh context取得時の過検出0・未解決tool利用の見逃し0、fresh以外での助言0を確認し、ownerが精度とL2データ境界の両方を確認してproduction有効化を承認する。
+6. default-on実運用を7日以上かつ所定母数で測定し、fresh context取得時の過検出・未解決tool利用の見逃し、fresh以外での助言を評価して、default-on維持・修正継続・default-off rollbackを裁定する。
 7. 両リポのfull test、CI、docs、release smokeがgreen。

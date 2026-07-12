@@ -152,7 +152,14 @@ export async function inspectAuditorContextConfiguration({
   }
 
   const config = marker?.auditorContext;
-  if (config === undefined || config?.mode === 'disabled') return disabled;
+  if (config === undefined) return disabled;
+  if (config?.mode === 'disabled') {
+    if (config.origin === 'explicit') return { ok: true, mode: 'disabled', detail: 'explicit project opt-out' };
+    if (config.reason === 'throughline_unavailable') {
+      return { ok: true, mode: 'disabled', detail: 'default disabled: Throughline unavailable' };
+    }
+    return disabled;
+  }
   if (config?.mode !== 'throughline') {
     return { ok: false, mode: 'unknown', detail: 'invalid configuration' };
   }
