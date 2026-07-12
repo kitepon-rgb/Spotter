@@ -23,15 +23,17 @@ version、schema / exact、FP/FN、p50/p95、timeout、anomaly を bounded artif
 Codex CLI usage limit で全12 run が `E_CODEX_CLI_EXIT` となり、model 品質は未測定。quota 回復・token/cost・
 合意 SLO が揃うまで昇格禁止。詳細は [RAG](rag/openai-model-policy/spotter-auditor-model-policy.md)。
 
-**v1.4.17 (release candidate / unpublished)**: Codex `SessionStart async:true` を canonical sync command
+**v1.4.17 (published 2026-07-12)**: Codex `SessionStart async:true` を canonical sync command
 handler へ修正し、upgrade normalization と readiness diagnostics を追加。Claude / Codex Stop backend
 failure は warning pending を次の same-session prompt へ1回配送する。Codex used-tools は current-turn の
 shell / MCP / agent call を bounded に認識し、未知 transcript を anomaly にする。clean pack / temp install
 smoke は RC boundary `1c67698` で green。main HEAD は既に v1.4.18 development なので、v1.4.17 は
 `1c67698` 起点の `codex/release-v1.4.17` に **v1.4.17 専用** README / CHANGELOG を置き、candidate
 `6ea6a2b` を作成済み。main の `auditor model-matrix` / v1.4.18 profile 記述は含まず、CLI help /
-58-entry pack / 383 tests と照合済み。OS CI 後に unreleased marker を外す最終 metadata SHA を
-CI / tag / publish 対象にする。npm publish / GitHub Release / global install / `/hooks` review は未実施。
+58-entry pack / 383 tests と照合済み。OS CI 6/6 green 後、最終 metadata SHA `7987f2a` を tag / npm /
+GitHub Release へ公開し、npm `latest` とこの Mac の global install は `1.4.17` に一致。Spotter project の
+Codex hooks は各1件・canonical・`async` なしへ正規化済み。残る実機確認は `/hooks` review と新規 task の
+`SessionStart` 1回観測。
 
 **v1.4.16** (2026-06-04): **daemon 異常死後の stale socket で永久に起動不能になる回復経路バグを根治**。
 daemon が graceful shutdown を経ず死ぬ (SIGKILL / crash / マシンスリープで SessionEnd 未発火) と

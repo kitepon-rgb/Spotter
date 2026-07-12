@@ -28,7 +28,7 @@ baseline / Luna / Terra の全12件が Codex CLI usage limit で `E_CODEX_CLI_EX
 latency・availability の比較には使わず、production default を維持した。live 再評価と OS CI matrix は
 release 前に実行する。
 
-## 1.4.17 (unreleased release candidate)
+## 1.4.17
 
 v1.4.16 で実装済みだった stale Unix socket recovery を、v1.4.16 tag を改変せずこの patch の実配布候補に含める。
 daemon 異常死後の orphan socket を次回起動前に安全に除去する回復経路が、初めて配布物へ入る。
@@ -54,8 +54,9 @@ daemon 異常死後の orphan socket を次回起動前に安全に除去する�
 `1c67698` の clean worktree から npm pack / temp prefix install / CLI version / Hook install・reinstall を
 smoke し、`node --test` は 383 / 381 pass / 0 fail / 2 skip。targeted test と adversarial review も
 blocker 0。v1.4.17-only README / CHANGELOG を載せた local release candidate は `6ea6a2b`。
-CLI help、58-entry pack、同じ full suite を再確認した。OS CI matrix と publish 後の三者一致確認は
-release 前後に残る。
+CLI help、58-entry pack、同じ full suite を再確認した。OS CI matrix はmacOS / Linux / Windows ×
+Node 22.5.0 / 22.xの全6件がgreen。最終 SHA `7987f2a`をtag / npm / GitHub Releaseへ公開し、
+npm `latest`とfresh global installの三者一致を確認した。
 
 ## 1.4.16
 

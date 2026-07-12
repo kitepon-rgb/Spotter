@@ -33,7 +33,8 @@ Claude-first の製品契約と再帰防止保証を維持した復旧順序を�
 - Claude-first の既存 contract と prompt / IPC / report wording を、明示承認なしに破壊しない。
 - `SPOTTER_PARENT_PID`、`SPOTTER_BACKEND`、`SPOTTER_CHILD_BACKEND`、`agent_id`、
   `source === "startup"`、marker、PID preexist、call window の再帰防止を弱めない。
-- 未コミットの `.codegraph/.gitignore` と `.codex/hooks.json` はユーザー所有物として保持する。
+- 着手時の未コミットは由来を確認し、`.codegraph/.gitignore` は local-state 除外として採用、危険な
+  repo-local `.codex/hooks.json` は owner 承認後に削除した。
 - 現行仕様と旧仕様の差を、コード不具合と文書不整合へ分けて報告する。
 
 ## 監査 TODO
@@ -60,9 +61,10 @@ Spotter のコード全体が壊れているわけではない。着手時 `node
 
 repo では `SessionStart async:true`、diagnostics 誤成功、Stop warning 欠落、Codex used-tools drift を
 独立 commit で修正し、v1.4.17 clean pack / temp install smoke まで完了した。model policy と safe eval
-基盤は v1.4.18 development 境界へ分離した。一方、現在の実機 global package は依然 `spotter 1.4.15`。
-`~/.codex/hooks.json` の旧 Spotter `SessionStart async:true` は残り、現行 Codex CLI で skip warning を
-再現する。repo 修正は release / global update / 再 install / `/hooks` review まで実環境へ届かない。
+基盤は v1.4.18 development 境界へ分離した。v1.4.17 は最終 SHA `7987f2a` を tag / npm / GitHub Release
+へ公開し、この Mac の global package も `spotter 1.4.17` へ更新した。Spotter project で再 install 後、
+`~/.codex/hooks.json` の3 entry は各1件・canonical・`async` なし。残る実機確認は `/hooks` review と
+新規 task の `SessionStart` 1回観測である。
 
 2026-07-12 の model operational smoke は baseline / Luna / Terra × 4 fixture の全12件が
 Codex CLI usage limit で `E_CODEX_CLI_EXIT`。model 品質・availability・latency は未測定で、production
@@ -90,9 +92,9 @@ transcript で shell tool call を数えない問題は実データで確認で�
 | Node unit / integration test | green | 現在 424 tests、422 pass、2 platform skip、0 fail |
 | Claude daemon safety | 実装・回帰あり | 再帰 guard、heartbeat、auto-resurrect、stale socket test |
 | Codex `UserPromptSubmit` / `Stop` | 稼働あり | project hook-event 14 件中両 event を観測 |
-| Codex `SessionStart` refresh | repo 修正済み / 実機停止 | generator は修正済み、global 1.4.15 の async entry は未更新 |
-| Codex diagnostics | repo 修正済み / 実機旧版 | readiness 分離済み、global CLI は 1.4.15 |
-| 配布 | **不整合** | v1.4.17 candidate 未 publish、global=1.4.15、GitHub Release / OS CI 未完了 |
+| Codex `SessionStart` refresh | 設定修復済み / 新規 task 確認待ち | global entry はcanonical・`async`なし、runtime 1回観測待ち |
+| Codex diagnostics | green / trust確認待ち | 3 hooks 各1件、compatible / canonical、readiness=`configured-unverified` |
+| 配布 | **同期済み** | tag / npm latest / GitHub Release / global install = v1.4.17 |
 | 応答性能 | 要改善 | Codex UserPromptSubmit p50 5.8s、平均 7.4s、最大 20.0s |
 | model 評価 | **外部 blocker** | 通常 CLI は回復、isolated CLI は usage limit 継続、token/cost 不明、昇格なし |
 | 文書 | 主要正典同期済み | Hook parity TODO の archive 移動と本計画 archive は承認 / 完了待ち |
@@ -295,12 +297,13 @@ Gate (isolated Codex project):
   CLI / backend contract と逐語照合した
 - [x] `6ea6a2b` の `npm pack --dry-run` と CLI help で、README が v1.4.18-only command を広告しないこと、
   package=1.4.17、58 entries、`node --test`=383 / 381 pass / 2 skip / 0 fail を確認する
-- [ ] `6ea6a2b` で OS matrix CI を green にする（main HEAD 1.4.18 の結果を流用しない）
-- [ ] CI green と owner 承認後、CHANGELOG の unreleased marker を外す最終 metadata commit を作り、
+- [x] `6ea6a2b` で OS matrix CI 6/6 を green にする（main HEAD 1.4.18 の結果を流用しない）
+- [x] CI green と owner 承認後、CHANGELOG の unreleased marker を外す最終 metadata commit を作り、
   tag / publish 対象の最終 SHA を固定する
-- [ ] 明示承認後に npm publish / GitHub Release / push を行う
-- [ ] `npm view claude-spotter version`、GitHub Release、fresh global install の三者一致を確認する
-- [ ] 実機 global package 更新後、各 project で `spotter install` を再実行し `/hooks` review を行う
+- [x] 最終 SHA `7987f2a` を pushし、v1.4.17 tag / npm publish / GitHub Release を行う
+- [x] `npm view claude-spotter version`、GitHub Release、fresh global install の三者一致を確認する
+- [x] 実機 `~/.codex` を backupし、global package更新後にSpotter projectで`spotter install`を再実行する
+- [ ] Codex `/hooks` で現在の3 entryをreviewし、新規 taskで`SessionStart`を1回だけ観測する
 
 Rollback: 実機 `~/.codex/` を事前 backup し、問題時は新 Spotter hook entry だけ uninstall、backup から
 hooks 定義を戻す。既存 Throughline / Caveat / Callout hooks を巻き戻さない。

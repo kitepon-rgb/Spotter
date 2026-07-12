@@ -19,27 +19,17 @@ Spotter で現時点（v1.4.18 development tree、2026-07-12）に **塞がっ�
 
 ## P0 — 配布と実環境 activation
 
-### repo の修正が npm / global install / Hook 設定へ届いていない
+### v1.4.17の配布は完了、Codex UI trustと新規taskの実動確認が残る
 
-**背景**: v1.4.16 の stale Unix socket recovery、v1.4.17 candidate の Codex Hook canonicalization /
-readiness diagnostics / Stop warning delivery / current-turn used-tools は repo と test では実装済み。
-しかし 2026-07-12 の実機 `/opt/homebrew/bin/spotter` は `1.4.15` のまま。global
-`~/.codex/hooks.json` の Spotter `SessionStart` には旧 `async:true` が残り、現行 Codex CLI は
-`async hooks are not supported yet` として skip する。スクリーンショットと `codex exec` の両方で再現した。
-repo の generator が直っていても、global package update と再 install なしに実機警告は消えない。
+**背景**: v1.4.17 はOS CI 6/6 green後、最終 SHA `7987f2a`をtag / npm / GitHub Releaseへ公開した。
+npm `latest`とこのMacのglobal installは`1.4.17`で一致する。事前に`~/.codex`をbackupし、Spotter projectで
+`spotter install`を再実行した。
 
-**影響**: Codex `UserPromptSubmit` / `Stop` は旧 global entry で動き得るが、`SessionStart` refresh は停止し、
-Codex tool-db drift が自動追従しない。v1.4.16 の永久 resurrect 不能修正も通常利用者へ届いていない。
+**現在地**: diagnosticsはSessionStart / UserPromptSubmit / Stopを各1件、compatible / canonical、
+`async`なしと判定した。readinessはtrustを機械判定できないため`configured-unverified`である。
 
-**現在地**: v1.4.17 RC code boundary `1c67698` から `codex/release-v1.4.17` を作り、v1.4.17 専用
-README / CHANGELOG を `6ea6a2b` に commit した。現 main の `auditor model-matrix` / v1.4.18 model profile
-記述は含まない。CLI help、package=1.4.17、58-entry pack、383 tests / 381 pass / 2 skip / 0 fail を確認済み。
-
-**次アクション**: `6ea6a2b` で OS CI matrix を通す。green と owner の明示承認後、CHANGELOG の
-unreleased marker を外す最終 metadata commit の SHA を tag / npm / GitHub Release 対象に固定する。
-main HEAD は既に v1.4.18 development なので v1.4.17 の CI / tag 対象にしない。実機 `~/.codex/` を backup して global package を更新し、各 project で `spotter install` を
-再実行、`/hooks` review、新 session で `SessionStart: refresh_spawned` が1件だけ記録されることを確認する。
-既存 Throughline / Caveat / Callout hook を保持する。publish / push / global 書換えは未承認。
+**次アクション**: Codex `/hooks`で現在の3 entryをreviewし、新規taskで
+`SessionStart: refresh_spawned`が1件だけ記録されることを確認する。確認後、このP0項目を削除する。
 
 ---
 
