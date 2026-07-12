@@ -96,7 +96,7 @@ transcript で shell tool call を数えない問題は実データで確認で�
 | Codex diagnostics | green / trust確認待ち | 3 hooks 各1件、compatible / canonical、readiness=`configured-unverified` |
 | 配布 | **同期済み** | tag / npm latest / GitHub Release / global install = v1.4.17 |
 | 応答性能 | 要改善 | Codex UserPromptSubmit p50 5.8s、平均 7.4s、最大 20.0s |
-| model 評価 | **評価継続** | isolated CLI回復、Terra lowが最良、token取得済み、medium・cost/SLO未完了 |
+| model 評価 | **昇格裁定待ち** | Terra medium 24/24 exact、token取得済み、cost/SLO未合意 |
 | 文書 | 主要正典同期済み | Hook parity TODO の archive 移動と本計画 archive は承認 / 完了待ち |
 
 ## 初回監査で確認した P0
@@ -218,8 +218,8 @@ latency を隔離するため有効だが、次世代 model の検知・比較�
 文字列を直接追いかける構造になっている。
 
 現行 OpenAI 仕様では `gpt-5.6` alias は `gpt-5.6-sol` を指し、軽量・高頻度向けは
-`gpt-5.6-luna`、均衡型は `gpt-5.6-terra` である。Spotter の高頻度な構造化監査には
-`gpt-5.6-luna × low` を第一候補とするが、現時点では品質・latency・cost の比較前なので採用確定ではない。
+`gpt-5.6-luna`、均衡型は `gpt-5.6-terra` である。当初はSpotterの高頻度な構造化監査に
+`gpt-5.6-luna × low` を第一候補としたが、live比較後は`gpt-5.6-terra × medium`が技術的な昇格候補。
 調査と設計判断は [RAG 記録](../rag/openai-model-policy/spotter-auditor-model-policy.md) に固定した。
 
 ## 初回監査で確認した文書・台帳 drift（主要正典は対応済み）
@@ -337,7 +337,7 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 
 - [x] 現行 `gpt-5.4-mini × low` を代表 fixture で測り、移行 baseline を固定する
 - [x] 第一候補 `gpt-5.6-luna × low` と比較対象 `gpt-5.6-terra × low` を同じ fixture で測る
-- [ ] `medium` は low に品質不足の実測がある場合だけ評価へ追加する（2回目でTerra lowが11/12のため追加評価する）
+- [x] `medium` は low に品質不足の実測がある場合だけ評価へ追加する（Terra mediumを2回、計24/24 exactで確認）
 - [x] model slug を各所に散らさず、auditor policy manifest/module を単一の正本にする
 - [x] policy に version、意味論的 role、具体 model、effort、`verifiedAt`、必要な互換条件を持たせる
 - [x] 選択優先順位を「明示 override（env / 将来の project config） > 製品 policy」で固定する
@@ -360,6 +360,10 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 合算23/24でbaseline 18/24、Luna low 17/24より最良だが、lowの品質不足が再現したためTerra mediumを
 追加評価する。token usageは36/36取得済み。ChatGPTプラン上の金額costとSLOは未確定なので昇格は保留。
 詳細は [`rag/openai-model-policy/evals/2026-07-12-pro20-repeat3-usage.md`](../rag/openai-model-policy/evals/2026-07-12-pro20-repeat3-usage.md)。
+
+Terra mediumは比較12 runと再確認12 runの合計24/24 exact、FP/FN 0、timeout 0。技術候補を
+`gpt-5.6-terra × medium`へ確定した。詳細は
+[`rag/openai-model-policy/evals/2026-07-12-terra-medium-verification.md`](../rag/openai-model-policy/evals/2026-07-12-terra-medium-verification.md)。
 
 Gate: schema / JSON 遵守が 100%、既存 fixture の指摘品質が非劣化で、p50 / p95 / timeout rate /
 token・cost が合意 SLO 内にあること。diagnostics が effective 値と選択元を正確に表示し、非対応 model が

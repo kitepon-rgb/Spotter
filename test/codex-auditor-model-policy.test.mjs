@@ -14,7 +14,7 @@ test('resolveCodexAuditorModelSelection: production default remains gpt-5.4-mini
   assert.equal(selection.modelSource, 'policy:production');
   assert.equal(selection.effortSource, 'policy:production');
   assert.equal(selection.policySchema, 'spotter.codex_auditor_model_policy.v1');
-  assert.equal(selection.policyVersion, '1');
+  assert.equal(selection.policyVersion, '2');
   assert.equal(selection.policyVerifiedAt, '2026-05-06');
   assert.equal(selection.policyVerificationScope, 'operational-smoke');
   assert.equal(selection.effectiveVerifiedAt, '2026-05-06');
@@ -67,6 +67,7 @@ test('resolveCodexAuditorModelSelection: semantic profiles are reproducible and 
   const baseline = resolveCodexAuditorModelSelection({ env: {}, profile: 'baseline' });
   const luna = resolveCodexAuditorModelSelection({ env: {}, profile: 'luna' });
   const terra = resolveCodexAuditorModelSelection({ env: {}, profile: 'terra' });
+  const terraMedium = resolveCodexAuditorModelSelection({ env: {}, profile: 'terra-medium' });
   assert.equal(baseline.effectiveModel, 'gpt-5.4-mini');
   assert.equal(baseline.effectiveReasoningEffort, 'low');
   assert.equal(baseline.effectiveVerifiedAt, '2026-05-06');
@@ -80,6 +81,9 @@ test('resolveCodexAuditorModelSelection: semantic profiles are reproducible and 
   assert.equal(terra.effectiveModel, 'gpt-5.6-terra');
   assert.equal(terra.effectiveReasoningEffort, 'low');
   assert.equal(terra.effectiveVerifiedAt, null);
+  assert.equal(terraMedium.effectiveModel, 'gpt-5.6-terra');
+  assert.equal(terraMedium.effectiveReasoningEffort, 'medium');
+  assert.equal(terraMedium.modelSource, 'profile:terra-medium');
   assert.equal(luna.modelSource, 'profile:luna');
   assert.equal(luna.effortSource, 'profile:luna');
   assert.equal(resolveCodexAuditorModelSelection({ env: {} }).effectiveModel, 'gpt-5.4-mini');

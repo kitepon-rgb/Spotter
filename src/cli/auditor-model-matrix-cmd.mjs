@@ -8,7 +8,7 @@ import { createCodexCliAuditorBackend } from '../core/codex-cli-backend.mjs';
 import { CODEX_AUDITOR_MODEL_POLICY, resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
 
 const execFileAsync = promisify(execFile);
-const PROFILES = ['baseline', 'luna', 'terra'];
+const PROFILES = ['baseline', 'luna', 'terra', 'terra-medium'];
 export const MAX_MODEL_MATRIX_RUNS = 300;
 
 export async function runAuditorModelMatrixCommand({
@@ -118,7 +118,7 @@ function parseArgs(argv) {
   if (!opts.fixturesPath) throw new Error('--fixtures FILE is required');
   if (!Number.isInteger(opts.repeat) || opts.repeat < 1) throw new Error('--repeat must be a positive integer');
   opts.profiles = opts.profiles.length ? opts.profiles : [...PROFILES];
-  if (new Set(opts.profiles).size !== opts.profiles.length || opts.profiles.some((profile) => !PROFILES.includes(profile))) throw new Error('--profile must be baseline, luna, or terra without duplicates');
+  if (new Set(opts.profiles).size !== opts.profiles.length || opts.profiles.some((profile) => !PROFILES.includes(profile))) throw new Error('--profile must be baseline, luna, terra, or terra-medium without duplicates');
   return opts;
 }
 

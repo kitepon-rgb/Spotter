@@ -8,7 +8,7 @@ function deepFreeze(value) {
 
 export const CODEX_AUDITOR_MODEL_POLICY = deepFreeze({
   schema: 'spotter.codex_auditor_model_policy.v1',
-  policyVersion: '1',
+  policyVersion: '2',
   role: 'high-frequency-structured-tool-auditor',
   production: {
     model: 'gpt-5.4-mini',
@@ -35,6 +35,13 @@ export const CODEX_AUDITOR_MODEL_POLICY = deepFreeze({
     terra: {
       model: 'gpt-5.6-terra',
       reasoningEffort: 'low',
+      verifiedAt: null,
+      status: 'candidate',
+      verificationScope: 'not-evaluated',
+    },
+    'terra-medium': {
+      model: 'gpt-5.6-terra',
+      reasoningEffort: 'medium',
       verifiedAt: null,
       status: 'candidate',
       verificationScope: 'not-evaluated',
@@ -122,7 +129,7 @@ function validatePolicy(policy) {
   if (production.status !== 'production') fail('policy.production.status must be production');
   const rawProfiles = policyRecord(record.evaluationProfiles, 'policy.evaluationProfiles');
   const evaluationProfiles = {};
-  for (const profileId of ['baseline', 'luna', 'terra']) {
+  for (const profileId of ['baseline', 'luna', 'terra', 'terra-medium']) {
     if (!Object.hasOwn(rawProfiles, profileId)) fail(`policy.evaluationProfiles.${profileId} is required`);
     evaluationProfiles[profileId] = validateSelection(
       rawProfiles[profileId],

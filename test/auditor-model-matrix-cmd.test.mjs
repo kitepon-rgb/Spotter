@@ -362,6 +362,7 @@ test('model-matrix counts a filtered hallucination as a false positive even when
 test('model-matrix help has a dedicated successful usage', async () => {
   const { stdout } = await execFileAsync(process.execPath, ['bin/spotter.mjs', 'auditor', 'model-matrix', '--help'], { cwd: process.cwd() });
   assert.match(stdout, /Usage: spotter auditor model-matrix --fixtures FILE/);
+  assert.match(stdout, /terra-medium/);
 });
 
 test('model-matrix rejects unknown fields, duplicate expected tools, and inconsistent expected pass', async () => {

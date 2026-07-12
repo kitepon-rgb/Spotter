@@ -9,7 +9,8 @@ Codex CLI の暗黙既定、失敗時 fallback では自動昇格しない。
 ### 変更点
 
 - **model policy**: 意味論的な auditor role、production selection、`gpt-5.6-luna × low` /
-  `gpt-5.6-terra × low` の評価 profile、policy version、検証状態を単一 module に集約した。
+  `gpt-5.6-terra × low` / `gpt-5.6-terra × medium` の評価 profile、policy version、検証状態を
+  単一 module に集約した。medium追加時にpolicy versionを2へ上げた。
 - **backend / diagnostics**: model と reasoning effort を backend 生成時に一度だけ解決し、成功・失敗の
   structured result と diagnostics に effective selection、選択元、policy version、検証状態を残す。
   model invocation が失敗しても別 model へ retry しない。
@@ -32,6 +33,7 @@ baseline / Luna / Terra の全12件が Codex CLI usage limit で `E_CODEX_CLI_EX
 latency・availability の比較には使わなかった。Pro20回復後のrepeat=3を2回実行し、Terra lowは合算
 23/24 exactでbaseline 18/24、Luna low 17/24より最良。usage対応runではtoken usageを36/36取得した。
 Terra lowにも見逃しが1件出たためmediumを追加評価し、金額cost・SLO未合意の間はproduction defaultを維持する。
+Terra mediumは2回のrepeat=3で合計24/24 exact、FP/FN 0、timeout 0。技術的な昇格候補に確定した。
 
 ## 1.4.17
 

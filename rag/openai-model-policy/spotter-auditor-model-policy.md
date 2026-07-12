@@ -2,7 +2,7 @@
 
 調査日: 2026-07-12
 
-確度: **仕様判断は高、`gpt-5.6-terra × low` は repeat=3 の第一候補だがproduction昇格は未完了**
+確度: **仕様判断は高、`gpt-5.6-terra × medium` は24/24 exactの技術候補だがproduction昇格は未完了**
 
 ## 出典
 
@@ -80,6 +80,14 @@ ChatGPTプラン上の金額costとSLOは未合意なのでproduction defaultは
 [`evals/2026-07-12-pro20-repeat3-usage.json`](evals/2026-07-12-pro20-repeat3-usage.json)、解釈は
 [`evals/2026-07-12-pro20-repeat3-usage.md`](evals/2026-07-12-pro20-repeat3-usage.md)。
 
+## Terra medium verification
+
+lowの見逃し再現を受け、policy version 2に`terra-medium`評価profileを追加した。同一fixtureでlowと
+mediumを各12 run比較し、mediumだけをさらに12 run再確認した。mediumは合計24/24 exact、FP/FN 0、
+timeout 0。p50は3.78〜3.84秒、p95は4.28〜4.36秒で、tokenもlow比較runより増えなかった。
+技術候補を`gpt-5.6-terra × medium`へ更新する。詳細は
+[`evals/2026-07-12-terra-medium-verification.md`](evals/2026-07-12-terra-medium-verification.md)。
+
 ## リリース境界
 
 Hook activation と未配布の stale-socket 修正を届ける v1.4.17 の RC code boundary は `1c67698`。
@@ -88,5 +96,4 @@ model policy / backend / eval commits はその後に置き、v1.4.18 developmen
 v1.4.17 は `1c67698` 起点の `codex/release-v1.4.17` に v1.4.17 専用 README / CHANGELOG を置き、
 candidate `6ea6a2b` を作成した。現 main の `auditor model-matrix` / v1.4.18 profile 記述は含めず、
 candidate に実在する CLI / package / pack と照合済み。OS CI 後の最終 metadata SHA にも model commits を
-含めない。live 評価と production 昇格もさらに分離し、quota 回復・SLO 合意・token/cost 観測前に
-既定 model を変更しない。
+含めない。live 評価とproduction昇格もさらに分離し、金額costとSLOの裁定前に既定modelを変更しない。

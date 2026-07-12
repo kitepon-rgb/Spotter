@@ -11,7 +11,7 @@ Usage:
                         [--project DIR] [--host-agent claude|codex|automation|unknown]
                         [--backend haiku|codex-cli|codex-sidecar|auto]
   spotter auditor matrix --stage user_input|turn_end --input FILE [--project DIR]
-  spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra]...
+  spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra|terra-medium]...
                                [--repeat N] [--project DIR] [--output FILE]
 
 Input JSON:
@@ -37,7 +37,7 @@ export async function runAuditorCommand({ argv = process.argv.slice(2) } = {}) {
   }
   if (sub === 'model-matrix') {
     if (argv.slice(1).includes('--help') || argv.slice(1).includes('-h')) {
-      process.stdout.write(`Usage: spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra]...\n       [--repeat N] [--project DIR] [--output FILE]\n`);
+      process.stdout.write(`Usage: spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra|terra-medium]...\n       [--repeat N] [--project DIR] [--output FILE]\n`);
       return;
     }
     await runAuditorModelMatrixCommand({ argv: argv.slice(1) });
