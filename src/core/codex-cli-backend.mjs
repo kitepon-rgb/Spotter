@@ -424,10 +424,17 @@ async function runCodexExec({
             return;
           }
           if (isCodexModelUnavailableFailure(`${diag.stdout}\n${diag.stderr}`)) {
+            const redactedDiag = {
+              ...diag,
+              stdout: '',
+              stderr: '',
+              stdoutRedacted: true,
+              stderrRedacted: true,
+            };
             reject(new AuditorBackendError('E_CODEX_CLI_MODEL_UNAVAILABLE', 'codex-cli model is unavailable — update the model or reasoning-effort override, or review the auditor model policy', {
               backend: 'codex-cli',
               stage,
-              diagnostics: diag,
+              diagnostics: redactedDiag,
             }));
             return;
           }

@@ -341,7 +341,11 @@ test('createCodexCliAuditorBackend: account-rejected model has a bounded actiona
       && err.message === 'codex-cli model is unavailable — update the model or reasoning-effort override, or review the auditor model policy'
       && !err.message.includes(rejectedModel)
       && err.diagnostics.modelSelection.effectiveModel === rejectedModel
-      && err.diagnostics.exitCode === 1,
+      && err.diagnostics.exitCode === 1
+      && err.diagnostics.stdout === ''
+      && err.diagnostics.stderr === ''
+      && err.diagnostics.stdoutRedacted === true
+      && err.diagnostics.stderrRedacted === true,
   );
   assert.equal(spawnCalls, 1);
 });
