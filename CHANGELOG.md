@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.4.18 (unreleased)
+
+auditor model の更新を model 名の場当たり的な置換から切り離し、versioned policy と再現可能な比較 eval を
+導入する。production default は評価完了まで `gpt-5.4-mini × low` のままとし、`latest` alias や
+Codex CLI の暗黙既定、失敗時 fallback では自動昇格しない。
+
+### 変更点
+
+- **model policy**: 意味論的な auditor role、production selection、`gpt-5.6-luna × low` /
+  `gpt-5.6-terra × low` の評価 profile、policy version、検証状態を単一 module に集約した。
+- **backend / diagnostics**: model と reasoning effort を backend 生成時に一度だけ解決し、成功・失敗の
+  structured result と diagnostics に effective selection、選択元、policy version、検証状態を残す。
+  model invocation が失敗しても別 model へ retry しない。
+- **比較 eval**: `spotter auditor model-matrix` を追加した。同じ versioned fixture を固定順序で実行し、
+  fixture hash、Codex CLI version、schema / exact match、false positive / negative、p50 / p95、timeout、
+  catalog 外 name と anomaly を bounded artifact に記録する。token / cost が取得できない間は明示的に
+  `not-available` とし、artifact 自身が model 昇格を許可することはない。
+
+### 検証
+
+model-matrix の targeted test 27 / 27 pass、全体 422 / 420 pass / 0 fail / 2 skip。
+循環・非文字列 backend 応答、model selection 不一致、version 出力の秘密混入、dirty fixture、filtered
+hallucination を敵対的に再検証し、blocker 0 を確認した。代表 fixture による live 比較と OS CI matrix は
+release 前に実行する。
+
 ## 1.4.17
 
 v1.4.16 で実装済みだった stale Unix socket recovery を、v1.4.16 tag を改変せずこの patch の実配布候補に含める。
