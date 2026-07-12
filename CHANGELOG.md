@@ -6,6 +6,14 @@
 
 - **Throughline監査文脈のopt-in配布。** 新規projectは既定`disabled`のまま、ownerがabsoluteなThroughline commandとrepeatableな先頭引数で有効化できる。freshな完了L2 user/assistant pairだけを`N=2`、body 600文字、total 4,000文字に制限し、Codex CLIへstdinで渡す。Haikuはこのcontext経路では呼ばず、fresh以外でもAIを呼ばない。connector障害は固定警告に限定する。親出力は安全なcatalog tool ID由来の固定・非命令形助言だけで、L2、reason、provider rawを反射しない。7日・30 fresh resultのproduction default昇格gateは未完了のため、配布後もproject opt-inを維持する。
 
+### 検証・公開
+
+Spotter 476 tests（474 pass / 2 skip）、Throughline 580 tests（全pass）、両CIのmacOS/Linux/Windows ×
+Node matrix各6/6、packの秘密・開発者固有path scan、隔離tarball installを通過。公開commitは`7cbc3a1`、
+npm `claude-spotter@1.4.20`、tag / GitHub Release `v1.4.20`、registry由来global installを同期した。
+`spotter doctor`は0 warnings、監査文脈connectorはavailable。Codex hook trustだけは仕様上機械検証不能のため、
+`/hooks`での人手確認を残す。
+
 ## 1.4.19
 
 親セッションの暴走を誘発できたHook出力の信頼境界を修正する。監査用AIは内部で構造化判定を返すだけとし、

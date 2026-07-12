@@ -1,6 +1,6 @@
 # 07 — Throughline L2を使った監査文脈・精度向上計画
 
-状態: Phase 0〜4実装・評価済み / Spotterリポ限定canary開始
+状態: v1.4.20 / Throughline v0.6.1配布済み / Spotterリポ限定canary継続
 作成日: 2026-07-12
 対象: Spotter `UserPromptSubmit`監査 / Throughline L2 read-only connector / Claude・Codex両host
 
@@ -359,10 +359,10 @@ production default昇格gateは短縮しない。
 
 - [x] 両リポのversion・CHANGELOG・正典をrelease candidateへ同期する
 - [x] full test、`npm pack`、秘密・絶対path・配布物欠落を検証する
-- [ ] 対象pathだけをcommitし、`main`へpushする
-- [ ] tag / npm / GitHub Releaseを公開する
-- [ ] registry tarballからglobal installし、CLI version・doctor・hook設定をsmokeする
-- [ ] 公開結果を正典へ記録する
+- [x] 対象pathだけをcommitし、`main`へpushする
+- [x] tag / npm / GitHub Releaseを公開する
+- [x] registry tarballからglobal installし、CLI version・doctor・hook設定をsmokeする
+- [x] 公開結果を正典へ記録する
 
 ## ファイル所有と配置
 

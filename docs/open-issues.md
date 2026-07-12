@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点（v1.4.20 release candidate / v1.4.19 published・global installed、2026-07-13）に **塞がっていない穴** と
+Spotter で現時点（v1.4.20 published・global installed、2026-07-13）に **塞がっていない穴** と
 **実測未検証の懸念** を優先度付きで記録する。repo で修正済みでも、未配布・未 install なら
 実環境では未解決として扱う。
 
@@ -31,9 +31,10 @@ Spotter で現時点（v1.4.20 release candidate / v1.4.19 published・global in
 tool/thinking/systemをL3へ分離したuser/assistant本文である。DB直読みではなく、Throughline所有の
 read-only projectionからexact sessionの直近完了turnを取得する。
 
-**2026-07-12 repo実装**: Throughline所有のread-only projection、完了pair freshness、project opt-in、
+**v1.4.20配布済み**: Throughline所有のread-only projection、完了pair freshness、project opt-in、
 fresh以外での監査AI未呼出、固定親出力、Codex stdin transportを実装した。fixture評価から
-`N=2 / per-body 600 / total 4,000 chars`を採用候補とし、Spotterリポ限定canaryを開始した。
+`N=2 / per-body 600 / total 4,000 chars`を採用候補とし、Spotterリポ限定canaryを開始した。公開後も
+新規projectは`disabled`で、明示opt-inなしにL2を監査backendへ送らない。
 
 **次アクション**: [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md)のPhase 5に従い、
 7日以上かつfresh 30件以上（期待finding/pass各10件以上）を人手ラベル付きで観測する。過検出・見逃し0と
