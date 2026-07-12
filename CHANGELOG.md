@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.17
+
+v1.4.16 で実装済みだった stale Unix socket recovery を、v1.4.16 tag を改変せずこの patch の実配布候補に含める。
+daemon 異常死後の orphan socket を次回起動前に安全に除去する回復経路が、初めて配布物へ入る。
+
+### 変更点
+
+- **Codex SessionStart hook**: unsupported な `async:true` を除去し、現行 schema
+  `{type, command, timeout}` に合わせた。upgrade 時は旧 field を正規化し、他製品・他 hook の定義を保持する。
+- **diagnostics / guidance**: readiness、registered、compatible、canonical、observed を分けて表示する。
+  信頼状態が未知なら `/hooks` での確認を案内し、doctor / install の次手も明示する。
+- **Claude Stop の失敗通知**: backend / transport failure を stage-aware な warning として same-session
+  pending に永続化し、次の prompt で配信する。finding / warning の永続化に失敗した場合は stderr と
+  `degraded` event を記録して non-blocking を維持する。最終 turn で次 prompt がない場合には配信できない
+  限界は残る。
+- **Codex used-tools**: 現行 `custom_tool_call`、legacy `function_call`、MCP、agents を current turn の
+  bounded tail から認識する。schema / missing / oversize の anomaly を記録して false skip を防ぎ、既存の
+  public API は維持する。
+- **auditor model**: この release の production default は引き続き `gpt-5.4-mini × low`。GPT-5.6 の
+  policy / evaluation は次 patch で扱い、この patch での自動昇格はしない。
+
+### 検証
+
+targeted test と adversarial review を実施し、最終 full suite と OS CI matrix は release 前に実行予定。
+件数は最終結果の確定後に記録する。
+
 ## 1.4.16
 
 **daemon が異常死した後、残った Unix socket で二度と起動できなくなり、そのセッションが永久に未監査になる
