@@ -1,0 +1,157 @@
+import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { version } from '../version.mjs';
+import { createCodexCliAuditorBackend } from '../core/codex-cli-backend.mjs';
+import { CODEX_AUDITOR_MODEL_POLICY, resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
+
+const execFileAsync = promisify(execFile);
+const PROFILES = ['baseline', 'luna', 'terra'];
+export const MAX_MODEL_MATRIX_RUNS = 300;
+
+export async function runAuditorModelMatrixCommand({
+  argv = [], env = process.env, now = () => Date.now(), readFileFn = readFile, writeFileFn = writeFile,
+  createBackendFn = createCodexCliAuditorBackend, resolveSelectionFn = resolveCodexAuditorModelSelection,
+  getCodexCliVersionFn = getCodexCliVersion, generatedAt = () => new Date().toISOString(), writeOutput = (text) => process.stdout.write(text),
+} = {}) {
+  const opts = parseArgs(argv);
+  const raw = await readFileFn(opts.fixturesPath);
+  const fixtureBytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+  const fixture = parseAndValidateFixture(fixtureBytes.toString('utf8'));
+  if (fixture.cases.length * opts.repeat * opts.profiles.length > MAX_MODEL_MATRIX_RUNS) {
+    throw new Error(`model-matrix run count exceeds maximum ${MAX_MODEL_MATRIX_RUNS}`);
+  }
+  const selections = Object.fromEntries(opts.profiles.map((profile) => [profile, resolveSelectionFn({ env, profile })]));
+  const backends = Object.fromEntries(opts.profiles.map((profile) => {
+    const backend = createBackendFn({ catalog: fixture.catalog, projectRoot: opts.projectRoot, env, modelProfile: profile });
+    if (!sameSelection(selections[profile], backend?.modelSelection)) {
+      throw new Error(`backend model selection does not match preflight profile: ${profile}`);
+    }
+    return [profile, backend];
+  }));
+  const cliVersion = normalizeCodexCliVersion(await getCodexCliVersionFn({ env }));
+  const runs = [];
+  let order = 0;
+  for (const item of fixture.cases) for (let repeat = 1; repeat <= opts.repeat; repeat += 1) for (const profile of opts.profiles) {
+    const startedAt = now();
+    const modelSelection = selections[profile];
+    try {
+      const backend = backends[profile];
+      const judgment = await backend.judge({ ...toAuditorInput(item), meta: { caseId: item.id, repeat, profile } });
+      if (!sameSelection(modelSelection, judgment?.meta?.modelSelection)) {
+        throw new Error('judgment model selection does not match backend model selection');
+      }
+      const rawFindings = Array.isArray(judgment?.findings) ? judgment.findings : [];
+      const rawActualTools = rawFindings.map((finding) => finding?.toolName);
+      const actualTools = rawActualTools.filter(isCleanString);
+      const invalidFindingCount = rawActualTools.length - actualTools.length;
+      const actualPass = typeof judgment?.pass === 'boolean' ? judgment.pass : null;
+      const rawDroppedTools = Array.isArray(judgment?.meta?.diagnostics?.droppedCatalogExternalNames)
+        ? judgment.meta.diagnostics.droppedCatalogExternalNames
+        : [];
+      const rawAnomalies = Array.isArray(judgment?.anomalies) ? judgment.anomalies : [];
+      const droppedTools = cleanStrings(rawDroppedTools);
+      const anomalyTypes = cleanStrings(rawAnomalies.map((anomaly) => anomaly?.type));
+      const schemaSuccess = actualPass !== null && Array.isArray(judgment?.findings)
+        && invalidFindingCount === 0 && new Set(actualTools).size === actualTools.length
+        && actualPass === (actualTools.length === 0);
+      runs.push(successRun({
+        order: ++order,
+        item,
+        repeat,
+        profile,
+        modelSelection,
+        durationMs: now() - startedAt,
+        schemaSuccess,
+        actualPass,
+        actualTools,
+        invalidFindingCount,
+        droppedTools,
+        droppedToolCount: rawDroppedTools.length,
+        anomalyTypes,
+        anomalyCount: rawAnomalies.length,
+      }));
+    } catch (err) {
+      runs.push({ order: ++order, caseId: item.id, repeat, profile, status: 'error', durationMs: now() - startedAt,
+        schemaSuccess: false, exactMatch: false, expected: item.expected, actual: { pass: null, missingTools: [], invalidFindingCount: 0, droppedCatalogExternalNames: [], droppedCatalogExternalNameCount: 0, anomalies: [], anomalyCount: 0 }, falsePositiveTools: [], falseNegativeTools: [], modelSelection,
+        error: safeError(err) });
+    }
+  }
+  const artifact = {
+    schema: 'spotter.auditor_model_matrix.v1', generatedAt: generatedAt(), packageVersion: version,
+    fixture: { schema: fixture.schema, path: opts.fixturesPath, sha256: createHash('sha256').update(fixtureBytes).digest('hex'), cases: fixture.cases.length, catalogCount: fixture.catalog.length },
+    codexCli: cliVersion, policy: { schema: CODEX_AUDITOR_MODEL_POLICY.schema, version: CODEX_AUDITOR_MODEL_POLICY.policyVersion },
+    profiles: Object.fromEntries(Object.entries(selections).map(([profile, selection]) => [profile, {
+      model: selection.effectiveModel,
+      reasoningEffort: selection.effectiveReasoningEffort,
+      verifiedAt: selection.effectiveVerifiedAt,
+      verificationScope: selection.effectiveVerificationScope ?? null,
+      status: selection.effectiveStatus ?? null,
+      selection,
+    }])), runs, summary: summarize(runs, opts.profiles), usageStatus: 'not-available', tokenUsage: null, cost: null,
+    evaluation: { repeat: opts.repeat, profiles: opts.profiles, projectRoot: opts.projectRoot, maxRuns: MAX_MODEL_MATRIX_RUNS },
+    executionOrdering: 'case-repeat-profile', promotionEligible: false, blockingReasons: blockingReasons(runs),
+  };
+  const json = JSON.stringify(artifact, null, 2) + '\n';
+  if (opts.outputPath) await writeFileFn(opts.outputPath, json, 'utf8');
+  writeOutput(json);
+  return artifact;
+}
+
+function parseArgs(argv) {
+  const opts = { fixturesPath: null, profiles: [], repeat: 1, projectRoot: process.cwd(), outputPath: null };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]; const value = () => { const v = argv[++i]; if (!v || v.startsWith('--')) throw new Error(`${arg} requires a value`); return v; };
+    if (arg === '--fixtures') opts.fixturesPath = resolve(value());
+    else if (arg === '--profile') opts.profiles.push(value());
+    else if (arg === '--repeat') opts.repeat = Number(value());
+    else if (arg === '--project') opts.projectRoot = resolve(value());
+    else if (arg === '--output') opts.outputPath = resolve(value());
+    else throw new Error(`unknown auditor model-matrix option: ${arg}`);
+  }
+  if (!opts.fixturesPath) throw new Error('--fixtures FILE is required');
+  if (!Number.isInteger(opts.repeat) || opts.repeat < 1) throw new Error('--repeat must be a positive integer');
+  opts.profiles = opts.profiles.length ? opts.profiles : [...PROFILES];
+  if (new Set(opts.profiles).size !== opts.profiles.length || opts.profiles.some((profile) => !PROFILES.includes(profile))) throw new Error('--profile must be baseline, luna, or terra without duplicates');
+  return opts;
+}
+
+function parseAndValidateFixture(raw) {
+  let fixture; try { fixture = JSON.parse(raw); } catch { throw new Error('fixture must be valid JSON'); }
+  objectOnly(fixture, ['schema', 'catalog', 'cases'], 'fixture');
+  if (fixture.schema !== 'spotter.auditor_model_fixtures.v1') throw new Error('unsupported fixture schema');
+  if (!Array.isArray(fixture.catalog) || !Array.isArray(fixture.cases) || fixture.cases.length === 0) throw new Error('fixture catalog and non-empty cases are required');
+  const catalogNames = new Set();
+  for (const tool of fixture.catalog) { objectOnly(tool, ['name', 'description'], 'catalog tool'); clean(tool.name, 'catalog name'); clean(tool.description, 'catalog description'); if (catalogNames.has(tool.name)) throw new Error('duplicate catalog name'); catalogNames.add(tool.name); }
+  const ids = new Set();
+  for (const item of fixture.cases) {
+    objectOnly(item, ['id', 'stage', 'input', 'expected'], 'case'); clean(item.id, 'case id');
+    if (ids.has(item.id)) throw new Error('duplicate case id'); ids.add(item.id);
+    if (!['user_input', 'turn_end'].includes(item.stage)) throw new Error('case stage is invalid');
+    validateInput(item.stage, item.input); objectOnly(item.expected, ['pass', 'missingTools'], 'case expected');
+    if (typeof item.expected.pass !== 'boolean' || !Array.isArray(item.expected.missingTools)
+      || new Set(item.expected.missingTools).size !== item.expected.missingTools.length
+      || item.expected.missingTools.some((name) => typeof name !== 'string' || !catalogNames.has(name))
+      || item.expected.pass !== (item.expected.missingTools.length === 0)) throw new Error('case expected is invalid or references a catalog-external tool');
+  }
+  return fixture;
+}
+function objectOnly(value, keys, label) { if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(`${label} has invalid fields`); }
+function clean(value, label) { if (typeof value !== 'string' || value.length === 0 || value.trim() !== value) throw new Error(`${label} must be a clean non-empty string`); }
+function validateInput(stage, input) { if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('case input is invalid'); if (stage === 'user_input') { objectOnly(input, ['userInput'], 'user_input input'); clean(input.userInput, 'userInput'); } else { objectOnly(input, ['finalResponse', 'usedTools'], 'turn_end input'); clean(input.finalResponse, 'finalResponse'); if (!Array.isArray(input.usedTools) || input.usedTools.some((tool) => typeof tool !== 'string' || tool.length === 0 || tool.trim() !== tool) || new Set(input.usedTools).size !== input.usedTools.length) throw new Error('usedTools is invalid'); } }
+function toAuditorInput(item) { return item.stage === 'user_input' ? { stage: item.stage, userInput: item.input.userInput } : { stage: item.stage, finalResponse: item.input.finalResponse, usedTools: item.input.usedTools }; }
+function isCleanString(value) { return typeof value === 'string' && value.length > 0 && value.trim() === value; }
+function cleanStrings(values = []) { return [...new Set(values.filter(isCleanString))]; }
+function successRun({ order, item, repeat, profile, modelSelection, durationMs, schemaSuccess, actualPass, actualTools, invalidFindingCount, droppedTools, droppedToolCount, anomalyTypes, anomalyCount }) { const expectedTools = item.expected.missingTools; const fp = [...actualTools.filter((tool) => !expectedTools.includes(tool)), ...droppedTools.filter((tool) => !expectedTools.includes(tool))]; const fn = expectedTools.filter((tool) => !actualTools.includes(tool)); return { order, caseId: item.id, repeat, profile, status: 'success', durationMs, schemaSuccess, exactMatch: schemaSuccess && actualPass === item.expected.pass && actualTools.length === expectedTools.length && fp.length === 0 && fn.length === 0 && droppedToolCount === 0 && anomalyCount === 0, expected: item.expected, actual: { pass: actualPass, missingTools: actualTools, invalidFindingCount, droppedCatalogExternalNames: droppedTools, droppedCatalogExternalNameCount: droppedToolCount, anomalies: anomalyTypes, anomalyCount }, falsePositiveTools: fp, falseNegativeTools: fn, modelSelection }; }
+function safeError(err) { const diagnostics = compact(err?.diagnostics); const message = typeof err?.message === 'string' ? err.message : String(err); return { code: typeof err?.code === 'string' ? err.code : 'E_AUDITOR_MODEL_MATRIX', name: typeof err?.name === 'string' ? err.name : 'Error', message: message.slice(0, 1000), backend: typeof err?.backend === 'string' ? err.backend : 'codex-cli', stage: typeof err?.stage === 'string' ? err.stage : 'unknown', ...(diagnostics ? { diagnostics } : {}) }; }
+function compact(value) { if (!value || typeof value !== 'object' || Array.isArray(value)) return null; const out = {}; for (const key of ['durationMs', 'processCount', 'exitCode', 'completionReason', 'lastMessageCheck', 'processCountMethod', 'stdoutTruncated', 'stderrTruncated']) { if (typeof value[key] === 'number' || typeof value[key] === 'boolean' || value[key] === null || ['completionReason', 'lastMessageCheck', 'processCountMethod'].includes(key) && typeof value[key] === 'string') out[key] = value[key]; } if (value.modelSelection && typeof value.modelSelection === 'object') out.modelSelection = { effectiveModel: value.modelSelection.effectiveModel ?? null, effectiveReasoningEffort: value.modelSelection.effectiveReasoningEffort ?? null, policyVersion: value.modelSelection.policyVersion ?? null }; for (const key of ['stdout', 'stderr']) if (typeof value[key] === 'string') out[`${key}Bytes`] = Buffer.byteLength(value[key]); return out; }
+export function percentile(values, ratio) { if (!values.length) return null; const sorted = [...values].sort((a, b) => a - b); return sorted[Math.ceil(sorted.length * ratio) - 1]; }
+function summarize(rows, profiles) { const one = (items) => { const durations = items.map((item) => item.durationMs); const timeout = items.filter((item) => item.error?.code === 'E_CODEX_CLI_TIMEOUT').length; return { total: items.length, success: items.filter((item) => item.status === 'success').length, error: items.filter((item) => item.status === 'error').length, schemaSuccess: items.filter((item) => item.schemaSuccess).length, exactMatch: items.filter((item) => item.exactMatch).length, falsePositiveTools: items.reduce((sum, item) => sum + item.falsePositiveTools.length, 0), falseNegativeTools: items.reduce((sum, item) => sum + item.falseNegativeTools.length, 0), invalidFindingCount: items.reduce((sum, item) => sum + item.actual.invalidFindingCount, 0), anomalyCount: items.reduce((sum, item) => sum + item.actual.anomalyCount, 0), droppedCatalogExternalNameCount: items.reduce((sum, item) => sum + item.actual.droppedCatalogExternalNameCount, 0), durationMs: { p50: percentile(durations, 0.5), p95: percentile(durations, 0.95) }, timeoutCount: timeout, timeoutRate: items.length ? timeout / items.length : 0 }; }; return { ...one(rows), byProfile: Object.fromEntries(profiles.map((profile) => [profile, one(rows.filter((row) => row.profile === profile))])) }; }
+function blockingReasons(runs) { const reasons = ['usage_not_available']; if (runs.some((run) => run.status === 'error')) reasons.push('run_error'); if (runs.some((run) => !run.schemaSuccess)) reasons.push('schema_failure'); if (runs.some((run) => !run.exactMatch)) reasons.push('exact_mismatch'); if (runs.some((run) => run.actual.anomalyCount > 0 || run.actual.droppedCatalogExternalNameCount > 0)) reasons.push('quality_anomaly'); return reasons; }
+function sameSelection(expected, actual) { if (!expected || !actual || typeof expected !== 'object' || typeof actual !== 'object') return false; const keys = ['effectiveModel', 'effectiveReasoningEffort', 'modelSource', 'effortSource', 'policySchema', 'policyVersion', 'policyVerifiedAt', 'policyVerificationScope', 'effectiveVerifiedAt', 'effectiveStatus', 'effectiveVerificationScope', 'role', 'availability']; return keys.every((key) => expected[key] === actual[key]); }
+function byteCount(value) { return typeof value === 'string' || Buffer.isBuffer(value) ? Buffer.byteLength(value) : 0; }
+function safeVersionCode(value) { return typeof value === 'string' && /^E_[A-Z0-9_]{1,80}$/.test(value) ? value : 'E_CODEX_CLI_VERSION_INVALID'; }
+function normalizeCodexCliVersion(value) { const status = value?.status; if (status === 'available' && typeof value.version === 'string' && value.version.length <= 200 && !/[\r\n]/.test(value.version) && /^codex(?:-cli)?\s+v?\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9.-]+)?$/.test(value.version)) return { status: 'available', version: value.version }; if (status === 'unavailable') return { status: 'unavailable', ...(value?.code ? { code: safeVersionCode(value.code) } : {}) }; return { status: 'error', code: safeVersionCode(value?.code), stdoutBytes: byteCount(value?.stdout ?? value?.version), stderrBytes: byteCount(value?.stderr) }; }
+async function getCodexCliVersion({ env = process.env } = {}) { try { const { stdout } = await execFileAsync('codex', ['--version'], { timeout: 5_000, encoding: 'utf8', env }); return { status: 'available', version: stdout.trim() }; } catch (err) { return { status: err?.code === 'ENOENT' ? 'unavailable' : 'error', code: err?.code === 'ENOENT' ? 'E_CODEX_CLI_NOT_FOUND' : 'E_CODEX_CLI_VERSION_COMMAND', stdout: err?.stdout, stderr: err?.stderr }; } }

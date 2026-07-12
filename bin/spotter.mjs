@@ -50,6 +50,8 @@ Usage:
                                         (experimental) run primary auditor backend once
   spotter auditor matrix --stage STAGE --input FILE
                                         (experimental) compare primary auditor backend matrix
+  spotter auditor model-matrix --fixtures FILE
+                                        (experimental) evaluate pinned Codex auditor profiles
   spotter daemon start --session-id ID  (internal) run session daemon
   spotter hook <event>                  (internal) hook dispatch
                                         events: session-start | user-prompt |

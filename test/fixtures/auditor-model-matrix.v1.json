@@ -1,0 +1,13 @@
+{
+  "schema": "spotter.auditor_model_fixtures.v1",
+  "catalog": [
+    { "name": "mcp__caveat__caveat_search", "description": "Search recorded caveats." },
+    { "name": "mcp__codegraph__codegraph_explore", "description": "Explore repository-wide dependency and call relationships." }
+  ],
+  "cases": [
+    { "id": "user-input-pass", "stage": "user_input", "input": { "userInput": "「Spotter は監査役です」を丁寧な日本語に言い換えてください" }, "expected": { "pass": true, "missingTools": [] } },
+    { "id": "user-input-miss", "stage": "user_input", "input": { "userInput": "Caveat の既知の罠を検索してください" }, "expected": { "pass": false, "missingTools": ["mcp__caveat__caveat_search"] } },
+    { "id": "turn-end-pass", "stage": "turn_end", "input": { "finalResponse": "codegraph を使って依存関係と呼出関係を確認しました", "usedTools": ["mcp__codegraph__codegraph_explore"] }, "expected": { "pass": true, "missingTools": [] } },
+    { "id": "turn-end-miss", "stage": "turn_end", "input": { "finalResponse": "リポジトリ全体の依存関係を調査し、呼出関係に問題はないと断定します", "usedTools": [] }, "expected": { "pass": false, "missingTools": ["mcp__codegraph__codegraph_explore"] } }
+  ]
+}

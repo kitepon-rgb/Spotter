@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createAuditorBackend } from '../core/auditor-backend.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
+import { runAuditorModelMatrixCommand } from './auditor-model-matrix-cmd.mjs';
 
 const AUDITOR_USAGE = `spotter auditor — experimental primary auditor smoke commands
 
@@ -10,6 +11,8 @@ Usage:
                         [--project DIR] [--host-agent claude|codex|automation|unknown]
                         [--backend haiku|codex-cli|codex-sidecar|auto]
   spotter auditor matrix --stage user_input|turn_end --input FILE [--project DIR]
+  spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra]...
+                               [--repeat N] [--project DIR] [--output FILE]
 
 Input JSON:
   user_input: {"user_input":"..."} or {"userInput":"..."}
@@ -30,6 +33,14 @@ export async function runAuditorCommand({ argv = process.argv.slice(2) } = {}) {
   }
   if (sub === 'matrix') {
     await runAuditorMatrixCommand({ argv: argv.slice(1) });
+    return;
+  }
+  if (sub === 'model-matrix') {
+    if (argv.slice(1).includes('--help') || argv.slice(1).includes('-h')) {
+      process.stdout.write(`Usage: spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra]...\n       [--repeat N] [--project DIR] [--output FILE]\n`);
+      return;
+    }
+    await runAuditorModelMatrixCommand({ argv: argv.slice(1) });
     return;
   }
   process.stderr.write(`unknown auditor subcommand: ${sub}\n${AUDITOR_USAGE}`);
