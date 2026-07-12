@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.4.19
+
+親セッションの暴走を誘発できたHook出力の信頼境界を修正する。監査用AIは内部で構造化判定を返すだけとし、
+その自由文やprovider出力を親モデルへ渡さない。親向け出力はSpotterプログラムが検証済みtool IDから
+決定論的に生成する、採否を親が独立判断できる非命令形の助言へ限定する。
+
+### 変更点
+
+- **共通parent-output projector**: Claude / Codexの両Hookが同じprojectorを使う。tool IDは
+  ASCII grammar、160文字、5件、重複排除、安定sort、助言全体2,000文字の上限を持ち、改行・制御文字・
+  backtick・Markdown・超長大IDを拒否する。監査用AIの`reason` / `raw`はAPI入力に持たない。
+- **非命令形のUserPrompt助言**: `additionalContext`はcatalog照合済みtool IDと固定テンプレートだけから
+  作る。「使え」「補正せよ」「ユーザーへ伝えよ」といった命令や監査用AIの説明文を含めない。
+- **failure分離**: backend codeをallow-list済みの固定状態へ写像し、固定`systemMessage`・固定stderr・
+  構造Hook eventへ出す。backend message、provider stdout / stderr、未知code本文を反射しない。この保証は
+  Hook出力生成までで、全Codex App/background面でのUI可視性は未保証。
+- **Stop持ち越し廃止**: finding / failureを`.spotter/pending/`へ新規保存せず、次の無関係な
+  UserPromptSubmitへ配送しない。findingは構造Hook event、failureは固定診断として当該Stopで完結する。
+  旧same-session pendingは内容を読まずにunlinkし、`ENOENT`以外の失敗も固定診断だけにする。
+- **安全性維持**: `decision:"block"`、Stop継続、UserPromptSubmit exit 2の範囲拡大は行わず、既存の
+  再帰Hook / daemon proliferation防止、marker、short prompt、non-blocking failure契約を維持する。
+
+### 検証
+
+projector / Claude / Codexのtargeted testとfull suiteを実行し、447件中445 pass・0 fail・既存2 skip。
+AI/backend/provider sentinel、unsafe ID、legacy pending非読取unlink、Stop次turn非配送、catalog/transcript
+読込例外の固定degradationを確認した。敵対的再監査は初回BLOCKER 2件（Codex読込例外の境界外、
+UI可視性の過剰主張）を検出・修正し、再監査BLOCKER 0。`npm pack --dry-run`は62 files、global
+`spotter 1.4.19`へlocal installし、projector smoke・Hook diagnostics・global UserPromptSubmit smokeを
+確認した。npm publishは本変更の実装・ローカル止血とは分けてowner裁定する。
+
 ## 1.4.18
 
 auditor model の更新を model 名の場当たり的な置換から切り離し、versioned policy と再現可能な比較 eval を

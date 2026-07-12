@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter で現時点（v1.4.18、2026-07-12）に **塞がっていない穴** と
+Spotter で現時点（v1.4.19 local install、2026-07-12）に **塞がっていない穴** と
 **実測未検証の懸念** を優先度付きで記録する。repo で修正済みでも、未配布・未 install なら
 実環境では未解決として扱う。
 
@@ -14,13 +14,6 @@ Spotter で現時点（v1.4.18、2026-07-12）に **塞がっていない穴** �
   - **P0** — 次に実装着手する前に解決したい。放置が怖い
   - **P1** — 次の patch / 実測レーンで塞ぎたい
   - **P2** — 機会があれば
-
----
-
-## P0 — 配布と実環境 activation
-
-現在P0なし。v1.4.17は配布・global install済みで、Codex `/hooks`上のSpotter 3 entryがTrusted / active、
-新規taskの`SessionStart: refresh_spawned`が1回であることまで2026-07-12に実機確認した。
 
 ---
 
@@ -240,22 +233,6 @@ timeout 突破頻発なら緊急対処。
 
 現状 Stop hook は daemon の Haiku 呼び出しを同期的に待つ (daemon 45s、hook IPC 50s、install が書く Claude Code 側 timeout は 60s)。async hook 対応が Claude Code 側で来たら、体感レイテンシを隠蔽できる。
 
-### Codex Stop の immediate block 不在
-
-Codex native `Stop` は現状 immediate block ではなく deferred delivery。`Stop` で見つかった不足ツールは `.spotter/pending/` に保存され、次の same-session `UserPromptSubmit` の `additionalContext` で Codex に提示される。2026-05-06 の実測では `decision:"block"` を返すと final answer 後に `Stop Blocked` / exit code 1 となり、Claude Code のような綺麗な継続応答にはならなかったため、Caveat と同じ pending queue 方式を採用している。v1.4.8 以降は Claude / Codex で host-neutral pending queue を共有する。
-
-**2026-07-12 更新**: 現行 Codex Hook 仕様は `Stop` の `reason` を continuation prompt として扱う。
-isolated CLIでは`decision:"block"`が同一turn内で`stop_hook_active:false→true`となり、綺麗に1回だけ
-継続した。一方Codex Appのbackground / app-server taskはSessionStartとUserPromptSubmitを実行するが、
-Stop自体を実行しなかった。`systemMessage`もCLI JSONLへ現れない。詳細は
-[`rag/codex-hooks/stop-delivery-characterization-2026-07-12.md`](../rag/codex-hooks/stop-delivery-characterization-2026-07-12.md)。
-
-**決定**: v1.4.18ではpending deliveryを維持する。background/app-serverではStop自体が発火しないため、
-pendingもimmediate blockも生成不能である。active Appでmax-1を再現するまでは、既存delivery contractを
-immediate blockへ変更しない。
-
-**次アクション**: Codex側のApp Stop contractが更新された時だけ再評価する。
-
 ### CI 回帰テスト整備 (v0.4+)
 
 現行 `.github/workflows/ci.yml` は Node 22.5 / 22.x と Linux / Windows / macOS の `node --test` matrix。lint フロー・PR ゲートは未整備。導入するなら `node --test` に加えて `eslint` 相当の最小 lint を CI に載せる。
@@ -268,25 +245,11 @@ immediate blockへ変更しない。
 
 **次アクション**: P2 (機会があれば)。対処するなら (a) file lock (`~/.spotter/runtime/tool-db.lock`) で refresh を mutex、(b) saveDb 層で既存ファイルとの merge 差分書き込み、のどちらか。現状は実害観測なしなので放置で可。
 
-### Stop 失敗がセッション最終ターンだとサイレント非監査 (2026-06-02 v1.4.15 review で発見)
-
-**背景**: v1.4.17 candidate で Claude / Codex 両 Stop の backend/transport failure を warning pending に
-積み、次の same-session `UserPromptSubmit` が finding と同時に1回 drain するよう修正した。これで
-「backend が次 turn までに回復したため過去の失敗通知が消える」穴は解消した。一方、セッションがその後の
-`UserPromptSubmit` を迎えず終了すると、配送先が存在しないため最終ターンの Stop failure は surface できない。
-
-**影響**: 最終ターン 1 回分の「監査できなかった」通知欠落のみ。pass を偽装する silent fallback ではない (verdict は生成されていない)。§12.4 の「応答後に surface する手段がない」限界と同じクラス。
-
-**次アクション**: P2。Claude / Codex の `Stop` で non-blocking user-visible notice を安全に出せる
-surface を実機 characterization し、使える場合だけ即時 warning を検討する。それまでは最終 turn 限界を
-contract に明記して許容する。
-
----
-
 ## 解決済み (参照用)
 
 | 課題 | 解決版 |
 |---|---|
+| 監査用AIの`reason`、backend/provider生出力、Stopの前turn指摘が親モデルcontextへ昇格して暴走を誘発できた。共通projectorがcatalog照合・grammar検証済みtool IDだけを固定・非命令形助言へ変換し、failureは固定Hook出力、Stop findingは構造eventに限定。pending新規作成と次turn配送を廃止し、旧pendingは非読取unlink。全447件中445 pass/2 skip、敵対的再監査blocker 0、local global 1.4.19へ反映 | v1.4.19 local install（npm未公開） |
 | Codex `SessionStart` に `async:true` を生成して現行 CLI が handler を skip し、diagnostics も `available` と誤成功していた。installer-owned entry を canonical `{type,command,timeout}` へ正規化し、feature / registered / compatible / canonical / observed / readiness を分離。trust は `/hooks` review を案内 | v1.4.17 candidate (repo 修正済み・実機反映待ち) |
 | Claude Stop backend failure が degraded event だけで warning pending を積まず、backend が回復した次 turn に過去の未監査を通知できなかった。Claude / Codex 両 host で warning を host-neutral pending に dedupe 保存し、次 prompt で finding と同時に1回 drain。pending / stderr / event writer failure も non-blocking かつ loud | v1.4.17 candidate |
 | Codex used-tools が legacy `function_call` だけを読み、現行 shell `custom_tool_call`、MCP、agent call を数えず short Stop を誤 skip し得た。bounded current-turn readerで全既知形を認識し、missing / oversize / schema drift は anomaly として監査を継続 | v1.4.17 candidate |

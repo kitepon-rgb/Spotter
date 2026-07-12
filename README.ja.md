@@ -88,20 +88,19 @@ spotter codex-hook install
 
 ### 1 ターンの監査フロー
 
-Claude Code と Codex では `Stop` の受け口が違います。下の図は Claude host の流れです。
-Codex native `Stop` は遅延配送で、不足ツールの指摘を queue し、次の same-session
-`UserPromptSubmit` で提示します。
+Claude Code と Codex は同じ安全なparent-output projectorを使います。監査用AIの自由文は内部に留め、
+`UserPromptSubmit`では検証済みtool IDだけを固定・非命令形の助言へ変換します。`Stop` findingは
+構造eventに記録し、後のturnへ注入しません。
 
 ```mermaid
 flowchart TD
     U([User 発話]) --> UPH[UserPromptSubmit hook<br/>Spotter が発話とカタログから一次判定]
-    UPH --> BT[Claude Thinking<br/>Spotter の推奨を<br/>additionalContext で受信]
+    UPH --> BT[Host model<br/>検証済みtool IDの<br/>固定助言を受け取る場合がある]
     BT --> BA([Claude の最初の応答])
     BA --> SH[Stop hook<br/>応答と使用済みツールから最終チェック]
     SH --> DEC{見落とし<br/>あり?}
     DEC -->|なし| DONE([完了])
-    DEC -->|あり| SB[.spotter/pending/ に積む<br/>v1.4.8 deferred delivery]
-    SB --> NEXT([次の UserPromptSubmit で<br/>additionalContext として配信])
+    DEC -->|あり| EVT[構造Hook eventへ記録<br/>次turnへは注入しない]
 ```
 
 ### カタログの収集経路
@@ -209,13 +208,14 @@ profile から production へ自動昇格しません。`latest` alias や
 
 ## 既知の制約
 
-- v1.4.8 以降、Claude / Codex 両 host で `Stop` hook は **遅延配送 (deferred delivery)** に統一されています。`Stop` で見落としツールを検出した場合、Spotter は `<projectRoot>/.spotter/pending/<sessionId>.json` に指摘を積み、次の same-session `UserPromptSubmit` で `additionalContext` として配信します。当ターンの最初の応答は transcript にそのまま残ります
-- pending ファイルは Claude / Codex が同じパス (`.spotter/pending/`) を共有します。host-neutral 設計です
-- **Haiku の JSON スキーマ違反は v0.5.0 以降「想定済み異常」として session renew + `role_collapse_reset` で回復**します。**v1.4.15 以降、auditor/daemon の失敗はプロンプトをブロックしません**: `UserPromptSubmit` は `[Spotter からの警告]` を出して exit 0。`Stop` 失敗も warning pending に積み、次の same-session prompt で1回配信します。直後に session が終わる場合だけ、配送先となる次 prompt がありません
+- `Stop` hookは最初の応答がstream済みになった後で発火します。v1.4.19以降は応答の書換え・継続強制・次turnへの監査文配送をせず、findingを構造Hook eventへ記録します。pre-responseの`UserPromptSubmit`精度が引き続き主軸です
+- `UserPromptSubmit.additionalContext`は受動的metadataではなくモデル可視contextです。v1.4.19以降はcatalog一致・grammar検証済みtool IDだけから決定論的に生成し、監査用AIのreason、backend message、provider stdout/stderrを反射しません
+- **Haiku の JSON スキーマ違反は v0.5.0 以降「想定済み異常」として session renew + `role_collapse_reset` で回復**します。**v1.4.19以降、auditor/daemonの失敗はモデルcontextにせずnon-blockingを維持**します。allow-list済み固定`systemMessage`・固定stderr・構造Hook eventだけを出してexit 0にします
 
 <details>
 <summary><strong>📋 最近のハイライト</strong></summary>
 
+- **親出力をルールベース化** (v1.4.19) — 監査用AIの自由文は親セッションへ入りません。検証済みtool IDだけがUserPromptSubmitの任意助言になり、Stop findingは無関係な次turnへ持ち越されません
 - **daemon は異常死しても復活する** (v1.4.16) — daemon が graceful shutdown を経ず死んでも (マシンスリープ / 強制終了 / `SessionEnd` 前の crash)、残った Unix socket が以後の起動を塞がなくなった。`startDaemon` が bind 前に orphan socket を除去するので、次の `UserPromptSubmit` の auto-resurrect が `EADDRINUSE` で crash-loop せずに成功し、「そのセッションが永久に未監査」になる事態を防ぐ
 - **失敗は声に出して縮退、host を固めない** (v1.4.15) — auditor backend が失敗したとき (例: codex のログイン失効) も、`UserPromptSubmit` hook はプロンプトを黙って消さずに `[Spotter からの警告]` を出して通す。codex ログイン失効時は直し方 (`codex login`) を明示する
 - **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Claude の監査から silent に脱落させていた)

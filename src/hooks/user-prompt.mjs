@@ -1,4 +1,5 @@
-// UserPromptSubmit hook — send user_input to daemon, inject additionalContext (§12.2 transparent).
+// UserPromptSubmit hook — send user_input to daemon and project only validated tool IDs into
+// fixed non-imperative additionalContext text.
 // v0.2 gates: see src/hooks/session-start.mjs comment.
 //
 // v0.12.0: auto-resurrect. If sendRequest fails with E_UNREACHABLE (daemon was
@@ -7,18 +8,13 @@
 // natural recovery point — the start of a new turn — so the user's prompt is still
 // audited even after long pauses or daemon failures.
 //
-// Phase B (hook parity, 2026-05-08): deferred Stop delivery. Drain
-// `<projectRoot>/.spotter/pending/<sessionId>.json` populated by the previous turn's Stop
-// hook and merge those entries into the same additionalContext. Drain runs even on the
-// short-prompt early-return path so pending context never gets stuck behind a "ok" / "thanks"
-// reply.
+// Legacy pending files are never read or delivered. The same-session path is best-effort
+// removed before both short and normal prompt paths.
 
 import {
   readStdinJson,
   requireString,
   die,
-  formatTransparentContext,
-  formatSpotterWarning,
   isChildCall,
   isSubagentCall,
   isOutsideSpotterProject,
@@ -27,7 +23,8 @@ import {
 } from './lib.mjs';
 import { sendRequest, TransportError } from '../daemon/transport.mjs';
 import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
-import { drainPendingContexts } from './pending-context.mjs';
+import { discardLegacyPending } from './pending-context.mjs';
+import { projectBackendFailure, projectParentAdvice, projectToolIds } from './parent-output-projector.mjs';
 
 const TIMEOUT_MS = 50_000;
 const SHORT_PROMPT_MAX_CHARS = 10;
@@ -36,9 +33,10 @@ export async function runUserPrompt({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
   spawnDaemonAndWaitReadyFn = spawnDaemonAndWaitReady,
-  drainPendingContextsFn = drainPendingContexts,
+  discardLegacyPendingFn = discardLegacyPending,
   recordHookEventFn = recordClaudeHookEvent,
   writeOutput = (text) => process.stdout.write(text),
+  writeError = (text) => process.stderr.write(text),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -50,44 +48,35 @@ export async function runUserPrompt({
   const projectRoot = findSpotterMarker(input.cwd);
   const startedAt = Date.now();
 
-  // Phase B: drain pending Spotter findings deferred from the previous turn's Stop hook.
-  // We always attempt to drain — even on the short-prompt skip path — so pending text never
-  // gets stuck behind a one-liner reply.
-  const pendingContexts = projectRoot
-    ? await drainPendingContextsFn({ projectRoot, sessionId })
-    : [];
+  const legacyPending = projectRoot
+    ? await discardLegacyPendingFn({ projectRoot, sessionId })
+    : { discarded: false, diagnostic: 'legacy_pending_invalid_path' };
 
-  // Loud degradation (§0 / §14.1): the audit could not run, but the user's prompt is valid.
-  // Surface a visible [Spotter からの警告] (merged with any drained pending context) and exit 0
-  // so the prompt reaches the host — never erase it with a blocking exit 2.
-  const degrade = async ({ code, message, reason }) => {
-    const contexts = pendingContexts.slice();
-    contexts.push(formatSpotterWarning({ code, message }));
-    emitAdditionalContext(writeOutput, contexts);
+  const degrade = async ({ code, reason }) => {
+    const failure = projectBackendFailure(code);
+    emitSystemMessage(writeOutput, failure.systemMessage);
+    safeWriteError(writeError, failure.stderr);
     await recordHookEventFn({
       projectRoot,
       event: {
         hook: 'UserPromptSubmit',
         status: 'degraded',
-        code: code ?? 'E_INTERNAL',
+        code: failure.code,
         reason,
-        pendingContextCount: pendingContexts.length,
+        legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
       },
     });
   };
 
   if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
-    if (pendingContexts.length > 0) {
-      emitAdditionalContext(writeOutput, pendingContexts);
-    }
     await recordHookEventFn({
       projectRoot,
       event: {
         hook: 'UserPromptSubmit',
         status: 'skipped',
         reason: 'short_prompt',
-        pendingContextCount: pendingContexts.length,
+        legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
       },
     });
@@ -115,13 +104,12 @@ export async function runUserPrompt({
       } catch (recoverErr) {
         await degrade({
           code: recoverErr?.code ?? 'E_RESURRECT_FAILED',
-          message: recoverErr?.message ?? '',
           reason: 'resurrect_failed',
         });
         return;
       }
     } else {
-      await degrade({ code: err?.code ?? 'E_INTERNAL', message: err?.message ?? '', reason: 'transport' });
+      await degrade({ code: err?.code, reason: 'transport' });
       return;
     }
   }
@@ -129,20 +117,17 @@ export async function runUserPrompt({
   if (response.ok !== true) {
     await degrade({
       code: response.error?.code ?? 'E_INTERNAL',
-      message: response.error?.message ?? '',
       reason: 'daemon_error',
     });
     return;
   }
 
   const result = response.result;
-  const contexts = pendingContexts.slice();
-  if (result.pass !== true) {
-    contexts.push(formatTransparentContext(result.missing_tools));
-  }
-  if (contexts.length > 0) {
-    emitAdditionalContext(writeOutput, contexts);
-  }
+  const toolIds = projectToolIds(Array.isArray(result.missing_tools) ? result.missing_tools.map((entry) => entry?.name) : []);
+  const advice = result.pass !== true
+    ? projectParentAdvice(toolIds)
+    : '';
+  if (advice) emitAdditionalContext(writeOutput, advice);
 
   await recordHookEventFn({
     projectRoot,
@@ -150,15 +135,14 @@ export async function runUserPrompt({
       hook: 'UserPromptSubmit',
       status: 'success',
       pass: result.pass === true,
-      missingTools: Array.isArray(result.missing_tools) ? result.missing_tools.map((m) => m.name) : [],
-      pendingContextCount: pendingContexts.length,
+      missingTools: toolIds,
+      legacyPendingDiagnostic: legacyPending.diagnostic,
       durationMs: Date.now() - startedAt,
     },
   });
 }
 
-function emitAdditionalContext(writeOutput, contexts) {
-  const text = contexts.map((c) => String(c).trim()).filter(Boolean).join('\n\n');
+function emitAdditionalContext(writeOutput, text) {
   if (!text) return;
   const output = {
     hookSpecificOutput: {
@@ -167,6 +151,18 @@ function emitAdditionalContext(writeOutput, contexts) {
     },
   };
   writeOutput(JSON.stringify(output));
+}
+
+function emitSystemMessage(writeOutput, systemMessage) {
+  writeOutput(JSON.stringify({ systemMessage }));
+}
+
+function safeWriteError(writeError, text) {
+  try {
+    writeError(text);
+  } catch {
+    // A warning writer must not turn a valid user prompt into a blocking hook failure.
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {

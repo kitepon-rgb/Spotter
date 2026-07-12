@@ -2,9 +2,9 @@
 //
 // Exit code contract (§14.3 / §14.4):
 //   0 = success (normal flow), OR a LOUD degradation: the audit could not run but the failure
-//       is surfaced in-band via a `[Spotter からの警告]` additionalContext block, so the host
-//       stays responsive and the user's prompt is never erased. UserPromptSubmit uses this for
-//       any daemon / auditor-backend failure (e.g. codex login expired) — see user-prompt.mjs.
+//       is surfaced through a fixed systemMessage and fixed stderr, so the host stays responsive
+//       and the user's prompt is never erased. UserPromptSubmit uses this for any daemon /
+//       auditor-backend failure — see user-prompt.mjs.
 //   1 = expected abnormal, non-blocking (Claude Code proceeds; first stderr line shown to user).
 //   2 = unexpected protocol/contract violation (malformed Claude Code envelope, missing required
 //       field). Reserved for cases where there is no real user prompt worth preserving — a
@@ -126,16 +126,6 @@ export function die(message, exitCode = 2) {
   process.exit(exitCode);
 }
 
-export function formatTransparentContext(missingTools) {
-  // §12.2: transparent phrasing — header `[Spotter からの推奨ツール]` 自体が出典明示を担う。
-  const lines = missingTools.map((m) => `- \`${m.name}\`: ${m.reason}`);
-  return [
-    '[Spotter からの推奨ツール]',
-    'このプロンプトに応答する前に、以下のツールを使うべきか検討してください。',
-    ...lines,
-  ].join('\n');
-}
-
 // Phase D (hook parity, 2026-05-08): hook-event JSONL helper for Claude-side hooks.
 // Each Claude hook calls this once with its observation; failures are silenced (a
 // missing diagnostics file is acceptable, but the hook itself must not break).
@@ -149,56 +139,4 @@ export async function recordClaudeHookEvent({ projectRoot, event, writeError } =
     event,
     writeError: writeError ?? ((text) => process.stderr.write(text)),
   });
-}
-
-export function formatTransparentBlockReason(missingTools) {
-  // §12.3: transparent phrasing — header `[Spotter からの指摘]` 自体が出典明示を担う。
-  const lines = missingTools.map((m) => `- \`${m.name}\`: ${m.reason}`);
-  return [
-    '[Spotter からの指摘]',
-    '上記応答ではツールが不足している可能性があります。以下を検討し、必要なら呼び出した上で応答を補正してください。',
-    ...lines,
-  ].join('\n');
-}
-
-// Loud degradation notice (§0 / §14.1): the auditor could not run this turn. Surfaced via the
-// same additionalContext channel as findings so the host stays responsive AND the user is told
-// they are temporarily unprotected (and, for an expired codex login, exactly how to recover).
-// This is the opposite of a silent fallback.
-export function formatSpotterWarning({ code, message, stage = 'user_input' } = {}) {
-  const header = '[Spotter からの警告]';
-  const stopFailure = stage === 'stop';
-  if (code === 'E_CODEX_CLI_AUTH') {
-    return [
-      header,
-      stopFailure
-        ? 'Spotter の監査エンジン (codex) のログインが失効しているため、直前の応答を Stop 時に監査できませんでした。'
-        : 'Spotter の監査エンジン (codex) のログインが失効しているため、今回の入力は監査できませんでした。',
-      stopFailure
-        ? 'ユーザーに、直前の応答が未監査だったことと「端末で `codex login` を実行して再ログインすれば Spotter の監査が復旧する」ことを伝えてください。'
-        : 'この応答を続ける前に、ユーザーに「端末で `codex login` を実行して再ログインすれば Spotter の監査が復旧する」ことを伝えてください。',
-    ].join('\n');
-  }
-  if (code === 'E_CODEX_CLI_USAGE_LIMIT') {
-    return [
-      header,
-      stopFailure
-        ? 'Spotter の監査エンジン (codex) が利用上限に達したため、直前の応答を Stop 時に監査できませんでした。'
-        : 'Spotter の監査エンジン (codex) が利用上限に達したため、今回の入力は監査できませんでした。',
-      stopFailure
-        ? 'ユーザーに、直前の応答が未監査だったことと、表示されたリセット時刻まで待つか Codex プランを確認すれば監査を再開できることを伝えてください。'
-        : 'この応答を続ける前に、ユーザーに、表示されたリセット時刻まで待つか Codex プランを確認すれば監査を再開できることを伝えてください。',
-    ].join('\n');
-  }
-  const lines = [
-    header,
-    stopFailure
-      ? `Spotter は直前の応答を Stop 時に監査できませんでした (理由コード: ${code ?? 'unknown'})。直前の応答は未監査です。`
-      : `Spotter は今回の入力を監査できませんでした (理由コード: ${code ?? 'unknown'})。この応答は監査されていません。`,
-    stopFailure
-      ? 'ユーザーに、直前の応答が未監査だったことと Spotter の監査が一時的に無効だったことを伝えてください。'
-      : 'この応答を続ける前に、ユーザーに Spotter の監査が一時的に無効になっていることを伝えてください。',
-  ];
-  if (typeof message === 'string' && message.length > 0) lines.push(`詳細: ${message}`);
-  return lines.join('\n');
 }

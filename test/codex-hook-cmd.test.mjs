@@ -543,9 +543,10 @@ test('runCodexUserPromptSubmitHook: child Codex backend env exits before reading
   }
 });
 
-test('runCodexUserPromptSubmitHook: backend error is surfaced as Codex context, not hook process failure', async () => {
+test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and never reflects provider text', async () => {
   const project = await makeProject();
   const out = [];
+  const errOut = [];
   try {
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
@@ -565,21 +566,23 @@ test('runCodexUserPromptSubmitHook: backend error is surfaced as Codex context, 
         },
       }),
       writeOutput: (text) => out.push(text),
+      writeError: (text) => errOut.push(text),
     });
 
     const parsed = JSON.parse(out.join(''));
-    assert.equal(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_USAGE_LIMIT/);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /usage limit/);
+    assert.match(parsed.systemMessage, /利用上限/);
+    assert.match(errOut.join(''), /利用上限/);
+    assert.doesNotMatch(out.join('') + errOut.join(''), /usage limit reached|You've hit your usage limit/);
+    assert.equal(parsed.hookSpecificOutput, undefined);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
 });
 
-test('runCodexUserPromptSubmitHook: model policy creation error degrades visibly without failing the hook', async () => {
+test('runCodexUserPromptSubmitHook: model policy creation error maps to fixed generic diagnostics', async () => {
   const project = await makeProject();
-  const out = [];
+    const out = [];
+  const errOut = [];
   const events = [];
   try {
     await runCodexUserPromptSubmitHook({
@@ -593,15 +596,37 @@ test('runCodexUserPromptSubmitHook: model policy creation error degrades visibly
       },
       recordHookEventFn: async ({ event }) => { events.push(event); },
       writeOutput: (text) => out.push(text),
+      writeError: (text) => errOut.push(text),
     });
 
     const parsed = JSON.parse(out.join(''));
-    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_MODEL_POLICY/);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
+    assert.match(parsed.systemMessage, /一時的な問題/);
+    assert.doesNotMatch(out.join('') + errOut.join(''), /SPOTTER_CODEX_CLI_MODEL is invalid|E_CODEX_CLI_MODEL_POLICY/);
     assert.equal(events.length, 1);
     assert.equal(events[0].status, 'error');
     assert.equal(events[0].backend, 'codex-cli');
-    assert.equal(events[0].code, 'E_CODEX_CLI_MODEL_POLICY');
+    assert.equal(events[0].code, 'E_SPOTTER_AUDIT_GENERIC');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexUserPromptSubmitHook: catalog read failure cannot escape or reflect its message', async () => {
+  const project = await makeProject();
+  const out = [];
+  const errOut = [];
+  const events = [];
+  try {
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({ cwd: project, prompt: '十分に長いユーザー入力' }),
+      readLocalFn: async () => { throw new Error('AI_SENTINEL:catalog-secret'); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeOutput: (text) => out.push(text),
+      writeError: (text) => errOut.push(text),
+    });
+    assert.match(JSON.parse(out.join('')).systemMessage, /一時的な問題/);
+    assert.doesNotMatch(out.join('') + errOut.join('') + JSON.stringify(events), /AI_SENTINEL|catalog-secret/);
+    assert.equal(events[0].code, 'E_SPOTTER_AUDIT_GENERIC');
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -666,7 +691,7 @@ test('runCodexUserPromptSubmitHook: exits outside installed Spotter project', as
   }
 });
 
-test('runCodexStopHook: queues turn_end miss for next UserPromptSubmit context', async () => {
+test('runCodexStopHook: records a finding without delivering it to the next prompt', async () => {
   const project = await makeProject();
   const stopOut = [];
   const userOut = [];
@@ -703,7 +728,7 @@ test('runCodexStopHook: queues turn_end miss for next UserPromptSubmit context',
       writeOutput: (text) => stopOut.push(text),
     });
 
-    assert.deepEqual(stopOut, []);
+    assert.match(JSON.parse(stopOut.join('')).systemMessage, /確認候補を記録/);
 
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
@@ -718,16 +743,13 @@ test('runCodexStopHook: queues turn_end miss for next UserPromptSubmit context',
       writeOutput: (text) => userOut.push(text),
     });
 
-    const parsed = JSON.parse(userOut.join(''));
-    assert.equal(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-    assert.match(parsed.hookSpecificOutput.additionalContext, /Spotter からの指摘/);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /mcp__caveat__caveat_search/);
+    assert.deepEqual(userOut, []);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
 });
 
-test('runCodexStopHook: backend error is queued for next UserPromptSubmit context', async () => {
+test('runCodexStopHook: backend error is fixed diagnostics and is not delivered to the next prompt', async () => {
   const project = await makeProject();
   const stopOut = [];
   const stopErr = [];
@@ -754,9 +776,9 @@ test('runCodexStopHook: backend error is queued for next UserPromptSubmit contex
       writeError: (text) => stopErr.push(text),
     });
 
-    assert.deepEqual(stopOut, []);
-    assert.match(stopErr.join(''), /E_CODEX_CLI_TIMEOUT/);
-    assert.match(stopErr.join(''), /No fallback auditor was used/);
+    assert.match(JSON.parse(stopOut.join('')).systemMessage, /時間内に完了しなかった/);
+    assert.match(stopErr.join(''), /時間内に完了しなかった/);
+    assert.doesNotMatch(stopOut.join('') + stopErr.join(''), /codex-cli did not respond|E_CODEX_CLI_TIMEOUT/);
 
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
@@ -770,16 +792,66 @@ test('runCodexStopHook: backend error is queued for next UserPromptSubmit contex
       writeOutput: (text) => userOut.push(text),
     });
 
-    const parsed = JSON.parse(userOut.join(''));
-    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_TIMEOUT/);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
+    assert.deepEqual(userOut, []);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
 });
 
-test('runCodexStopHook: model policy creation error is queued without failing the hook', async () => {
+test('runCodexStopHook: transcript observation failure is fixed and non-blocking', async () => {
   const project = await makeProject();
+  const out = [];
+  const errOut = [];
+  const events = [];
+  try {
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        transcript_path: '/tmp/transcript.jsonl',
+        last_assistant_message: '十分に長い応答'.repeat(20),
+      }),
+      readCodexToolUsageFn: async () => { throw new Error('AI_SENTINEL:transcript-secret'); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeOutput: (text) => out.push(text),
+      writeError: (text) => errOut.push(text),
+    });
+    assert.match(JSON.parse(out.join('')).systemMessage, /一時的な問題/);
+    assert.equal(events[0].reason, 'tool_usage_observation');
+    assert.doesNotMatch(out.join('') + errOut.join('') + JSON.stringify(events), /AI_SENTINEL|transcript-secret/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: catalog read failure is fixed and non-blocking', async () => {
+  const project = await makeProject();
+  const out = [];
+  const errOut = [];
+  const events = [];
+  try {
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        transcript_path: '/tmp/transcript.jsonl',
+        last_assistant_message: '十分に長い応答'.repeat(20),
+      }),
+      readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
+      readLocalFn: async () => { throw new Error('AI_SENTINEL:catalog-secret'); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeOutput: (text) => out.push(text),
+      writeError: (text) => errOut.push(text),
+    });
+    assert.match(JSON.parse(out.join('')).systemMessage, /一時的な問題/);
+    assert.equal(events[0].code, 'E_SPOTTER_AUDIT_GENERIC');
+    assert.doesNotMatch(out.join('') + errOut.join('') + JSON.stringify(events), /AI_SENTINEL|catalog-secret/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: model policy creation error is fixed generic diagnostics without next-turn delivery', async () => {
+  const project = await makeProject();
+  const stopOut = [];
   const stopErr = [];
   const userOut = [];
   const events = [];
@@ -797,14 +869,15 @@ test('runCodexStopHook: model policy creation error is queued without failing th
         throw new CodexAuditorModelPolicyError('SPOTTER_CODEX_CLI_REASONING_EFFORT is invalid');
       },
       recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeOutput: (text) => stopOut.push(text),
       writeError: (text) => stopErr.push(text),
     });
 
-    assert.match(stopErr.join(''), /E_CODEX_CLI_MODEL_POLICY/);
+    assert.match(JSON.parse(stopOut.join('')).systemMessage, /一時的な問題/);
+    assert.doesNotMatch(stopOut.join('') + stopErr.join(''), /SPOTTER_CODEX_CLI_REASONING_EFFORT|E_CODEX_CLI_MODEL_POLICY/);
     assert.equal(events.length, 1);
     assert.equal(events[0].status, 'error');
-    assert.equal(events[0].code, 'E_CODEX_CLI_MODEL_POLICY');
-    assert.equal(events[0].warningQueued, true);
+    assert.equal(events[0].code, 'E_SPOTTER_AUDIT_GENERIC');
 
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
@@ -815,15 +888,13 @@ test('runCodexStopHook: model policy creation error is queued without failing th
       createAuditorBackendFn: () => { throw new Error('short prompt must not create a backend'); },
       writeOutput: (text) => userOut.push(text),
     });
-    const parsed = JSON.parse(userOut.join(''));
-    assert.match(parsed.hookSpecificOutput.additionalContext, /E_CODEX_CLI_MODEL_POLICY/);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /No fallback auditor was used/);
+    assert.deepEqual(userOut, []);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
 });
 
-test('runCodexStopHook: pending warning persistence failure stays non-blocking and loud', async () => {
+test('runCodexStopHook: obsolete pending writer injection is ignored and failure stays fixed', async () => {
   const project = await makeProject();
   try {
     for (const appendPendingContextFn of [
@@ -849,19 +920,18 @@ test('runCodexStopHook: pending warning persistence failure stays non-blocking a
         writeError: (text) => errors.push(text),
       });
 
-      assert.match(errors.join(''), /Spotter Codex Stop warning persistence failed/);
-      assert.match(errors.join(''), /E_CODEX_CLI_MODEL_POLICY/);
+      assert.match(errors.join(''), /一時的な問題/);
+      assert.doesNotMatch(errors.join(''), /invalid model policy|E_CODEX_CLI_MODEL_POLICY/);
       assert.equal(events.length, 1);
       assert.equal(events[0].status, 'error');
-      assert.equal(events[0].warningQueued, false);
-      assert.ok(events[0].pendingWriteError);
+      assert.equal(events[0].code, 'E_SPOTTER_AUDIT_GENERIC');
     }
   } finally {
     await rm(project, { recursive: true, force: true });
   }
 });
 
-test('runCodexStopHook: finding persistence failure degrades without rejecting', async () => {
+test('runCodexStopHook: obsolete pending writer cannot affect structured finding', async () => {
   const project = await makeProject();
   const errors = [];
   const events = [];
@@ -889,12 +959,10 @@ test('runCodexStopHook: finding persistence failure degrades without rejecting',
       writeError: (text) => errors.push(text),
     });
 
-    assert.match(errors.join(''), /Spotter Codex Stop finding persistence failed/);
-    assert.match(errors.join(''), /mcp__caveat__caveat_search/);
+    assert.equal(errors.join(''), '');
     assert.equal(events.length, 1);
-    assert.equal(events[0].status, 'degraded');
-    assert.equal(events[0].findingQueued, false);
-    assert.match(events[0].pendingWriteError, /read-only filesystem/);
+    assert.equal(events[0].status, 'finding');
+    assert.deepEqual(events[0].missingTools, ['mcp__caveat__caveat_search']);
   } finally {
     await rm(project, { recursive: true, force: true });
   }

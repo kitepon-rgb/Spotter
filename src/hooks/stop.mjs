@@ -1,48 +1,27 @@
-// Stop hook — send turn_end to daemon. Phase B (hook parity, 2026-05-08): deferred delivery.
-//
-// Prior behavior (pre-v1.4.8): on `pass:false` returned `{decision:"block", reason:<text>}` so
-// Claude Code re-asks Bell to regenerate the response. This worked but caused a UX defect —
-// the regenerated reply (= the corrective answer) became the transcript's final message and
-// the original "A" topic got lost in transcript review.
-//
-// Phase B behavior: on `pass:false` we instead append the same transparent block-reason text
-// to `<projectRoot>/.spotter/pending/<sessionId>.json`. The next UserPromptSubmit drains the
-// queue and folds the entries into `additionalContext`, so Bell receives the audit finding
-// alongside the next user input. The original A reply stays as the turn's final message.
-//
-// `decision:"block"` is no longer emitted from this hook. Backend / transport errors do NOT
-// force a continuation (a Stop exit 2 would block stopping = harmful noise on a Spotter-side
-// failure); they are recorded as `degraded` and exit 0. Their loud `[Spotter からの警告]` is
-// persisted in the same pending queue as findings, then delivered by the next
-// UserPromptSubmit. A persistence failure is written to stderr but never turns Stop into exit 2.
-// `stop_hook_active:true` is still observed: the daemon early-passes on it, so we just
-// receive `pass:true` and return without writing pending context.
-//
-// v0.2 gates: see src/hooks/session-start.mjs comment.
+// Stop hook — send turn_end to daemon and emit only fixed system messages. It never blocks the
+// host and never carries auditor findings or failures into a future UserPromptSubmit.
 
 import {
   readStdinJson,
   requireString,
   die,
   findSpotterMarker,
-  formatTransparentBlockReason,
-  formatSpotterWarning,
   isChildCall,
   isSubagentCall,
   recordClaudeHookEvent,
 } from './lib.mjs';
 import { getLastAssistantText } from './transcript-reader.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
-import { appendPendingContext } from './pending-context.mjs';
+import { STOP_FINDING_SYSTEM_MESSAGE, projectBackendFailure, projectToolIds } from './parent-output-projector.mjs';
 
 const TIMEOUT_MS = 50_000;
 
 export async function runStop({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
-  appendPendingContextFn = appendPendingContext,
   getLastAssistantTextFn = getLastAssistantText,
   recordHookEventFn = recordClaudeHookEvent,
+  writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
 } = {}) {
   if (isChildCall()) return;
@@ -66,48 +45,19 @@ export async function runStop({
     }
   };
 
-  const persistPending = async ({ text, kind }) => {
-    let queued = false;
-    let pendingWriteError = null;
-    // Never redirect a pending entry into a different installed ancestor if the original marker
-    // disappears while the daemon request is in flight.
-    const currentProjectRoot = findSpotterMarker(input.cwd);
-    if (currentProjectRoot !== projectRoot) {
-      pendingWriteError = 'Spotter project marker no longer identifies the original project';
-    } else {
-      try {
-        queued = await appendPendingContextFn({
-          projectRoot,
-          sessionId,
-          text,
-        }) === true;
-        if (!queued) pendingWriteError = 'appendPendingContext returned false';
-      } catch (err) {
-        pendingWriteError = String(err?.message ?? err) || 'unknown pending context persistence error';
-      }
-    }
-    if (!queued) {
-      // Include the original warning/finding as well as the persistence failure. If the durable
-      // channel is unavailable, stderr is the only remaining loud surface for this Stop event.
-      reportError(`Spotter Stop ${kind} persistence failed: ${pendingWriteError}\n${text}\n`);
-    }
-    return { queued, pendingWriteError };
-  };
-
-  const recordFailure = async ({ code, message, reason }) => {
-    const text = formatSpotterWarning({ code, message, stage: 'stop' });
-    const { queued: warningQueued, pendingWriteError } = await persistPending({ text, kind: 'warning' });
+  const recordFailure = async ({ code, reason }) => {
+    const failure = projectBackendFailure(code);
+    reportError(failure.stderr);
+    writeOutput(JSON.stringify({ systemMessage: failure.systemMessage }));
     await recordHookEventFn({
       projectRoot,
       writeError: reportError,
       event: {
         hook: 'Stop',
         status: 'degraded',
-        code: code ?? 'E_INTERNAL',
+        code: failure.code,
         reason,
         durationMs: Date.now() - startedAt,
-        warningQueued,
-        ...(!warningQueued ? { pendingWriteError } : {}),
       },
     });
   };
@@ -129,22 +79,18 @@ export async function runStop({
       timeoutMs: TIMEOUT_MS,
     });
   } catch (err) {
-    // Spotter-side failure (daemon unreachable, etc.): persist a loud warning and exit 0. Do NOT
-    // force the model to continue: a Stop exit 2 blocks stopping.
+    // Spotter-side failure is surfaced only through fixed diagnostics; a Stop exit 2 would block stopping.
     await recordFailure({
       code: err?.code ?? 'E_INTERNAL',
-      message: err?.message ?? '',
       reason: 'transport',
     });
     return;
   }
 
   if (response.ok !== true) {
-    // Auditor backend failed (e.g. codex login expired): queue its actionable warning and exit 0.
-    // Forcing a continuation (exit 2) on a Spotter-side failure is harmful.
+    // Auditor backend failure is fixed-diagnostic only; forcing a continuation is harmful.
     await recordFailure({
       code: response.error?.code ?? 'E_INTERNAL',
-      message: response.error?.message ?? '',
       reason: 'daemon_error',
     });
     return;
@@ -166,25 +112,19 @@ export async function runStop({
     return; // nothing to defer
   }
 
-  // Phase B: queue the finding for the next UserPromptSubmit instead of returning
-  // decision:"block". Using the same transparent block-reason wording keeps the user-facing
-  // text identical to the prior block flow.
-  const text = formatTransparentBlockReason(result.missing_tools);
-  const { queued: findingQueued, pendingWriteError } = await persistPending({ text, kind: 'finding' });
+  writeOutput(JSON.stringify({ systemMessage: STOP_FINDING_SYSTEM_MESSAGE }));
   await recordHookEventFn({
     projectRoot,
     writeError: reportError,
     event: {
       hook: 'Stop',
-      status: findingQueued ? 'queued' : 'degraded',
+      status: 'finding',
       pass: false,
-      missingTools: result.missing_tools.map((m) => m.name),
+      missingTools: projectToolIds(Array.isArray(result.missing_tools) ? result.missing_tools.map((entry) => entry?.name) : []),
       durationMs: Date.now() - startedAt,
-      findingQueued,
-      ...(!findingQueued ? { pendingWriteError } : {}),
     },
   });
-  // No stdout output — Stop hook just exits 0. Pending will surface on next UserPromptSubmit.
+  // No continuation or pending delivery is requested.
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {

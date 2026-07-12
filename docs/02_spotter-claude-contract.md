@@ -87,14 +87,10 @@ When `spotter install` sees Codex CLI and registers Codex hooks, it also synchro
 `spotter db refresh --host-agent codex` so `.spotter/tool-db.codex.json` follows the Codex
 tool environment without overwriting Claude `.spotter/tool-db.json` or Claude's global
 description cache at `~/.spotter/tool-db.json`. Codex global cache writes go to
-`~/.spotter/tool-db.codex.json`. Codex `Stop` does not
-block the just-finished answer. It uses deferred delivery: Spotter context is queued under
-`.spotter/pending/` (host-neutral, shared with Claude Stop deferred delivery as of v1.4.8) and surfaced on the next same-session `UserPromptSubmit`.
-This remains an explicit product choice. A 2026-05 smoke showed `decision:"block"` after final
-answer as `Stop Blocked` / exit code 1. The current Codex hook contract now describes `reason` as a
-continuation prompt, so immediate continuation must be re-characterized before replacing the pending queue;
-the old claim that Codex exposes no continuation is no longer valid. Backend errors are also written to
-stderr and queued as warnings so one-shot `codex exec` and the next same-session prompt do not hide the failure.
+`~/.spotter/tool-db.codex.json`. Claude / Codex `Stop` does not block or continue the just-finished
+answer and does not queue model-facing text for a later turn. Findings remain structured Hook events;
+backend failures are reported with an allow-listed fixed `systemMessage`, fixed stderr, and a structured
+Hook event. Neither path may carry auditor prose or provider stdout / stderr into model context.
 Codex hook auditor calls use the production model policy (currently `gpt-5.6-terra × medium`) and a 20s timeout.
 Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
@@ -111,17 +107,22 @@ no used tools are skipped to avoid duplicate post-answer latency.
   - otherwise starts exactly one detached `spotter db refresh --host-agent codex` and returns without waiting.
 - `UserPromptSubmit`
   - returns early for child calls, subagent calls, outside-project calls.
-  - drains `<projectRoot>/.spotter/pending/<sessionId>.json` before deciding short-prompt skip.
-  - on short prompt (≤10 chars trimmed), emits drained pending context (if any) and returns.
+  - deletes a same-session legacy `<projectRoot>/.spotter/pending/<sessionId>.json` without reading or
+    parsing its contents. `ENOENT` is success; another unlink failure emits only fixed diagnostics and
+    does not block the prompt.
+  - on short prompt (≤10 chars trimmed), returns without model-facing output.
   - sends `event:"user_input"` to the daemon for non-short prompts.
   - on `E_UNREACHABLE`, respawns daemon once and retries.
-  - merges drained pending context with daemon `pass:false` finding into one `additionalContext`.
+  - on daemon `pass:false`, passes only catalog-matched tool IDs to the common host-advice projector.
+    The projector rejects IDs outside `[A-Za-z0-9_.:/-]`, IDs over 160 characters, duplicates and
+    overflow, then emits at most five stable-sorted IDs in a fixed factual, non-imperative
+    `additionalContext` of at most 2,000 characters. Auditor `reason` / `raw` are never projector inputs.
   - **on any auditor/daemon failure that is not a malformed Claude Code envelope** (daemon error
-    `response.ok !== true`, transport failure, or resurrect failure), emits a `[Spotter からの警告]`
-    `additionalContext` block (merged with any drained pending) and **exits 0** — the user's prompt
-    is never erased (a UserPromptSubmit exit 2 would block/erase it). `E_CODEX_CLI_AUTH` produces an
-    actionable message naming `codex login`; all other codes produce a generic warning including the
-    code. Recorded as `status:"degraded"`. This is a LOUD degradation, not a silent pass.
+    `response.ok !== true`, transport failure, or resurrect failure), emits an allow-listed fixed
+    `systemMessage`, fixed stderr, and `status:"degraded"` Hook event, then **exits 0** — the user's
+    prompt is never erased. Unknown codes map to one generic fixed warning. Error message and provider
+    stdout / stderr are not reflected. Model-facing `additionalContext` is not a warning fallback.
+    This contract guarantees emitted Hook output, not UI visibility on every Codex App/background surface.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
 - `PreToolUse`
   - records `tool_name` as `event:"tool_used"`.
@@ -129,22 +130,18 @@ no used tools are skipped to avoid duplicate post-answer latency.
   - on a daemon/transport error, records `status:"degraded"` and **exits 0 (allows the tool)** —
     recording is best-effort telemetry; a PreToolUse exit 2 would wrongly DENY the tool.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
-- `Stop` (Phase B / v1.4.8 — deferred delivery)
+- `Stop` (v1.4.19 — structured observation only)
   - sends visible assistant text as `event:"turn_end"`.
   - daemon may early-pass with `reason:"short_final_no_tools"` when final ≤120 chars and used_tools is empty
     (`SPOTTER_STOP_SHORT_FINAL_MAX_CHARS` to tune; `<= 0` disables).
-  - on `pass:false`, **does NOT** return `decision:"block"`. Appends the same transparent
-    block-reason wording to `<projectRoot>/.spotter/pending/<sessionId>.json` (JSON array,
-    de-duplicated) and exits 0 with no stdout. Pending entries surface on the next same-session
-    UserPromptSubmit's `additionalContext`.
-  - `stop_hook_active:true` triggers daemon early-pass; nothing is queued.
+  - on `pass:false`, **does NOT** return `decision:"block"` and writes no pending context. It records
+    catalog-matched tool IDs as structured event data and may emit only a fixed, non-imperative
+    `systemMessage`. The next `UserPromptSubmit` receives nothing from this finding.
+  - `stop_hook_active:true` triggers daemon early-pass; no model-facing output is produced.
   - backend / transport errors record `status:"degraded"` and **exit 0** (no continuation forced —
-    a Stop exit 2 would block the model from stopping). A warning entry is de-duplicated into the same
-    session pending queue even though no verdict was produced; the loud `[Spotter からの警告]` is surfaced
-    exactly once by the next UserPromptSubmit, alongside any finding. Pending write failure is itself
-    reported to stderr and the event log without rejecting the non-blocking Stop path. This is not
-    a silent pass — but note the inherent deferred-delivery limit: if the session ends before any
-    next UserPromptSubmit, that last turn's Stop failure is never surfaced (tracked in open-issues).
+    a Stop exit 2 would block the model from stopping). The Hook immediately emits an allow-listed fixed
+    `systemMessage`, fixed stderr, and structured Hook event; UI visibility is host-surface dependent. Auditor / provider
+    prose is never reflected and no next-turn delivery is created.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
 - `SessionEnd`
   - requests daemon shutdown for the session.

@@ -7,22 +7,22 @@ import { fileURLToPath } from 'node:url';
 import { createAuditorBackend, selectAuditorBackend } from '../core/auditor-backend.mjs';
 import { resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
 import { codexLastAssistantMessage, readCodexToolUsage } from '../core/codex-transcript.mjs';
-import { legacyResultFromJudgment } from '../core/judgment.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
 import { spawnRefreshDetached } from '../hooks/spawn-daemon.mjs';
 import {
   die,
   findSpotterMarker,
-  formatTransparentBlockReason,
-  formatTransparentContext,
   isChildCall,
   readStdinJson,
   requireString,
 } from '../hooks/lib.mjs';
+import { discardLegacyPending } from '../hooks/pending-context.mjs';
 import {
-  appendPendingContext,
-  drainPendingContexts,
-} from '../hooks/pending-context.mjs';
+  STOP_FINDING_SYSTEM_MESSAGE,
+  projectBackendFailure,
+  projectParentAdvice,
+  projectToolIds,
+} from '../hooks/parent-output-projector.mjs';
 import {
   appendHookEvent,
   hookEventsPath,
@@ -113,6 +113,7 @@ export async function runCodexUserPromptSubmitHook({
   readLocalFn = readLocal,
   createAuditorBackendFn = createAuditorBackend,
   recordHookEventFn = appendCodexHookEvent,
+  discardLegacyPendingFn = discardLegacyPending,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
 } = {}) {
@@ -123,7 +124,7 @@ export async function runCodexUserPromptSubmitHook({
   const startedAt = Date.now();
 
   const prompt = requireString(input, 'prompt');
-  const contexts = await drainPendingContexts({ projectRoot, sessionId: codexSessionId(input) });
+  const legacyPending = await discardLegacyPendingFn({ projectRoot, sessionId: codexSessionId(input) });
   if ([...prompt.trim()].length <= SHORT_PROMPT_MAX_CHARS) {
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
@@ -131,35 +132,36 @@ export async function runCodexUserPromptSubmitHook({
         hook: 'UserPromptSubmit',
         status: 'skipped',
         reason: 'short_prompt',
-        pendingContextCount: contexts.length,
+        legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
       },
     }, writeError);
-    writeCodexUserPromptContexts({ contexts, writeOutput });
     return;
   }
 
-  const catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
+  let catalog;
   let backend;
   let judgment;
   try {
+    catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
     backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
     judgment = await backend.judge({ stage: 'user_input', userInput: prompt });
   } catch (err) {
-    contexts.push(formatCodexHookBackendError(err));
+    const failure = projectBackendFailure(err?.code);
+    safeWriteError(writeError, failure.stderr);
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
       event: {
         hook: 'UserPromptSubmit',
         status: 'error',
         backend: err?.backend ?? null,
-        code: err?.code ?? 'E_INTERNAL',
+        code: failure.code,
         ...compactCodexModelSelectionForEvent(err?.diagnostics?.modelSelection),
-        pendingContextCount: contexts.length,
+        legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
       },
     }, writeError);
-    writeCodexUserPromptContexts({ contexts, writeOutput });
+    writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
     return;
   }
   await recordCodexHookEventSafe(recordHookEventFn, {
@@ -169,20 +171,20 @@ export async function runCodexUserPromptSubmitHook({
       status: 'success',
       backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
       pass: judgment.pass,
-      missingTools: judgment.findings.map((finding) => finding.toolName),
+      missingTools: projectToolIds(judgment.findings.map((finding) => finding.toolName)),
       ...compactCodexModelSelectionForEvent(judgment.meta?.modelSelection),
-      pendingContextCount: contexts.length,
+      legacyPendingDiagnostic: legacyPending.diagnostic,
       backendDurationMs: judgment.meta?.durationMs ?? null,
       durationMs: Date.now() - startedAt,
     },
   }, writeError);
   if (judgment.pass === true) {
-    writeCodexUserPromptContexts({ contexts, writeOutput });
     return;
   }
 
-  contexts.push(formatTransparentContext(legacyResultFromJudgment(judgment).missing_tools));
-  writeCodexUserPromptContexts({ contexts, writeOutput });
+  const toolIds = projectToolIds(judgment.findings.map((finding) => finding.toolName));
+  const advice = projectParentAdvice(toolIds);
+  if (advice) writeCodexUserPromptContexts({ contexts: [advice], writeOutput });
 }
 
 export async function runCodexStopHook({
@@ -190,7 +192,6 @@ export async function runCodexStopHook({
   readLocalFn = readLocal,
   createAuditorBackendFn = createAuditorBackend,
   readCodexToolUsageFn = readCodexToolUsage,
-  appendPendingContextFn = appendPendingContext,
   recordHookEventFn = appendCodexHookEvent,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
@@ -202,33 +203,28 @@ export async function runCodexStopHook({
   if (!projectRoot) return;
   const startedAt = Date.now();
   const reportError = (text) => safeWriteError(writeError, text);
-  const persistPending = async ({ text, kind }) => {
-    let queued = false;
-    let pendingWriteError = null;
-    const currentProjectRoot = findSpotterMarker(input.cwd);
-    if (currentProjectRoot !== projectRoot) {
-      pendingWriteError = 'Spotter project marker no longer identifies the original project';
-    } else {
-      try {
-        queued = await appendPendingContextFn({
-          projectRoot,
-          sessionId: codexSessionId(input),
-          text,
-        }) === true;
-        if (!queued) pendingWriteError = 'appendPendingContext returned false';
-      } catch (err) {
-        pendingWriteError = String(err?.message ?? err) || 'unknown pending context persistence error';
-      }
-    }
-    if (!queued) {
-      reportError(`Spotter Codex Stop ${kind} persistence failed: ${pendingWriteError}\n${text}\n`);
-    }
-    return { queued, pendingWriteError };
-  };
-
   const transcriptPath = requireString(input, 'transcript_path');
   const finalResponse = codexLastAssistantMessage(input) ?? '(no final response available)';
-  const toolUsage = await readCodexToolUsageFn(transcriptPath);
+  let toolUsage;
+  try {
+    toolUsage = await readCodexToolUsageFn(transcriptPath);
+  } catch (err) {
+    const failure = projectBackendFailure(err?.code);
+    reportError(failure.stderr);
+    writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'Stop',
+        status: 'error',
+        code: failure.code,
+        reason: 'tool_usage_observation',
+        usedToolCount: 0,
+        durationMs: Date.now() - startedAt,
+      },
+    }, reportError);
+    return;
+  }
   const usedTools = Array.isArray(toolUsage?.usedTools) ? toolUsage.usedTools : [];
   const toolUsageEvent = compactCodexToolUsageForEvent(toolUsage);
   if (toolUsageEvent.toolUsageAnomalyCount === 0
@@ -246,29 +242,25 @@ export async function runCodexStopHook({
     }, reportError);
     return;
   }
-  const catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
+  let catalog;
   let backend;
   let judgment;
   try {
+    catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
     backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
     judgment = await backend.judge({ stage: 'turn_end', finalResponse, usedTools });
   } catch (err) {
-    const errorText = formatCodexHookBackendError(err);
-    reportError(`${errorText}\n`);
-    const { queued: warningQueued, pendingWriteError } = await persistPending({
-      text: errorText,
-      kind: 'warning',
-    });
+    const failure = projectBackendFailure(err?.code);
+    reportError(failure.stderr);
+    writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
       event: {
         hook: 'Stop',
         status: 'error',
         backend: err?.backend ?? null,
-        code: err?.code ?? 'E_INTERNAL',
+        code: failure.code,
         ...compactCodexModelSelectionForEvent(err?.diagnostics?.modelSelection),
-        warningQueued,
-        ...(!warningQueued ? { pendingWriteError } : {}),
         usedToolCount: usedTools.length,
         ...toolUsageEvent,
         durationMs: Date.now() - startedAt,
@@ -295,22 +287,16 @@ export async function runCodexStopHook({
     return;
   }
 
-  const findingText = formatTransparentBlockReason(legacyResultFromJudgment(judgment).missing_tools);
-  const { queued: findingQueued, pendingWriteError } = await persistPending({
-    text: findingText,
-    kind: 'finding',
-  });
+  writeCodexSystemMessage({ systemMessage: STOP_FINDING_SYSTEM_MESSAGE, writeOutput });
   await recordCodexHookEventSafe(recordHookEventFn, {
     projectRoot,
     event: {
       hook: 'Stop',
-      status: findingQueued ? 'queued' : 'degraded',
+      status: 'finding',
       backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
       pass: false,
-      missingTools: judgment.findings.map((finding) => finding.toolName),
+      missingTools: projectToolIds(judgment.findings.map((finding) => finding.toolName)),
       ...compactCodexModelSelectionForEvent(judgment.meta?.modelSelection),
-      findingQueued,
-      ...(!findingQueued ? { pendingWriteError } : {}),
       usedToolCount: usedTools.length,
       ...toolUsageEvent,
       backendDurationMs: judgment.meta?.durationMs ?? null,
@@ -614,34 +600,8 @@ function writeCodexUserPromptContexts({ contexts, writeOutput }) {
   }));
 }
 
-function formatCodexHookBackendError(err) {
-  const code = typeof err?.code === 'string' && err.code ? ` ${err.code}` : '';
-  const backend = typeof err?.backend === 'string' && err.backend ? ` ${err.backend}` : '';
-  const message = err?.message ? String(err.message) : String(err);
-  const diagnostics = formatBackendDiagnostics(err?.diagnostics);
-  return [
-    `Spotter auditor backend error${code}${backend}: ${message}`,
-    'No fallback auditor was used.',
-    diagnostics,
-  ].filter(Boolean).join('\n');
-}
-
-function formatBackendDiagnostics(diagnostics) {
-  if (!diagnostics || typeof diagnostics !== 'object') return '';
-  const stderr = typeof diagnostics.stderr === 'string' ? diagnostics.stderr.trim() : '';
-  const stdout = typeof diagnostics.stdout === 'string' ? diagnostics.stdout.trim() : '';
-  const sections = [];
-  const model = diagnostics.modelSelection;
-  if (model && typeof model === 'object') {
-    sections.push(
-      `auditor model: model=${model.effectiveModel ?? 'unknown'} effort=${model.effectiveReasoningEffort ?? 'unknown'} source=${model.modelSource ?? 'unknown'}/${model.effortSource ?? 'unknown'} availability=${model.availability ?? 'unknown'}`,
-    );
-  }
-  const output = [];
-  if (stdout) output.push(`stdout:\n${stdout.split('\n').slice(-4).join('\n')}`);
-  if (stderr) output.push(`stderr:\n${stderr.split('\n').slice(-4).join('\n')}`);
-  if (output.length > 0) sections.push(`backend output:\n${output.join('\n')}`);
-  return sections.join('\n');
+function writeCodexSystemMessage({ systemMessage, writeOutput }) {
+  writeOutput(JSON.stringify({ systemMessage }));
 }
 
 function compactCodexModelSelectionForEvent(selection) {
@@ -661,10 +621,8 @@ function codexSessionId(payload) {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-// Phase B (hook parity, 2026-05-08): pending-context helpers were moved to
-// `src/hooks/pending-context.mjs` and the on-disk path migrated from
-// `.spotter/codex-pending/` to host-neutral `.spotter/pending/`. The Claude Stop hook
-// now writes to the same queue.
+// v1.4.19: legacy pending migration is handled only by `discardLegacyPending` on
+// UserPromptSubmit. Stop findings are never persisted for a future parent prompt.
 
 // Phase D (hook parity, 2026-05-08): Codex hook events now go through the host-neutral
 // `appendHookEvent` so Claude / Codex events live in the same `.spotter/hook-events.jsonl`.

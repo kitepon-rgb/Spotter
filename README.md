@@ -88,20 +88,19 @@ spotter codex-hook install
 
 ### Audit flow per turn
 
-Claude Code and Codex have different `Stop` surfaces. The diagram below is the Claude
-host flow. Codex native `Stop` uses deferred delivery: findings are queued and shown on
-the next same-session `UserPromptSubmit`.
+Claude Code and Codex share the same safe parent-output projector. Auditor prose stays
+internal; only validated tool IDs can become fixed, non-imperative advice on
+`UserPromptSubmit`. `Stop` records structured findings without injecting them into a later turn.
 
 ```mermaid
 flowchart TD
     U([User prompt]) --> UPH[UserPromptSubmit hook<br/>Spotter audits prompt against catalog]
-    UPH --> BT[Claude thinking<br/>receives Spotter's recommendations<br/>as additionalContext]
+    UPH --> BT[Host model<br/>may receive fixed advisory<br/>with validated tool IDs]
     BT --> BA([Claude's first answer])
     BA --> SH[Stop hook<br/>Spotter re-audits answer + tools used]
     SH --> DEC{Missed<br/>tool?}
     DEC -->|No| DONE([Done])
-    DEC -->|Yes| SB[Queue finding to .spotter/pending/<br/>v1.4.8 deferred delivery]
-    SB --> NEXT([Surfaces as additionalContext<br/>on next UserPromptSubmit])
+    DEC -->|Yes| EVT[Record structured Hook event<br/>no next-turn injection]
 ```
 
 ### Catalog discovery
@@ -211,13 +210,14 @@ the production values for controlled experiments; diagnostics mark overrides as 
 
 ## Known limitations
 
-- The `Stop` hook fires **after** the first answer has already been streamed. Spotter therefore queues a finding for the next same-session prompt instead of rewriting that answer. Detection accuracy in `UserPromptSubmit` (the *pre-response* stage) remains the primary quality axis
-- `Stop` hook is **deferred** for both Claude and Codex hosts as of v1.4.8. When Spotter finds a missed tool at `Stop`, it appends the finding to `<projectRoot>/.spotter/pending/<sessionId>.json` and surfaces it on the next same-session `UserPromptSubmit` as `additionalContext`. The original assistant message stays as the turn's final transcript entry — no `decision:"block"` re-generation cycle. The same pending file is shared by Claude and Codex (host-neutral path)
-- **Since v0.5.0, JSON schema violations from Haiku are treated as expected anomalies** (session renew + `role_collapse_reset`). **Since v1.4.15, an auditor/daemon failure no longer blocks the prompt**: `UserPromptSubmit` emits a loud `[Spotter からの警告]` and exits 0. A `Stop` failure is queued as the same kind of warning and delivered once on the next same-session prompt. If the session ends immediately, no later prompt exists and that final warning cannot be surfaced
+- The `Stop` hook fires **after** the first answer has already been streamed. Spotter records a structured finding but does not rewrite the answer, force a continuation, or inject auditor text into the next prompt. Detection accuracy in `UserPromptSubmit` (the *pre-response* stage) remains the primary quality axis
+- `UserPromptSubmit.additionalContext` is model-visible context, not passive metadata. Since v1.4.19 it is generated only by a deterministic projector from catalog-matched, grammar-checked tool IDs. Auditor reasons, backend messages, and provider stdout/stderr are never reflected into it
+- **Since v0.5.0, JSON schema violations from Haiku are treated as expected anomalies** (session renew + `role_collapse_reset`). **Since v1.4.19, an auditor/daemon failure remains non-blocking without becoming model context**: Claude and Codex emit only an allow-listed fixed `systemMessage`, fixed stderr, and a structured Hook event, then exit 0
 
 <details>
 <summary><strong>📋 Recent highlights</strong></summary>
 
+- **Rule-based parent output boundary** (v1.4.19) — auditor AI prose cannot enter parent-session Hook output. Validated tool IDs become optional fixed advice on `UserPromptSubmit`; `Stop` findings stay structured and are never carried into an unrelated next turn
 - **Daemon recovers after an ungraceful death** (v1.4.16) — if the daemon dies without graceful shutdown (machine sleep, force-quit, crash before `SessionEnd`), the Unix socket it leaves behind no longer bricks every restart. `startDaemon` removes the orphaned socket before binding, so the next `UserPromptSubmit` auto-resurrect succeeds instead of crash-looping on `EADDRINUSE` and leaving the session permanently unaudited
 - **Failures degrade loudly, never freeze the host** (v1.4.15) — when the auditor backend fails (e.g. codex login expired), the `UserPromptSubmit` hook surfaces a `[Spotter からの警告]` and lets your prompt through instead of silently erasing it. codex login expiry names the one-line fix (`codex login`)
 - **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Claude's audit

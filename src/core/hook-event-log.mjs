@@ -3,9 +3,9 @@
 // Codex side previously wrote `.spotter/codex-hook-events.jsonl` with schema
 // `spotter.codex_hook_event.v1`. v1.4.8 unifies that into `.spotter/hook-events.jsonl`
 // with schema `spotter.hook_event.v1` + a `host` field, and Claude hooks now write to
-// the same file. Records every hook firing with skip / success / error / queued status
+// the same file. Records every hook firing with skip / success / error / finding status
 // so `spotter diagnostics logs` can surface hook-side observations the daemon log alone
-// never sees (short-prompt skip, drained pending count, hook-level transport errors).
+// never sees (short-prompt skip, legacy pending discard diagnostics, hook-level transport errors).
 //
 // File path: `<projectRoot>/.spotter/hook-events.jsonl` (append-only, no rotation yet).
 // Record schema (v1):
@@ -23,7 +23,7 @@
 //     durationMs?: number,
 //     backendDurationMs?: number | null,
 //     usedToolCount?: number,
-//     pendingContextCount?: number,
+//     legacyPendingDiagnostic?: string | null,
 //     toolName?: string | null
 //   }
 

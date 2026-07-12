@@ -16,6 +16,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
+**v1.4.19 (development 2026-07-12)**: 親セッションとの出力信頼境界を修正する。監査用AIの
+`reason` / `raw`、backend message、provider stdout / stderr は Hook 出力へ渡さず、Claude / Codex
+共通のルールベース projector が catalog 照合済みの安全なツールIDだけを固定・非命令形の助言へ
+変換する。`Stop` finding / failure の次ターン pending 配送は廃止し、finding は構造Hook event、failureは
+allow-list済み固定 `systemMessage`・固定stderr・構造eventへ分離する。旧 pending は内容を読まずに
+same-session fileだけ削除する。`decision:"block"` / exit 2による継続や入力消去は追加しない。
+
 **v1.4.18 (released 2026-07-12)**: Codex auditor model を versioned policy に集約し、production default を
 反復 fixture 評価で24/24 exact・FP/FN 0・timeout 0だった `gpt-5.6-terra × medium` へ昇格した。
 `gpt-5.6-luna × low` / `gpt-5.6-terra × low` は比較 profile として残す。backend は model selection を生成時に一度だけ解決し、
@@ -243,14 +250,17 @@ refresh の local → global → investigate cache path でも Claude / Codex �
 - **Claude 呼び出しは session-scoped + preamble-once + 事後回復** (v0.6.0 で更新): `claude -p --session-id <uuid>` で初回セッション確立、以降 `--resume` で再接続。**初回のみ preamble (role + schema + few-shot + catalog) を送り、以降は per-turn delta のみ**送ることで session を肥大化させない (v0.5.x は毎回 full 送信していて resumed が first より遅いという逆の結果が出ていた)。role collapse は `parseHaikuResponse` が `E_HAIKU_SCHEMA` を返した瞬間に `callHaiku.reset()` で session-id を rotate、次回呼び出しで preamble が新 session に自動で再送される。当該ターンは silent pass。**これは §0 の silent fallback 禁止違反ではなく、「想定済み異常 = 記録 + 正常リターン」の適用**。
 - **隔離実行**: Spotter の workdir (`~/.spotter/workdir/`) には **CLAUDE.md を置かない**。プロジェクト文脈に引きずられないことが品質保証の要件。
 - **ツールカタログは host-local tool-db**: Claude daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。Codex native hooks は `<project>/.spotter/tool-db.codex.json` だけを読む。グローバル DB も host 別の description 再利用キャッシュで、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使う。global は audit 入力には混ぜない。Claude refresh は `claude mcp list` と Claude skills / sub-agents、Codex refresh は `codex mcp list/get` と Codex skills を discovery し、片方の refresh がもう片方の local / global DB を prune / overwrite してはいけない。
-- **Stop hook の介入**: Claude / Codex とも immediate block ではなく host-neutral deferred delivery を使う。指摘または backend failure warning を `.spotter/pending/<sessionId>.json` に de-duplicate して積み、次の same-session `UserPromptSubmit` の `additionalContext` で1回だけ提示する。`stop_hook_active:true` は再入を即 pass。現行 Codex 仕様は `reason` continuation を提供するため、旧実測の `Stop Blocked` と UI / transcript を再 characterization するまでは pending を維持する。
+- **Stop hook の介入**: Claude / Codex とも immediate block / continuation / deferred model-context
+  delivery を行わない。finding は catalog 照合済みtool IDの構造Hook eventとして記録し、failureは
+  allow-list済み固定 `systemMessage`・固定stderr・構造eventへ出す。監査用AIの自由文やprovider出力を
+  親モデルへ渡さず、`.spotter/pending/`への新規書込みもしない。`stop_hook_active:true` は再入を即 pass。
 
 ## §0 実装規範 (最重要)
 
 コードを書く前にこの 3 点を内面化すること。プラン §14 の詳細版だが、実装時に効くのはここ:
 
 1. **フォールバック禁止**. daemon 起動失敗 / socket 疎通失敗 / auditor 呼び出し失敗 / tool-db / frontmatter パース失敗を `pass` に偽装しない。core は structured error を throw し、別 backend / model へ silent retry しない。host hook はその error を catch して `degraded` event + user-visible warning に変換し、host 自体を凍結しない。SessionEnd cleanup と telemetry は non-blocking だが失敗を stderr / event log に残す。
-2. **「daemon が死んでたら pass」は最悪の失敗モード**. ユーザーは Spotter が守っていると思うのに実は未監査、という状況を作らない。v1.4.15 以降の UserPromptSubmit は malformed envelope 以外を `[Spotter からの警告]` + exit 0 で loud degradation し、プロンプト消去を避ける。Stop failure は warning pending に積み、次 prompt で配送する。exit 2 は malformed hook envelope に限定する。
+2. **「daemon が死んでたら pass」は最悪の失敗モード**. ユーザーは Spotter が守っていると思うのに実は未監査、という状況を作らない。UserPromptSubmit / Stop の failure は allow-list済み固定 `systemMessage`・固定stderr・構造event + exit 0 を出し、プロンプト消去や回答継続を避ける。これはHook出力契約であり、全Codex App/background面でのUI可視性までは保証しない。backend messageやprovider出力を `additionalContext` へ反射してはならない。exit 2 は malformed hook envelope に限定する。
 3. **動かすためだけの暫定コード禁止**. スタブ・TODO のみの関数・型が曖昧なコードを本流に混ぜない。MVP スコープを狭めるのは OK (v0.2 に送る)、**範囲内は常に完成形**。暫定コードを書く必要があるなら代替設計と一緒に提示してから書く。
 
 想定済み異常 (例: カタログに該当ツールなし) は記録 + 正常リターン。**想定外**は core で throw し、
@@ -322,7 +332,10 @@ model override は unverified として diagnostics に残る。`gpt-5.6-luna ×
 
 プラン §12.2 / §12.3 の未解決論点 + 実装方針の確定事項。これらは**再議論しない**:
 
-- **指摘の届け方**: 透明化採用。UserPromptSubmit の `additionalContext` も Stop hook の `reason` も、Bell が「Spotter からの指摘」を明示するよう書式を組む。プラン §12.2 / §12.3 参照
+- **指摘の届け方**: UserPromptSubmit は、共通projectorがcatalog照合済みtool IDだけから作る固定・
+  非命令形の助言を `additionalContext` へ出す。監査用AIの `reason` は親へ渡さない。Stop findingは
+  構造Hook eventに限定し、次ターンのモデル入力へ配送しない。プラン §12.2 / §12.3 の旧透明化書式は
+  v1.4.19でこの安全境界に置換した。
 - **Haiku への入出力**: 構造化 JSON で固定 (`{pass: bool, missing_tools: [{name, reason}]}`)。自由記述不採用、**リトライなし**。JSON スキーマ不遵守は §14.1 に従って throw。プラン §5.5 参照
 - **OS 間 socket 抽象**: Node.js `net` モジュールで Windows (Named Pipe `\\.\pipe\spotter-<id>`) と macOS/Linux (Unix socket `~/.spotter/runtime/session-<id>.sock`) を同一 API で扱い、`process.platform === 'win32'` でパスのみ分岐。プラン §5.6 参照
 - **hook ⇄ daemon メッセージ契約**: 改行区切り JSON 1 行。envelope `{id, event, session_id, payload}` / response `{id, ok, result|error}`。タイムアウト表と error code (`E_CATALOG_MISSING | E_HAIKU_SCHEMA | E_HAIKU_TIMEOUT | E_INTERNAL`) を固定。プラン §5.7 参照
@@ -333,11 +346,10 @@ model override は unverified として diagnostics に残る。`gpt-5.6-luna ×
 
 プラン §12 のうち、実装段階ではなく **設計思想レベルで開いたまま** の論点。独断で決めずユーザーに確認すること。実装レベルの穴 (Spotter の現コードに存在する技術的課題) は [docs/open-issues.md](docs/open-issues.md) を参照。
 
-- **最初の応答を取り消せない仕様への中長期対応** (§12.4): v1.4.8 で Stop hook を deferred delivery
-  に切り替えた (block 撤去 → pending queue → 次 UserPromptSubmit で `additionalContext` 配信)。
-  これにより当ターンの最終応答は transcript にそのまま残り、補正は次ターンで Bell が受け取る形に
-  なったため「最終応答が補正中心になって元の文脈が迷子」という UX 欠陥は解消した。残る論点は
-  「ユーザーが最初の応答を **見てから次の入力をするまで** 指摘を知らせる手段が無い」点。Pre-Response
+- **最初の応答を取り消せない仕様への中長期対応** (§12.4): v1.4.19で Stop hook のblockと
+  deferred model-context deliveryをともに使わず、findingは構造Hook eventに限定した。親セッションの
+  安全性を優先するため、Stop後にモデルへ補正文を差し込まない。残る論点は「ユーザーが最初の応答を
+  **見てから次の入力をするまで**、モデル入力を汚さず安全に指摘を知らせるhost機能が無い」点。Pre-Response
   hook 相当の feature が Claude Code 側で公式追加された場合、`docs-lookup` で確認した通り 2026-05-08
   時点では未提供 ([SPOTTER_HOOK_PARITY_TODO.md](docs/archive/SPOTTER_HOOK_PARITY_TODO.md) 参照)、
   追加されれば再評価する
