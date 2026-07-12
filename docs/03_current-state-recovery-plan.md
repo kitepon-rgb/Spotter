@@ -377,7 +377,7 @@ fallback せず可視化されること。
 ### Phase 7. 正典・open issues・未コミット整理
 
 - [x] `CLAUDE.md` / Claude contract / README / open issues を実装と現行 Hook 仕様へ同期する
-- [ ] 完了済み Hook parity TODO を `docs/archive/` へ移す
+- [x] 完了済み Hook parity TODO を `docs/archive/` へ移す
 - [x] Haiku 固有の最優先観測項目を backend-neutral latency / failure / cost SLO へ置き換える
 - [x] repo-local `.codex/hooks.json` をowner承認後に削除し、global正式entryとの重複をなくす
 - [ ] 本計画を完了チェック後に `docs/archive/` へ移す
