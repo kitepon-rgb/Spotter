@@ -11,6 +11,7 @@ import { runCodexCommand } from '../src/cli/codex-cmd.mjs';
 import { runCodexHookCommand } from '../src/cli/codex-hook-cmd.mjs';
 import { runAuditorCommand } from '../src/cli/auditor-cmd.mjs';
 import { runDiagnosticsCommand } from '../src/cli/diagnostics-cmd.mjs';
+import { runFactoryDiagnostics } from '../src/cli/factory-diagnostics.mjs';
 import { runDaemonStart } from '../src/cli/daemon-cmd.mjs';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
 import { runUserPrompt } from '../src/hooks/user-prompt.mjs';
@@ -114,6 +115,11 @@ async function main() {
       await runAuditorCommand({ argv: rest });
       return;
     case 'diagnostics':
+      if (rest[0] === 'factory') {
+        if (rest.length !== 1) throw invalidFactoryDiagnosticsArgs();
+        process.stdout.write(`${JSON.stringify(await runFactoryDiagnostics())}\n`);
+        return;
+      }
       await runDiagnosticsCommand({ argv: rest });
       return;
     case 'daemon': {
@@ -192,6 +198,13 @@ function isShellWrapper(value) {
 
 function invalidInstallArgs() {
   const err = new Error('invalid install arguments');
+  err.stack = '';
+  err.exitCode = 2;
+  return err;
+}
+
+function invalidFactoryDiagnosticsArgs() {
+  const err = new Error('usage: spotter diagnostics factory');
   err.stack = '';
   err.exitCode = 2;
   return err;
