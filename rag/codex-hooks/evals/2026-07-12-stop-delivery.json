@@ -1,0 +1,57 @@
+{
+  "schema": "spotter.codex_stop_delivery_eval.v1",
+  "evaluatedAt": "2026-07-12",
+  "codexCliVersion": "0.144.1",
+  "cli": {
+    "none": {
+      "agentMessages": ["FIRST"],
+      "stopCalls": 1,
+      "stopHookActive": [false],
+      "exitCode": 0
+    },
+    "systemMessage": {
+      "agentMessages": ["FIRST"],
+      "stopCalls": 1,
+      "stopHookActive": [false],
+      "systemMessageVisibleInJsonl": false,
+      "exitCode": 0
+    },
+    "decisionBlock": {
+      "agentMessages": ["FIRST", "SECOND"],
+      "stopCalls": 2,
+      "sameSession": true,
+      "sameTurn": true,
+      "stopHookActive": [false, true],
+      "exitCode": 0
+    }
+  },
+  "app": {
+    "backgroundConnector": {
+      "threadId": "019f5557-19a4-7851-af35-4f4d3441715c",
+      "turns": 2,
+      "agentMessages": ["FIRST", "FIRST"],
+      "sessionStartObserved": true,
+      "userPromptSubmitObserved": true,
+      "stopObserved": false,
+      "probeObserved": false
+    },
+    "appServer": {
+      "threadId": "019f5558-6cd1-7843-b6ea-f35fcf349947",
+      "turns": 1,
+      "agentMessages": ["FIRST"],
+      "sessionStartObserved": true,
+      "userPromptSubmitObserved": true,
+      "stopObserved": false,
+      "probeObserved": false
+    },
+    "activeApp": {
+      "spotterStopObservedInProjectLog": true,
+      "decisionBlockInjected": false,
+      "reason": "active work turnを改変しないため"
+    }
+  },
+  "globalHooks": {
+    "backup": "/tmp/codex-hooks-before-spotter-app-probe-20260712T1658.tar.gz",
+    "restoredSha256": "bd46677c7228f0ca49c562cdc7e12007c99bfa0ad4240bfee1a7af41d50067a0"
+  }
+}

@@ -2,7 +2,7 @@
 
 作成日: 2026-07-12
 
-状態: **監査・独立反証済み、Phase 0〜5 完了、Phase 7 部分完了**
+状態: **Phase 0〜7 完了（archive待ち）**
 
 ## 目的
 
@@ -56,19 +56,18 @@ Claude-first の製品契約と再帰防止保証を維持した復旧順序を�
 ## 結論
 
 Spotter のコード全体が壊れているわけではない。着手時 `node --test` は **348 tests / 346 pass /
-2 platform skip / 0 fail**、v1.4.18 model-matrix 実装後は **424 tests / 422 pass / 2 skip /
+2 platform skip / 0 fail**、v1.4.18 release前の最終suiteは **439 tests / 437 pass / 2 skip /
 0 fail**。Claude daemon の再帰防止・heartbeat・resurrect・stale socket 回復にも実装と回帰テストがある。
 
 repo では `SessionStart async:true`、diagnostics 誤成功、Stop warning 欠落、Codex used-tools drift を
 独立 commit で修正し、v1.4.17 clean pack / temp install smoke まで完了した。model policy と safe eval
 基盤は v1.4.18 development 境界へ分離した。v1.4.17 は最終 SHA `7987f2a` を tag / npm / GitHub Release
 へ公開し、この Mac の global package も `spotter 1.4.17` へ更新した。Spotter project で再 install 後、
-`~/.codex/hooks.json` の3 entry は各1件・canonical・`async` なし。残る実機確認は `/hooks` review と
-新規 task の `SessionStart` 1回観測である。
+`~/.codex/hooks.json` の3 entry は各1件・canonical・`async` なし。`/hooks`画面で3件ともTrusted / active、
+新規taskの`SessionStart`が1回であることまで実機確認した。
 
-2026-07-12 の model operational smoke は baseline / Luna / Terra × 4 fixture の全12件が
-Codex CLI usage limit で `E_CODEX_CLI_EXIT`。model 品質・availability・latency は未測定で、production
-`gpt-5.4-mini × low` は変更していない。artifact は
+2026-07-12 の最初のmodel operational smokeはbaseline / Luna / Terra × 4 fixtureの全12件が
+Codex CLI usage limitで失敗した。この時点のartifactは
 [`rag/openai-model-policy/evals/2026-07-12-operational-smoke.json`](../rag/openai-model-policy/evals/2026-07-12-operational-smoke.json)
 に固定した。
 
@@ -79,10 +78,11 @@ auditor probe は成功したが、本番同条件の isolated CLI は引き続�
 
 その後Pro20回復後に同一fixtureで比較を再開し、Terra mediumは2回合計24/24 exact、FP/FN 0、
 timeout 0を記録した。owner裁定によりproductionを`gpt-5.6-terra × medium`へ昇格した。金額costは
-ChatGPTプランから取得不能として明示し、backend/stage別の実運用SLOはPhase 6の継続課題とする。
+ChatGPTプランから取得不能として明示した。backend/stage別の実運用SLO、品質gate、改善順は
+[`docs/04_operational-slo.md`](04_operational-slo.md)へ正本化した。
 
-したがって現状は **「テストとv1.4.17配布はgreen、v1.4.18のmodel昇格はsource採用済みだが未release。
-Codex UI trustと新規taskのSessionStart実動確認、実運用SLO策定が残る」** と判定する。
+したがって現状は **「v1.4.17の配布と実機Hook確認はgreen。v1.4.18はmodel昇格、専用失敗分類、
+公式model更新監視、SLO、Stop surface比較まで実装・検証済みで、release作業だけが残る」** と判定する。
 
 重要指摘は独立反証にかけた。反証後、async SessionStart / diagnostics は「初回 seed と手動 refresh が
 ある」ため P0 から P1 へ、未追跡 repo-local Hook は product bug でないため P2 へ下げた。一方、現行
@@ -93,15 +93,15 @@ transcript で shell tool call を数えない問題は実データで確認で�
 
 | 領域 | 判定 | 根拠 |
 |---|---|---|
-| Node unit / integration test | green | 現在 429 tests、427 pass、2 platform skip、0 fail |
+| Node unit / integration test | green | 現在 439 tests、437 pass、2 platform skip、0 fail |
 | Claude daemon safety | 実装・回帰あり | 再帰 guard、heartbeat、auto-resurrect、stale socket test |
 | Codex `UserPromptSubmit` / `Stop` | 稼働あり | project hook-event 14 件中両 event を観測 |
-| Codex `SessionStart` refresh | 設定修復済み / 新規 task 確認待ち | global entry はcanonical・`async`なし、runtime 1回観測待ち |
-| Codex diagnostics | green / trust確認待ち | 3 hooks 各1件、compatible / canonical、readiness=`configured-unverified` |
+| Codex `SessionStart` refresh | green | global entryはcanonical・`async`なし、新規taskで1回観測 |
+| Codex diagnostics | green / trustはUI確認済み | 3 hooks各1件、compatible / canonical、`/hooks`でTrusted / active |
 | 配布 | **同期済み** | tag / npm latest / GitHub Release / global install = v1.4.17 |
-| 応答性能 | 要改善 | Codex UserPromptSubmit p50 5.8s、平均 7.4s、最大 20.0s |
+| 応答性能 | SLO確定 / 観測継続 | 7日・各50 call、p50 6s / p95 15s / timeout 1%以下 |
 | model 評価 | **採用済み** | production=`gpt-5.6-terra × medium`、24/24 exact、token取得済み |
-| 文書 | 主要正典同期済み | Hook parity TODO の archive 移動と本計画 archive は承認 / 完了待ち |
+| 文書 | 主要正典同期済み | Hook parity TODO移動済み、本計画はrelease後にarchiveする |
 
 ## 初回監査で確認した P0
 
@@ -205,25 +205,24 @@ delivery の根拠にした。現行公式仕様は Stop の同出力を新し�
 pending delivery を直ちに捨てる根拠にはならないが、「Hook の制約で必須」ではなくなった。
 `systemMessage` / continuation / pending の実機比較は有用だが、復旧 blocker にはしない。
 
-### P2-3. 推奨品質を測る acceptance signal がない
+### P2-3. 推奨品質のacceptance signal（定義済み・採取待ち）
 
 daemon logs 949 calls 中 `pass:false=51`、missing 55 件。そのうち
 `mcp__codegraph__codegraph_explore=35` (約64%) だが、実際に採用された比率は diagnostics から分からない。
-過検出とはまだ断定できず、後続 tool 使用も推奨受諾を直接意味しない。復旧条件から外し、acceptance の
-定義から始める研究項目とする。
+過検出とはまだ断定できず、後続tool使用も推奨受諾を直接意味しない。`docs/04_operational-slo.md`で
+妥当・過検出・見逃し・判定不能の人手ラベルを定義した。30 findingまではcatalogを変更しない。
 
-### P2-4. auditor model は pin されているが、更新ポリシーと評価ゲートがない
+### P2-4. auditor model更新ポリシーと評価ゲート（対応済み）
 
-**基盤対応済み**: `e611a25` / `4c64933` / `cdf33ae`。live 比較は usage limit で未完了。
+versioned policy、live model-matrix、専用失敗分類、公式2-source更新監視まで対応した。
 
-[`codex-cli-backend.mjs`](../src/core/codex-cli-backend.mjs) は既定を `gpt-5.4-mini × low` とし、
-env override を許す。この pin と `--ignore-user-config` は親 Codex の設定変更から auditor の品質・費用・
-latency を隔離するため有効だが、次世代 model の検知・比較・昇格手順がなく、更新のたびに source / test の
-文字列を直接追いかける構造になっている。
+[`codex-cli-backend.mjs`](../src/core/codex-cli-backend.mjs) はpolicyの`gpt-5.6-terra × medium`を既定とし、
+env overrideを許す。pinと`--ignore-user-config`で親Codexの設定から隔離し、更新検知は評価提案まで、
+production昇格はowner裁定まで行わない。
 
 現行 OpenAI 仕様では `gpt-5.6` alias は `gpt-5.6-sol` を指し、軽量・高頻度向けは
 `gpt-5.6-luna`、均衡型は `gpt-5.6-terra` である。当初はSpotterの高頻度な構造化監査に
-`gpt-5.6-luna × low` を第一候補としたが、live比較後は`gpt-5.6-terra × medium`が技術的な昇格候補。
+`gpt-5.6-luna × low` を第一候補としたが、live比較後に`gpt-5.6-terra × medium`をproductionへ採用した。
 調査と設計判断は [RAG 記録](../rag/openai-model-policy/spotter-auditor-model-policy.md) に固定した。
 
 ## 初回監査で確認した文書・台帳 drift（主要正典は対応済み）
@@ -307,7 +306,7 @@ Gate (isolated Codex project):
 - [x] 最終 SHA `7987f2a` を pushし、v1.4.17 tag / npm publish / GitHub Release を行う
 - [x] `npm view claude-spotter version`、GitHub Release、fresh global install の三者一致を確認する
 - [x] 実機 `~/.codex` を backupし、global package更新後にSpotter projectで`spotter install`を再実行する
-- [ ] Codex `/hooks` で現在の3 entryをreviewし、新規 taskで`SessionStart`を1回だけ観測する
+- [x] Codex `/hooks` で現在の3 entryをreviewし、新規 taskで`SessionStart`を1回だけ観測する
 
 Rollback: 実機 `~/.codex/` を事前 backup し、問題時は新 Spotter hook entry だけ uninstall、backup から
 hooks 定義を戻す。既存 Throughline / Caveat / Callout hooks を巻き戻さない。
@@ -348,8 +347,8 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 - [x] `codex-default` を製品既定として暗黙継承しない（将来導入する場合も明示 opt-in のみ）
 - [x] diagnostics に effective model / effort / 選択元 / policy version / 検証日を表示する
 - [x] model 不在・非対応を含む失敗で effective selection と bounded diagnostics を残し、silent fallback しない
-- [ ] Codex CLI が安定した識別子を返すか実測し、可能なら model 不在専用の actionable error code を追加する
-- [ ] 公式仕様 / catalog の更新検知は変更提案まで自動化し、評価なしに既定 model を自動昇格しない
+- [x] Codex CLI が安定した識別子を返すか実測し、model 不在専用の `E_CODEX_CLI_MODEL_UNAVAILABLE` を追加する
+- [x] 公式仕様 / catalog の更新検知を変更提案まで自動化し、評価なしに既定 model を自動昇格しない
 - [x] `~/.codex/models_cache.json` を安定した runtime contract として読まない
 - [x] versioned fixture と `spotter auditor model-matrix` を追加し、選択真実性・safe artifact・
   FP/FN・anomaly・run bound を敵対的に回帰化する
@@ -362,7 +361,7 @@ Gate: shell-only / MCP-only / agent-only turn の used-tools が期待どおり�
 
 2026-07-12 Pro20回復後の1回目repeat=3ではTerra lowが12/12 exact、usage抽出後の2回目は11/12。
 合算23/24でbaseline 18/24、Luna low 17/24より最良だが、lowの品質不足が再現したためTerra mediumを
-追加評価する。token usageは36/36取得済み。ChatGPTプラン上の金額costとSLOは未確定なので昇格は保留。
+追加評価した。token usageは36/36取得済み。ChatGPTプラン上の金額costは取得不能として分離した。
 詳細は [`rag/openai-model-policy/evals/2026-07-12-pro20-repeat3-usage.md`](../rag/openai-model-policy/evals/2026-07-12-pro20-repeat3-usage.md)。
 
 Terra mediumは比較12 runと再確認12 runの合計24/24 exact、FP/FN 0、timeout 0。owner裁定により
@@ -377,14 +376,17 @@ fallback せず可視化されること。
 
 ### Phase 6. 非 blocker の設計実験・性能・判定品質
 
-- [ ] isolated probe で Stop `systemMessage` / `decision:"block"` continuation / pending の UI・transcript を比較する
-- [ ] CLI / Codex app の両 surface で `stop_hook_active` による max-1 continuation を確認する
-- [ ] delivery 変更は挙動差を明文化し、個別承認を取る
-- [ ] UserPromptSubmit / Stop 別の p50 / p95 / timeout rate の SLO を合意する
-- [ ] Phase 5 の採用 model / effort を前提に timeout / workload の matrix を同じ fixture で測定する
-- [ ] timeout 延長ではなく、まず監査 workload・model・Hook 重複を減らす
-- [ ] acceptance の定義を決めてから metric を設計し、単純な後続 tool 使用を受諾扱いしない
-- [ ] CodeGraph 推奨集中は acceptance 定義後に再評価する
+- [x] isolated probe で Stop `systemMessage` / `decision:"block"` continuation / pending の UI・transcript を比較する
+- [x] CLIでは`stop_hook_active` false→trueのmax-1を確認し、Codex app background/app-serverではStop自体が発火しないsurface差を確認する
+- [x] delivery差を明文化し、active Appのblock未確認・既存契約維持のためv1.4.18ではpending維持と決定する（変更なし）
+- [x] UserPromptSubmit / Stop 別の p50 / p95 / timeout rate の SLO を合意し、`docs/04_operational-slo.md`へ正本化する
+- [x] Phase 5 の採用 model / effort を前提に timeout / workload の matrix を同じ fixture 24件で測定する
+- [x] timeout 延長ではなく、まず監査 workload・model・Hook 重複を減らす対応順を固定する
+- [x] acceptance を人手ラベルで定義し、単純な後続 tool 使用を受諾扱いしない
+- [x] CodeGraph 推奨集中を再評価し、母数30 findingまではcatalogを変更しないと決定する
+
+Stop実測の証跡は [`rag/codex-hooks/stop-delivery-characterization-2026-07-12.md`](../rag/codex-hooks/stop-delivery-characterization-2026-07-12.md)、
+運用基準は [`docs/04_operational-slo.md`](04_operational-slo.md) を正とする。
 
 この phase は v1.4.17 の release blocker にしない。
 

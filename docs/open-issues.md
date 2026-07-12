@@ -19,39 +19,35 @@ Spotter で現時点（v1.4.18 development tree、2026-07-12）に **塞がっ�
 
 ## P0 — 配布と実環境 activation
 
-### v1.4.17の配布は完了、Codex UI trustと新規taskの実動確認が残る
-
-**背景**: v1.4.17 はOS CI 6/6 green後、最終 SHA `7987f2a`をtag / npm / GitHub Releaseへ公開した。
-npm `latest`とこのMacのglobal installは`1.4.17`で一致する。事前に`~/.codex`をbackupし、Spotter projectで
-`spotter install`を再実行した。
-
-**現在地**: diagnosticsはSessionStart / UserPromptSubmit / Stopを各1件、compatible / canonical、
-`async`なしと判定した。readinessはtrustを機械判定できないため`configured-unverified`である。
-
-**次アクション**: Codex `/hooks`で現在の3 entryをreviewし、新規taskで
-`SessionStart: refresh_spawned`が1件だけ記録されることを確認する。確認後、このP0項目を削除する。
+現在P0なし。v1.4.17は配布・global install済みで、Codex `/hooks`上のSpotter 3 entryがTrusted / active、
+新規taskの`SessionStart: refresh_spawned`が1回であることまで2026-07-12に実機確認した。
 
 ---
 
 ## P1 — backend / daemon の信頼性と SLO
 
-### Primary auditor の latency / failure / cost SLO が未確定
+### Primary auditor SLO のproduction窓を継続観測する
 
 **背景**: auto selection では Claude host は Codex CLI が PATH にあれば `codex-cli`、なければ Haiku、
 Codex host は `codex-cli` を選ぶ。明示 backend override は host より優先し、一度選択した backend が
 失敗しても別 backend へ fallback しない。2026-07-12 の
-project-local Codex event では UserPromptSubmit p50 約5.8s、平均7.4s、最大20.0s。daemon logs の
+project-local Codex event では UserPromptSubmit p50 5.132s、p95 12.138s、timeout 1/27、Stopは
+p50 4.336s、p95 20.035s、timeout 1/17。daemon logs の
 codex-cli 949 calls は平均6.3s、timeout 3、auth 6。Haiku fallback path には過去 20〜45s 域の
-first/resumed 観測がある。backend ごと・stage ごとの合意 SLO がないため、timeout / model / workload の
-変更を成功と判定できない。
+first/resumed 観測がある。このproject-local値は旧model・認証失効・利用上限を含む混合集計である。
 
 v1.4.18 の `spotter auditor model-matrix` で同一fixtureを反復評価し、Terra mediumは24/24 exact、
 FP/FN 0、timeout 0、p50 3.78〜3.84秒、p95 4.28〜4.36秒だった。owner裁定によりproductionを
 `gpt-5.6-terra × medium`へ昇格済み。Codex JSONLのtoken usageも取得済みで、利用上限は
 `E_CODEX_CLI_USAGE_LIMIT`へ分類済み。ChatGPTプランの金額costは取得不能であり、API価格で代用しない。
 
-**次アクション**: 新productionを実運用で観測し、backend / stage別のp50・p95・timeout率・失敗率について
-「どこまでなら正常とみなすか」をownerと合意する。timeout延長や別model retryだけで解決扱いにしない。
+**2026-07-12 決定**: [`04_operational-slo.md`](04_operational-slo.md) にbackend / stage別の基準を正本化した。
+UserPromptSubmit / Stopはいずれもp50 6秒、p95 15秒、timeout率1%、auth・usage limitを除く失敗率2%を
+上限とし、7日かつ50 call以上で判定する。品質gateは24/24 exact、FP/FN 0、timeout 0、p95 10秒以下。
+timeout延長よりHook重複・workload・model/effortの順に直す。金額costはChatGPT planから取得不能なので
+API価格で捏造せず、token usageと利用上限発生を観測する。
+
+**次アクション**: v1.4.18 global install後、各Hook 50 callに達した時点で初回production窓を判定する。
 
 ### daemon プロセスが shutdown ログなしに死ぬ (v1.3.0 で根因が大半解消した可能性、再観測中)
 
@@ -249,22 +245,16 @@ timeout 突破頻発なら緊急対処。
 Codex native `Stop` は現状 immediate block ではなく deferred delivery。`Stop` で見つかった不足ツールは `.spotter/pending/` に保存され、次の same-session `UserPromptSubmit` の `additionalContext` で Codex に提示される。2026-05-06 の実測では `decision:"block"` を返すと final answer 後に `Stop Blocked` / exit code 1 となり、Claude Code のような綺麗な継続応答にはならなかったため、Caveat と同じ pending queue 方式を採用している。v1.4.8 以降は Claude / Codex で host-neutral pending queue を共有する。
 
 **2026-07-12 更新**: 現行 Codex Hook 仕様は `Stop` の `reason` を continuation prompt として扱う。
-したがって「Codex に continuation surface がない」という旧前提は失効した。ただし旧実機の
-`Stop Blocked` 観測も残るため、文書だけを根拠に pending を置き換えない。
+isolated CLIでは`decision:"block"`が同一turn内で`stop_hook_active:false→true`となり、綺麗に1回だけ
+継続した。一方Codex Appのbackground / app-server taskはSessionStartとUserPromptSubmitを実行するが、
+Stop自体を実行しなかった。`systemMessage`もCLI JSONLへ現れない。詳細は
+[`rag/codex-hooks/stop-delivery-characterization-2026-07-12.md`](../rag/codex-hooks/stop-delivery-characterization-2026-07-12.md)。
 
-**次アクション**: isolated project で `systemMessage` / `reason` continuation / pending delivery の
-UI・transcript・`stop_hook_active` max-1 を Codex CLI と app の両方で characterization する。挙動差を
-明文化して個別承認を得るまでは deferred delivery を維持する。
+**決定**: v1.4.18ではpending deliveryを維持する。background/app-serverではStop自体が発火しないため、
+pendingもimmediate blockも生成不能である。active Appでmax-1を再現するまでは、既存delivery contractを
+immediate blockへ変更しない。
 
-### repo-local `.codex/hooks.json` の ownership 未確定
-
-**背景**: 未追跡 `.codex/hooks.json` は Codex source に Claude 用 `spotter hook ...` 4経路を置いた
-ローカル試作。正規 user-global `spotter codex-hook ...` 3経路と ownership / payload / transcript contract が
-異なる。Codex は複数 source の matching Hook を全て実行するため、trust すると二重監査・異種 adapter
-並行・再帰リスクになる。
-
-**次アクション**: 現状は commit / trust せず保持する。正規 generator と重複しない形で削除するか、
-正式 adapter へ置換するかを owner が明示裁定する。global Hook 修復の代用には使わない。
+**次アクション**: Codex側のApp Stop contractが更新された時だけ再評価する。
 
 ### CI 回帰テスト整備 (v0.4+)
 

@@ -22,11 +22,19 @@ auditor model の更新を model 名の場当たり的な置換から切り離�
 - **usage-limit diagnostics**: Codex CLIが実測済みの利用上限文言で非ゼロ終了した場合をgenericな
   `E_CODEX_CLI_EXIT` から `E_CODEX_CLI_USAGE_LIMIT` へ分離した。認証失効を先に判定し、一般的な429は
   誤分類しない。Hookはリセット時刻まで待つかCodexプランを確認する復旧案内を表示し、fallbackは行わない。
+- **model unavailable diagnostics**: Codex CLIが指定modelをChatGPTアカウントで利用できないと返した場合を
+  `E_CODEX_CLI_MODEL_UNAVAILABLE`へ分離した。認証・利用上限を優先し、providerのstdout/stderrはredact、
+  effective selectionとexit codeは診断用に保持する。別modelへのfallbackは行わない。
+- **公式model更新監視**: OpenAI公式のlatest-model / ChatGPT pricing Markdownの両方に揃った完全3種familyだけを
+  数値版比較し、週次workflowが評価提案Issueを重複なく作る。policy書換え・model呼出・自動昇格は行わない。
+- **運用SLO / Stop実測**: UserPromptSubmit / Stopのp50・p95・timeout率と品質gateを日本語で正本化した。
+  CLIのStop continuationはmax-1を確認した一方、App background/app-server taskはStop非発火だったため、
+  active Appのblock挙動が未確認のまま既存契約を変えず、pending deliveryを維持する。
 
 ### 検証
 
 `auditor-model-matrix-cmd` / `auditor-cmd` / `cli` の targeted test 29 / 29 pass、全体
-429 / 427 pass / 0 fail / 2 skip。
+439 / 437 pass / 0 fail / 2 skip。
 循環・非文字列 backend 応答、model selection 不一致、version 出力の秘密混入、dirty fixture、filtered
 hallucination を敵対的に再検証し、blocker 0 を確認した。代表 fixture の repeat=1 operational smoke は
 baseline / Luna / Terra の全12件が Codex CLI usage limit で `E_CODEX_CLI_EXIT` となったため、model 品質・
@@ -34,7 +42,8 @@ latency・availability の比較には使わなかった。Pro20回復後のrepe
 23/24 exactでbaseline 18/24、Luna low 17/24より最良。usage対応runではtoken usageを36/36取得した。
 Terra lowにも見逃しが1件出たためmediumを追加評価した。Terra mediumは2回のrepeat=3で合計24/24 exact、
 FP/FN 0、timeout 0となり、owner裁定でproductionへ採用した。ChatGPTプランの金額costは取得不能として
-明示し、backend/stage別の実運用SLOは継続課題とする。
+明示した。採用runは全体p95 4.361秒で、stage別SLOとtimeout/workload感度も
+[`docs/04_operational-slo.md`](https://github.com/kitepon-rgb/Spotter/blob/main/docs/04_operational-slo.md)へ固定した。
 
 ## 1.4.17
 
