@@ -59,14 +59,13 @@ export async function runDoctor() {
   }
 
   try {
-    const diagnostics = await codexHookDiagnostics();
-    const hooksOk = diagnostics.availability === 'available';
+    const hookConfiguration = await inspectCodexHookConfiguration({ projectRoot });
     mark(
-      hooksOk,
-      `codex hooks: ${diagnostics.availability}`,
-      `feature=${diagnostics.codexHooksFeature}, session_start=${diagnostics.installedHooks.sessionStart}, user_prompt=${diagnostics.installedHooks.userPromptSubmit}, stop=${diagnostics.installedHooks.stop}`
+      hookConfiguration.ok,
+      `codex hook configuration: ${hookConfiguration.diagnostics.readiness}`,
+      hookConfiguration.detail,
     );
-    if (!hooksOk) warnings += 1;
+    if (!hookConfiguration.ok) warnings += 1;
   } catch (err) {
     mark(false, 'codex hooks diagnostics', err.message);
     warnings += 1;
@@ -110,6 +109,17 @@ export async function runDoctor() {
     process.exit(1);
   }
   console.log(`result: OK (${warnings} warnings)`);
+}
+
+export async function inspectCodexHookConfiguration({ projectRoot = null, diagnosticsFn = codexHookDiagnostics } = {}) {
+  const diagnostics = await diagnosticsFn({ projectRoot });
+  const issues = Object.entries(diagnostics.validation ?? {})
+    .flatMap(([event, value]) => (value.issues ?? []).map((issue) => `${event}:${issue}`));
+  return {
+    ok: diagnostics.readiness === 'configured-unverified',
+    diagnostics,
+    detail: `availability=${diagnostics.availability}; issues=${issues.join(',') || 'none'}; trust=${diagnostics.trust?.state ?? 'unknown'}; ${diagnostics.trust?.action ?? 'review with /hooks'}`,
+  };
 }
 
 async function checkLocalAuditDb({ projectRoot, hostAgent }) {

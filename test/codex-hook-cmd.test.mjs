@@ -788,8 +788,171 @@ test('codexHookDiagnostics: reports feature and hook installation state', async 
     assert.equal(result.evidence, 'hooks stable true');
     assert.equal(result.installedHooks.sessionStart, 'installed');
     assert.equal(result.installedHooks.userPromptSubmit, 'installed');
+    assert.equal(result.readiness, 'configured-unverified');
+    for (const event of ['sessionStart', 'userPromptSubmit', 'stop']) {
+      assert.equal(result.validation[event].expectedRegisteredCount, 1);
+      assert.equal(result.validation[event].registered, true);
+      assert.equal(result.validation[event].compatible, true);
+      assert.equal(result.validation[event].misconfigured, false);
+      assert.equal(result.validation[event].canonical, true);
+      assert.deepEqual(result.validation[event].issues, []);
+    }
+    assert.equal(result.trust.state, 'unknown');
+    assert.match(result.trust.action, /\/hooks/);
+    assert.match(result.trust.action, /not machine-verifiable/);
+    assert.equal(result.runtime, null);
   } finally {
     await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('codexHookDiagnostics: legacy async SessionStart remains availability available but readiness misconfigured', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-legacy-async-'));
+  try {
+    await writeFile(join(codexHome, 'hooks.json'), JSON.stringify({ hooks: {
+      SessionStart: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook session-start', timeoutSec: 5, async: true }] }],
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook user-prompt-submit', timeout: 60 }] }],
+      Stop: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook stop', timeout: 60 }] }],
+    } }), 'utf8');
+    const result = await codexHookDiagnostics({ codexHome, spawnSyncFn: () => ({ status: 0, stdout: 'hooks stable true\n', stderr: '' }) });
+    assert.equal(result.availability, 'available');
+    assert.equal(result.readiness, 'misconfigured');
+    assert.ok(result.validation.sessionStart.issues.includes('async:true'));
+    assert.ok(result.validation.sessionStart.issues.includes('timeoutSec'));
+  } finally { await rm(codexHome, { recursive: true, force: true }); }
+});
+
+test('codexHookDiagnostics: compatibility matrix distinguishes missing, structural errors, and harmless noncanonical fields', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-matrix-'));
+  const base = () => ({ hooks: {
+    SessionStart: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook session-start', timeout: 5 }] }],
+    UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook user-prompt-submit', timeout: 60 }] }],
+    Stop: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook stop', timeout: 60 }] }],
+  } });
+  try {
+    const cases = [
+      {
+        name: 'fresh canonical', mutate: (value) => value, readiness: 'configured-unverified',
+        event: 'sessionStart', count: 1, compatible: true, canonical: true, issues: [],
+      },
+      {
+        name: 'pure missing', mutate: (value) => { value.hooks.Stop = []; return value; }, readiness: 'not-installed',
+        event: 'stop', count: 0, compatible: false, canonical: false, issues: ['missing'],
+      },
+      {
+        name: 'duplicate', mutate: (value) => { value.hooks.Stop.push(structuredClone(value.hooks.Stop[0])); return value; }, readiness: 'misconfigured',
+        event: 'stop', count: 2, compatible: false, canonical: false, issues: ['duplicate'],
+      },
+      {
+        name: 'wrong event', mutate: (value) => { value.hooks.SessionStart[0].hooks[0].command = 'node /repo/spotter.mjs codex-hook stop'; return value; }, readiness: 'misconfigured',
+        event: 'sessionStart', count: 0, compatible: false, canonical: false, issues: ['missing', 'wrong-event-subcommand'],
+      },
+      {
+        name: 'type mismatch', mutate: (value) => { value.hooks.SessionStart[0].hooks[0].type = 'prompt'; return value; }, readiness: 'misconfigured',
+        event: 'sessionStart', count: 1, compatible: false, canonical: false, issues: ['type!=command'],
+      },
+      {
+        name: 'timeout missing uses the official default', mutate: (value) => { delete value.hooks.Stop[0].hooks[0].timeout; return value; }, readiness: 'configured-unverified',
+        event: 'stop', count: 1, compatible: true, canonical: false, issues: ['timeout:missing'],
+      },
+      {
+        name: 'timeout string', mutate: (value) => { value.hooks.Stop[0].hooks[0].timeout = '60'; return value; }, readiness: 'misconfigured',
+        event: 'stop', count: 1, compatible: false, canonical: false, issues: ['timeout-invalid'],
+      },
+      {
+        name: 'timeout zero', mutate: (value) => { value.hooks.Stop[0].hooks[0].timeout = 0; return value; }, readiness: 'misconfigured',
+        event: 'stop', count: 1, compatible: false, canonical: false, issues: ['timeout-invalid'],
+      },
+      {
+        name: 'timeoutSec only', mutate: (value) => { delete value.hooks.Stop[0].hooks[0].timeout; value.hooks.Stop[0].hooks[0].timeoutSec = 60; return value; }, readiness: 'misconfigured',
+        event: 'stop', count: 1, compatible: false, canonical: false, issues: ['timeout:missing', 'timeoutSec'],
+      },
+      {
+        name: 'async true', mutate: (value) => { value.hooks.SessionStart[0].hooks[0].async = true; return value; }, readiness: 'misconfigured',
+        event: 'sessionStart', count: 1, compatible: false, canonical: false, issues: ['async:true'],
+      },
+      {
+        name: 'harmless known noncanonical fields', mutate: (value) => { value.hooks.SessionStart[0].hooks[0].async = false; value.hooks.SessionStart[0].hooks[0].statusMessage = null; return value; }, readiness: 'configured-unverified',
+        event: 'sessionStart', count: 1, compatible: true, canonical: false, issues: ['async:false', 'statusMessage:null'],
+      },
+      {
+        name: 'official optional fields with a valid Windows override', mutate: (value) => { value.hooks.Stop[0].hooks[0].statusMessage = 'visible'; value.hooks.Stop[0].hooks[0].commandWindows = String.raw`node.exe C:\repo\spotter.mjs codex-hook stop`; return value; }, readiness: 'configured-unverified',
+        event: 'stop', count: 1, compatible: true, canonical: true, issues: [],
+      },
+      {
+        name: 'invalid Windows override', mutate: (value) => { value.hooks.Stop[0].hooks[0].commandWindows = 'cmd'; return value; }, readiness: 'misconfigured',
+        event: 'stop', count: 1, compatible: false, canonical: false, issues: ['commandWindows-invalid'],
+      },
+      {
+        name: 'wrong-event Windows override', mutate: (value) => { value.hooks.Stop[0].hooks[0].commandWindows = String.raw`node.exe C:\repo\spotter.mjs codex-hook session-start`; return value; }, readiness: 'misconfigured',
+        event: 'stop', count: 1, compatible: false, canonical: false, issues: ['commandWindows-invalid'],
+      },
+      {
+        name: 'non-string Windows override', mutate: (value) => { value.hooks.Stop[0].hooks[0].commandWindows = 42; return value; }, readiness: 'misconfigured',
+        event: 'stop', count: 1, compatible: false, canonical: false, issues: ['commandWindows-invalid'],
+      },
+      {
+        name: 'other product handler', mutate: (value) => { value.hooks.Stop[0].hooks.push({ type: 'command', command: 'node caveat.js codex-hook stop', timeout: 1 }); return value; }, readiness: 'configured-unverified',
+        event: 'stop', count: 1, compatible: true, canonical: true, issues: [],
+      },
+    ];
+    for (const entry of cases) {
+      await writeFile(join(codexHome, 'hooks.json'), JSON.stringify(entry.mutate(base())), 'utf8');
+      const result = await codexHookDiagnostics({ codexHome, spawnSyncFn: () => ({ status: 0, stdout: 'hooks stable true\n', stderr: '' }) });
+      const validation = result.validation[entry.event];
+      assert.equal(result.readiness, entry.readiness, entry.name);
+      assert.equal(validation.expectedRegisteredCount, entry.count, entry.name);
+      assert.equal(validation.registered, entry.count > 0, entry.name);
+      assert.equal(validation.compatible, entry.compatible, entry.name);
+      assert.equal(validation.misconfigured, entry.readiness === 'misconfigured', entry.name);
+      assert.equal(validation.canonical, entry.canonical, entry.name);
+      assert.deepEqual(validation.issues, entry.issues, entry.name);
+    }
+  } finally { await rm(codexHome, { recursive: true, force: true }); }
+});
+
+test('codexHookDiagnostics: feature failure or disabled feature is unavailable without rewriting legacy availability', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-feature-'));
+  try {
+    await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    for (const result of [
+      await codexHookDiagnostics({ codexHome, spawnSyncFn: () => ({ status: 1, stdout: '', stderr: 'failed' }) }),
+      await codexHookDiagnostics({ codexHome, spawnSyncFn: () => ({ status: 0, stdout: 'hooks stable false\n', stderr: '' }) }),
+    ]) {
+      assert.equal(result.availability, 'unavailable');
+      assert.equal(result.readiness, 'unavailable');
+    }
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('codexHookDiagnostics: runtime observation is informational and never proves trust or readiness', async () => {
+  const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-runtime-'));
+  const project = await makeProject();
+  try {
+    await installCodexHooks({ codexHome, nodePath: '/usr/bin/node', spotterBin: '/repo/bin/spotter.mjs' });
+    const spawnSyncFn = () => ({ status: 0, stdout: 'hooks stable true\n', stderr: '' });
+    const before = await codexHookDiagnostics({ codexHome, projectRoot: project, spawnSyncFn });
+    assert.equal(before.readiness, 'configured-unverified');
+    assert.equal(before.runtime.observation, 'not-observed');
+    assert.equal(before.trust.state, 'unknown');
+
+    await writeFile(join(project, '.spotter', 'hook-events.jsonl'), JSON.stringify({
+      schema: 'spotter.hook_event.v1',
+      timestamp: '2026-07-12T00:00:00.000Z',
+      host: 'codex',
+      hook: 'SessionStart',
+      status: 'refresh_spawned',
+    }) + '\n', 'utf8');
+    const after = await codexHookDiagnostics({ codexHome, projectRoot: project, spawnSyncFn });
+    assert.equal(after.readiness, 'configured-unverified');
+    assert.equal(after.runtime.observation, 'observed');
+    assert.equal(after.runtime.byHook.SessionStart, 1);
+    assert.equal(after.trust.state, 'unknown');
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+    await rm(project, { recursive: true, force: true });
   }
 });
 

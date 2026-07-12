@@ -165,10 +165,22 @@ export async function runInstall({
   console.log('\nnext steps:');
   console.log('  reload Claude Code (or open a new session) to activate Spotter');
   if (codexHooksRegistered) {
-    console.log('  open a new Codex session to activate Codex hooks');
+    for (const step of codexInstallNextSteps(cwd)) console.log(`  ${step}`);
   } else if (target === 'project' && !skipCodexHooks) {
     console.log('  Codex hooks are not active: rerun `spotter install` where `codex --version` succeeds');
   }
+}
+
+export function codexInstallNextSteps(projectRoot) {
+  return [
+    'review the three Spotter hooks with Codex /hooks',
+    'open a new Codex session so SessionStart runs, then use the diagnostics command below',
+    `confirm configuration: spotter codex-hook diagnostics --project ${quoteInstallArgument(projectRoot)}`,
+  ];
+}
+
+function quoteInstallArgument(value) {
+  return `"${String(value).replace(/(["\\$`])/g, '\\$1')}"`;
 }
 
 async function exists(path) {

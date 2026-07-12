@@ -4,11 +4,27 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runInstall } from '../src/cli/install.mjs';
+import { codexInstallNextSteps, runInstall } from '../src/cli/install.mjs';
 import { runUninstall } from '../src/cli/uninstall.mjs';
 import { mkdtemp, readFile, writeFile, rm, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+test('install: Codex next steps require /hooks review, new-session smoke, and project diagnostics', () => {
+  assert.deepEqual(codexInstallNextSteps('/project'), [
+    'review the three Spotter hooks with Codex /hooks',
+    'open a new Codex session so SessionStart runs, then use the diagnostics command below',
+    'confirm configuration: spotter codex-hook diagnostics --project "/project"',
+  ]);
+  assert.equal(
+    codexInstallNextSteps('/Project With Spaces')[2],
+    'confirm configuration: spotter codex-hook diagnostics --project "/Project With Spaces"',
+  );
+  assert.equal(
+    codexInstallNextSteps(String.raw`C:\Projects\Spotter "smoke"`)[2],
+    String.raw`confirm configuration: spotter codex-hook diagnostics --project "C:\\Projects\\Spotter \"smoke\""`,
+  );
+});
 
 test('install: creates hooks in fresh settings.json', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-install-'));

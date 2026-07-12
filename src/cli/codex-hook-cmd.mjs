@@ -408,8 +408,16 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), pro
     stop: hookState(hooks, 'Stop'),
   };
   const runtimeProjectRoot = projectRoot ? findSpotterMarker(projectRoot) : null;
+  const validation = validateSpotterCodexHooks(hooks);
+  const unavailable = features.error || features.status !== 0 || codexHooksFeature !== 'enabled';
+  const incompatible = Object.values(validation).some((entry) => entry.misconfigured);
+  const missing = Object.values(validation).some((entry) => entry.issues.includes('missing'));
+  const runtimeSummary = runtimeProjectRoot ? await summarizeCodexHookEvents({ projectRoot: runtimeProjectRoot }) : null;
+  const runtime = runtimeSummary
+    ? { ...runtimeSummary, observation: runtimeSummary.events > 0 ? 'observed' : 'not-observed' }
+    : null;
   return {
-    availability: features.error || features.status !== 0 || codexHooksFeature !== 'enabled'
+    availability: unavailable
       ? 'unavailable'
       : installed.sessionStart === 'installed' && installed.userPromptSubmit === 'installed' && installed.stop === 'installed'
         ? 'available'
@@ -420,10 +428,68 @@ export async function codexHookDiagnostics({ codexHome = defaultCodexHome(), pro
     hooksPath: join(codexHome, 'hooks.json'),
     installedHooks: installed,
     evidence,
-    runtime: runtimeProjectRoot
-      ? await summarizeCodexHookEvents({ projectRoot: runtimeProjectRoot })
-      : null,
+    readiness: unavailable ? 'unavailable' : incompatible ? 'misconfigured' : missing ? 'not-installed' : 'configured-unverified',
+    validation,
+    trust: {
+      state: 'unknown',
+      action: 'Review the current three Spotter hook definitions with Codex /hooks; trust is not machine-verifiable.',
+    },
+    runtime,
   };
+}
+
+function validateSpotterCodexHooks(settings) {
+  return {
+    sessionStart: validateSpotterCodexHookEvent(settings, 'SessionStart'),
+    userPromptSubmit: validateSpotterCodexHookEvent(settings, 'UserPromptSubmit'),
+    stop: validateSpotterCodexHookEvent(settings, 'Stop'),
+  };
+}
+
+function validateSpotterCodexHookEvent(settings, event) {
+  const groups = Array.isArray(settings?.hooks?.[event]) ? settings.hooks[event] : [];
+  const allEntries = groups.flatMap((group) => Array.isArray(group.hooks) ? group.hooks : []);
+  const candidates = allEntries.filter((hook) => isSpotterCodexCommand(String(hook?.command ?? '')));
+  const expectedCandidates = candidates.filter((hook) => isSpotterCodexCommand(String(hook.command ?? ''), event));
+  const expected = expectedCandidates.filter((hook) => hook?.type === 'command');
+  const issues = [];
+  if (expectedCandidates.length === 0) issues.push('missing');
+  if (expectedCandidates.length > 1) issues.push('duplicate');
+  if (candidates.length !== expectedCandidates.length) issues.push('wrong-event-subcommand');
+  if (expectedCandidates.some((hook) => hook?.type !== 'command')) issues.push('type!=command');
+  for (const hook of expected) {
+    if (hook.async === true) issues.push('async:true');
+    if (!Object.hasOwn(hook, 'timeout')) issues.push('timeout:missing');
+    else if (!Number.isFinite(hook.timeout) || hook.timeout <= 0) issues.push('timeout-invalid');
+    if (Object.hasOwn(hook, 'timeoutSec')) issues.push('timeoutSec');
+    if (hook.async === false) issues.push('async:false');
+    if (hook.statusMessage === null) issues.push('statusMessage:null');
+    if (Object.hasOwn(hook, 'commandWindows') && (
+      typeof hook.commandWindows !== 'string'
+      || !isSpotterCodexCommand(hook.commandWindows, event)
+    )) issues.push('commandWindows-invalid');
+  }
+  const incompatible = issues.some((issue) => isIncompatibleSpotterHookIssue(issue));
+  return {
+    expectedRegisteredCount: expectedCandidates.length,
+    registered: expectedCandidates.length > 0,
+    compatible: expectedCandidates.length > 0 && !incompatible,
+    misconfigured: incompatible,
+    canonical: issues.length === 0,
+    issues: [...new Set(issues)],
+  };
+}
+
+function isIncompatibleSpotterHookIssue(issue) {
+  return [
+    'duplicate',
+    'wrong-event-subcommand',
+    'type!=command',
+    'async:true',
+    'timeout-invalid',
+    'timeoutSec',
+    'commandWindows-invalid',
+  ].includes(issue);
 }
 
 function createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn }) {
@@ -653,8 +719,7 @@ function addCodexHook(settings, event, command, { timeout = CODEX_HOOK_TIMEOUT_S
 }
 
 function isSpotterCodexHookForEvent(hook, event) {
-  const subcommand = codexHookSubcommandForEvent(event).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return isSpotterCodexHook(hook) && new RegExp(`\\bcodex-hook\\s+${subcommand}\\s*$`).test(String(hook.command ?? ''));
+  return isSpotterCodexHook(hook) && isSpotterCodexCommand(String(hook.command ?? ''), event);
 }
 
 function codexHookSubcommandForEvent(event) {
@@ -683,12 +748,17 @@ function removeCodexHooks(current) {
 
 function isSpotterCodexHook(hook) {
   if (hook?.type !== 'command') return false;
-  const match = String(hook.command ?? '').match(/^(?:"((?:\\.|[^"\\])*)"|(\S+))\s+(?:"((?:\\.|[^"\\])*)"|(\S+))\s+codex-hook\s+(session-start|user-prompt-submit|stop)\s*$/);
+  return isSpotterCodexCommand(String(hook.command ?? ''));
+}
+
+function isSpotterCodexCommand(command, event = null) {
+  const match = command.match(/^(?:"((?:\\.|[^"\\])*)"|(\S+))\s+(?:"((?:\\.|[^"\\])*)"|(\S+))\s+codex-hook\s+(session-start|user-prompt-submit|stop)\s*$/);
   if (!match) return false;
   const nodePath = unescapeQuotedCommandToken(match[1] ?? match[2]);
   const spotterPath = unescapeQuotedCommandToken(match[3] ?? match[4]);
   return /(?:^|[\\/])node(?:\.exe|\.cmd|\.bat)?$/i.test(nodePath)
-    && /(?:^|[\\/])spotter\.mjs$/.test(spotterPath);
+    && /(?:^|[\\/])spotter\.mjs$/.test(spotterPath)
+    && (event === null || match[5] === codexHookSubcommandForEvent(event));
 }
 
 function unescapeQuotedCommandToken(token) {
