@@ -598,7 +598,7 @@ export function buildWindowsAclPowerShell({ directory }) {
     : '[System.Security.AccessControl.InheritanceFlags]::None';
   return [
     '$ErrorActionPreference = "Stop"',
-    '$target = $args[0]',
+    '$target = $env:SPOTTER_ACL_PATH',
     '$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User',
     `$acl = New-Object System.Security.AccessControl.${securityType}`,
     '$acl.SetOwner($sid)',
@@ -618,8 +618,9 @@ export function buildWindowsAclPowerShell({ directory }) {
 async function runWindowsAcl(path, { directory }, options) {
   const executable = options.powerShellPath ?? 'powershell.exe';
   const script = buildWindowsAclPowerShell({ directory });
-  await spawnForExit(executable, ['-NoProfile', '-NonInteractive', '-Command', script, path], {
+  await spawnForExit(executable, ['-NoProfile', '-NonInteractive', '-Command', script], {
     timeoutMs: options.aclTimeoutMs ?? 3_000,
+    env: { ...process.env, SPOTTER_ACL_PATH: path },
   });
 }
 
@@ -646,10 +647,10 @@ export async function processStartIdentity(pid, options = {}) {
   }
 }
 
-function spawnForExit(command, args, { timeoutMs }) {
+function spawnForExit(command, args, { timeoutMs, env = process.env }) {
   return new Promise((resolve, reject) => {
     let settled = false;
-    const child = spawn(command, args, { stdio: 'ignore', windowsHide: true });
+    const child = spawn(command, args, { stdio: 'ignore', windowsHide: true, env });
     const finish = (error) => {
       if (settled) return;
       settled = true;
