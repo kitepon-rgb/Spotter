@@ -9,6 +9,11 @@
 - **unsafe pathを修復前に拒否。** POSIXのtype・symlink・owner検証を`chmod`より前へ移し、
   `~/.spotter`がsymlinkの場合にリンク先のmodeを変えてから失敗する副作用を防いだ。
   read-timeのmode検証、Windows DACL、collection明示opt-in、network非依存契約は変更しない。
+- **検証・公開。** 519 tests（517 pass / 2 platform skip）、macOS/Linux/Windows ×
+  Node 22.13/22.xのCI run `29274984927`、67-file pack検査、隔離installを通過した。
+  公開commit `52d6086`をnpm `latest`、`v1.4.24` tag、GitHub Releaseへ同期し、Mac、
+  main-server、FOX WSL2のregistry版global install、state root `0700`、runtime snapshot、
+  dotagents Mac BugHub canaryを確認した。
 
 ## 1.4.23 — 2026-07-13
 

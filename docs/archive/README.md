@@ -12,6 +12,7 @@
 
 Archived:
 
+- [`BUGHUB_RUNTIME_ERROR_ROLLOUT_FIX_PLAN.md`](BUGHUB_RUNTIME_ERROR_ROLLOUT_FIX_PLAN.md): completed v1.4.24 runtime state permission rollout fix
 - [`03_current-state-recovery-plan.md`](03_current-state-recovery-plan.md): completed recovery, release, and model-evaluation plan
 - [`05_parent-session-safety-plan.md`](05_parent-session-safety-plan.md): completed parent-session output-boundary implementation plan
 - [`06_release-v1.4.19-plan.md`](06_release-v1.4.19-plan.md): completed v1.4.19 release and registry-install verification

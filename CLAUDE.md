@@ -1,5 +1,10 @@
 # CLAUDE.md
 
+> **v1.4.24（2026-07-14公開）**: `spotter install`がglobal runtime state rootを
+> POSIX `0700` / owner一致またはWindows current-SID-only DACLへ正規化する。unsafe pathは
+> 修復前に拒否する。公開commit `52d6086`、CI `29274984927`、npm `latest`、tag / GitHub
+> Release、3 hostのregistry版installとdotagents Mac BugHub canaryまで確認済み。
+
 > **v1.4.23（2026-07-13公開）**: factory diagnostics と opt-in の local runtime
 > error store を追加した。collection は canonical dotagents config の
 > `collection.enabled: true` が明示された場合だけ有効で既定OFF、network送信は行わない。
@@ -21,6 +26,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.4.24 (published 2026-07-14)**: installerがruntime state rootを製品のprivate権限契約へ
+正規化し、既存の緩いmodeも修復する。POSIX symlink・owner不一致はchmod前に拒否する。
+公開commit `52d6086`、CI 6/6、npm `latest`、tag / GitHub Release、3 host配布、Mac BugHub
+canaryを完了した。
 
 **v1.4.22 (published 2026-07-13)**: v1.4.21のdefault-on裁定を公開文書へ正しく反映するdocs-only
 patch。7日 / fresh 30件の測定は精度改善にだけ使い、ON/OFFを再審査しない。公開commitは`3c7c820`。

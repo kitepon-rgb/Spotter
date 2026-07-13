@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter v1.4.22（published / global installed、2026-07-13）の未完事項だけを記録する。
+Spotter v1.4.24（published / rollout 3 host installed、2026-07-14）の未完事項だけを記録する。
 完了済みの実装・過去バージョンの観測・採用しなかった案はCHANGELOGと`docs/archive/`を参照する。
 
 ## 運用ルール
@@ -31,17 +31,6 @@ default-onは確定済みで、母数到達後にON/OFFを再審査しない。�
 明示opt-out機能として維持する。
 
 正本: [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md)
-
-## P0 — Runtime error初回snapshotをinstaller権限が阻害する
-
-`1.4.23`のruntime storeはowner-privateなstate rootを要求する一方、`spotter install`が
-`~/.spotter`をumask任せで作成・再利用するため、実3 hostの`0755` / `0775` directoryでは
-collection ON後のstore不在snapshotが非0になる。
-
-### 次の行動
-
-既存のPOSIX mode / Windows DACL正規化をinstallerから再利用し、fresh・upgrade両方を修復する。
-正本: [`BUGHUB_RUNTIME_ERROR_ROLLOUT_FIX_PLAN.md`](BUGHUB_RUNTIME_ERROR_ROLLOUT_FIX_PLAN.md)
 
 ## P1 — v1.4.21以降のPrimary auditor SLO判定
 
