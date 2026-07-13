@@ -17,6 +17,7 @@ import {
   observeRuntimeError,
   observeRuntimeErrorIsolatedSafe,
   observeRuntimeErrorSafe,
+  prepareRuntimeErrorStoreDirectory,
   readRuntimeErrorSnapshot,
   readRuntimeErrorStoreStatus,
   reopenRuntimeError,
@@ -60,6 +61,40 @@ const options = (box, extra = {}) => ({
   platform: box.platform,
   arch: 'arm64',
   ...extra,
+});
+
+test('installer用prepareは既存の緩いstate rootを0700へ直し、store不在snapshotを空で返せる', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  await mkdir(join(box.root, 'spotter'), { recursive: true, mode: 0o775 });
+  await chmod(join(box.root, 'spotter'), 0o775);
+
+  await prepareRuntimeErrorStoreDirectory(options(box));
+
+  assert.equal((await stat(join(box.root, 'spotter'))).mode & 0o777, 0o700);
+  const snapshot = await readRuntimeErrorSnapshot(options(box));
+  assert.equal(snapshot.collection, 'enabled');
+  assert.deepEqual(snapshot.records, []);
+  assert.equal(snapshot.latest_sequence, 0);
+});
+
+test('installer用prepareはstate root symlinkを拒否し、リンク先のmodeを変更しない', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const box = await sandbox();
+  const target = join(box.root, 'shared-target');
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  await mkdir(target, { mode: 0o775 });
+  await chmod(target, 0o775);
+  await symlink(target, join(box.root, 'spotter'));
+
+  await assert.rejects(prepareRuntimeErrorStoreDirectory(options(box)), {
+    code: 'E_RUNTIME_ERROR_STORE',
+  });
+
+  assert.equal((await stat(target)).mode & 0o777, 0o775);
 });
 
 function createObservationId(round, index) {

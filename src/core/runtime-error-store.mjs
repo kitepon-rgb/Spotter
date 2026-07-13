@@ -90,6 +90,11 @@ export function defaultRuntimeErrorStorePath({
   return join(homeDir, '.spotter', 'runtime-errors-v1.json');
 }
 
+export async function prepareRuntimeErrorStoreDirectory(options = {}) {
+  const storePath = options.storePath ?? defaultRuntimeErrorStorePath(options);
+  await ensurePrivateDirectory(dirname(storePath), options);
+}
+
 export function runtimeErrorFingerprint(definition) {
   validateDefinition(definition);
   const canonical = [
@@ -578,20 +583,27 @@ async function enforcePrivatePath(path, options, { directory, repair }) {
     if (repair) await runWindowsAcl(path, { directory }, options);
     return;
   }
+  const initialInfo = await lstat(path);
+  validatePrivateIdentity(initialInfo, options, { directory, platform });
   if (repair) await chmod(path, directory ? 0o700 : 0o600);
   const info = await lstat(path);
   validatePrivateStat(info, options, { directory, platform });
 }
 
-function validatePrivateStat(info, options, { directory, platform }) {
+function validatePrivateIdentity(info, options, { directory, platform }) {
   if ((directory ? !info.isDirectory() : !info.isFile()) || info.isSymbolicLink()) {
     throw storeError('runtime error path type is unsafe');
   }
   if (platform === 'win32') return;
-  const expectedMode = directory ? 0o700 : 0o600;
-  if ((info.mode & 0o777) !== expectedMode) throw storeError('runtime error path mode is unsafe');
   const getuid = options.getuidFn ?? process.getuid?.bind(process);
   if (typeof getuid === 'function' && info.uid !== getuid()) throw storeError('runtime error path owner is unsafe');
+}
+
+function validatePrivateStat(info, options, { directory, platform }) {
+  validatePrivateIdentity(info, options, { directory, platform });
+  if (platform === 'win32') return;
+  const expectedMode = directory ? 0o700 : 0o600;
+  if ((info.mode & 0o777) !== expectedMode) throw storeError('runtime error path mode is unsafe');
 }
 
 export function buildWindowsAclPowerShell({ directory }) {

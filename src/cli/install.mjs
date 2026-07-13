@@ -23,6 +23,7 @@ import { version as SPOTTER_VERSION } from '../version.mjs';
 import { refresh } from '../tool-db/refresh.mjs';
 import { localDbPath, globalDbPath } from '../tool-db/loader.mjs';
 import { installCodexHooks } from './codex-hook-cmd.mjs';
+import { prepareRuntimeErrorStoreDirectory } from '../core/runtime-error-store.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
@@ -58,6 +59,7 @@ export async function runInstall({
   refreshFn = refresh,
   codexCliPresentFn = isCodexCliPresent,
   installCodexHooksFn = installCodexHooks,
+  prepareRuntimeErrorStoreDirectoryFn = prepareRuntimeErrorStoreDirectory,
   auditorContext,
   resolveDefaultAuditorContextFn = resolveDefaultAuditorContext,
 } = {}) {
@@ -70,6 +72,7 @@ export async function runInstall({
   console.log(`  settings: ${settingsPath}`);
 
   // 1. create directories
+  await prepareRuntimeErrorStoreDirectoryFn();
   await mkdir(SPOTTER_HOME, { recursive: true });
   await mkdir(join(SPOTTER_HOME, 'runtime'), { recursive: true });
   await mkdir(join(SPOTTER_HOME, 'workdir'), { recursive: true });

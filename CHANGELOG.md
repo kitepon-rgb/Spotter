@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.24 — 2026-07-14
+
+- **installerがruntime error state rootをowner-privateへ正規化。** `spotter install`は
+  Hook・tool DB・daemon stateを作る前に、runtime storeと同じPOSIX uid / modeまたは
+  Windows current-SID-only DACL契約でglobal state rootを準備する。fresh installだけでなく、
+  umaskにより`0755` / `0775`で残っていた既存`~/.spotter`もPOSIXでは`0700`へ修復する。
+- **unsafe pathを修復前に拒否。** POSIXのtype・symlink・owner検証を`chmod`より前へ移し、
+  `~/.spotter`がsymlinkの場合にリンク先のmodeを変えてから失敗する副作用を防いだ。
+  read-timeのmode検証、Windows DACL、collection明示opt-in、network非依存契約は変更しない。
+
 ## 1.4.23 — 2026-07-13
 
 - **Factory diagnostics と local runtime error store。** factory diagnostics と

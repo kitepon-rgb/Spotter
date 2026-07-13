@@ -26,6 +26,20 @@ test('install: Codex next steps require /hooks review, new-session smoke, and pr
   );
 });
 
+test('install: hookやtool-dbより前にruntime state rootをprivateへ準備する', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-runtime-state-'));
+  const calls = [];
+  try {
+    await runInstall({
+      target: 'project', autoYes: true, cwd: dir, skipRefresh: true,
+      prepareRuntimeErrorStoreDirectoryFn: async () => { calls.push('prepare'); },
+    });
+    assert.deepEqual(calls, ['prepare']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('install: creates hooks in fresh settings.json', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-install-'));
   try {

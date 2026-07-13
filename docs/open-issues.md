@@ -32,6 +32,17 @@ default-onは確定済みで、母数到達後にON/OFFを再審査しない。�
 
 正本: [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md)
 
+## P0 — Runtime error初回snapshotをinstaller権限が阻害する
+
+`1.4.23`のruntime storeはowner-privateなstate rootを要求する一方、`spotter install`が
+`~/.spotter`をumask任せで作成・再利用するため、実3 hostの`0755` / `0775` directoryでは
+collection ON後のstore不在snapshotが非0になる。
+
+### 次の行動
+
+既存のPOSIX mode / Windows DACL正規化をinstallerから再利用し、fresh・upgrade両方を修復する。
+正本: [`BUGHUB_RUNTIME_ERROR_ROLLOUT_FIX_PLAN.md`](BUGHUB_RUNTIME_ERROR_ROLLOUT_FIX_PLAN.md)
+
 ## P1 — v1.4.21以降のPrimary auditor SLO判定
 
 旧version・認証失効・usage limitを含む累積値ではなく、v1.4.21以降の7日移動窓かつ各Hook 50 call以上で
