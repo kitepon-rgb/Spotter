@@ -23,6 +23,7 @@ const finding = {
 };
 
 const cleanGitStatus = async () => ({ stdout: '', stderr: '' });
+const identityInvocation = ({ command, args }) => ({ command, args });
 
 // On Windows, codex-sidecar-runner wraps non-Node commands with `cmd.exe /c` so
 // PATHEXT lookup applies to .cmd shims. Tests assert against logical sidecar
@@ -44,6 +45,7 @@ test('runCodexRiskCheck: invokes codex-sidecar risk-check with context-file and 
       findings: [finding],
       dryRun: true,
       now: () => new Date('2026-05-06T01:02:03.004Z'),
+      buildInvocationFn: identityInvocation,
       execFileFn: withWindowsUnwrap(async (cmd, args, opts) => {
         calls.push({ cmd, args, opts });
         assert.equal(opts.cwd, project);
@@ -95,6 +97,7 @@ test('runCodexRiskCheck: prompt includes exact risk schema hints', async () => {
       findings: [finding],
       dryRun: true,
       save: false,
+      buildInvocationFn: identityInvocation,
       execFileFn: withWindowsUnwrap(async (_cmd, args) => {
         if (args[0] === 'diagnostics') {
           return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
@@ -127,6 +130,7 @@ test('runCodexRiskCheck: unavailable sidecar returns explicit skipped record, no
       hostAgent: 'claude',
       findings: [finding],
       save: false,
+      buildInvocationFn: identityInvocation,
       execFileFn: async (_cmd, args) => {
         assert.equal(args[0], 'diagnostics');
         const err = new Error('codex-sidecar missing');
@@ -153,6 +157,7 @@ test('runCodexRiskCheck: Codex host still invokes sidecar when explicit structur
       hostAgent: 'codex',
       findings: [finding],
       save: false,
+      buildInvocationFn: identityInvocation,
       execFileFn: withWindowsUnwrap(async (_cmd, args) => {
         if (args[0] === 'diagnostics') {
           return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
@@ -181,6 +186,7 @@ test('runCodexRiskCheck: local built sidecar CLI path is used for diagnostics an
       findings: [finding],
       save: false,
       env: { PATH: '/bin', SPOTTER_CODEX_SIDECAR_CLI_PATH: localCli },
+      buildInvocationFn: identityInvocation,
       execFileFn: async (cmd, args) => {
         seen.push({ cmd, args });
         assert.equal(cmd, process.execPath);
@@ -214,6 +220,7 @@ test('runCodexReadOnlyWorkflow: maps review/explore/opinion to matching codex-si
         findings: [finding],
         dryRun: true,
         save: false,
+        buildInvocationFn: identityInvocation,
         execFileFn: withWindowsUnwrap(async (_cmd, args) => {
           if (args[0] === 'diagnostics') {
             return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };
@@ -335,6 +342,7 @@ test('runCodexWork: invokes codex-sidecar work with scoped config and validates 
       cleanup: 'remove',
       save: false,
       gitStatusFn: cleanGitStatus,
+      buildInvocationFn: identityInvocation,
       execFileFn: withWindowsUnwrap(async (cmd, args) => {
         calls.push({ cmd, args });
         if (args[0] === 'diagnostics') {
@@ -400,6 +408,7 @@ test('runCodexWork: unavailable work capability returns explicit skipped record'
       cleanup: 'preserve',
       save: false,
       gitStatusFn: cleanGitStatus,
+      buildInvocationFn: identityInvocation,
       execFileFn: async (_cmd, args) => {
         assert.equal(args[0], 'diagnostics');
         return { stdout: JSON.stringify({ status: 'failed', reason: 'no work preset' }), stderr: '' };
@@ -437,6 +446,7 @@ test('runCodexWork: changed files outside approved scope become structured error
       cleanup: 'preserve',
       save: false,
       gitStatusFn: cleanGitStatus,
+      buildInvocationFn: identityInvocation,
       execFileFn: withWindowsUnwrap(async (_cmd, args) => {
         if (args[0] === 'diagnostics') {
           return {
@@ -484,6 +494,7 @@ test('runCodexWork: dirty approved scope stops before sidecar invocation', async
       cleanup: 'preserve',
       save: false,
       gitStatusFn: async () => ({ stdout: '?? docs/archive/SPOTTER_CODEX_DUAL_SUPPORT_TODO.md\n', stderr: '' }),
+      buildInvocationFn: identityInvocation,
       execFileFn: async () => {
         sidecarCalls += 1;
         return { stdout: JSON.stringify({ status: 'ok' }), stderr: '' };

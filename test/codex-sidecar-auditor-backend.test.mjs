@@ -12,6 +12,7 @@ const catalog = [
   { name: 'mcp__caveat__caveat_search', description: 'Search known caveats.' },
   { name: 'current_time', description: 'Get current time.' },
 ];
+const identityInvocation = ({ command, args }) => ({ command, args });
 
 test('buildCodexSidecarAuditorPrompt: uses sidecar auditor contract and exact catalog names', () => {
   const prompt = buildCodexSidecarAuditorPrompt({
@@ -54,6 +55,7 @@ test('createCodexSidecarAuditorBackend: maps SidecarResult pass/missingTools to 
     catalog,
     projectRoot: '/repo',
     env: { PATH: '/bin' },
+    buildInvocationFn: identityInvocation,
     execFileFn: async (cmd, args, opts) => {
       captured = { cmd, args, opts };
       const contextPath = args[args.indexOf('--context-file') + 1];
@@ -98,6 +100,7 @@ test('createCodexSidecarAuditorBackend: sidecar failed status is a structured ba
   const backend = createCodexSidecarAuditorBackend({
     catalog,
     projectRoot: '/repo',
+    buildInvocationFn: identityInvocation,
     execFileFn: async () => ({
       stdout: JSON.stringify({
         status: 'failed',
@@ -118,6 +121,7 @@ test('createCodexSidecarAuditorBackend: non-JSON output is a structured backend 
   const backend = createCodexSidecarAuditorBackend({
     catalog,
     projectRoot: '/repo',
+    buildInvocationFn: identityInvocation,
     execFileFn: async () => ({ stdout: 'not-json', stderr: '' }),
   });
 

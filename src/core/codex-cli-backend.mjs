@@ -10,6 +10,7 @@ import {
   resolveCodexAuditorModelSelection,
 } from './codex-auditor-model-policy.mjs';
 import { serializeAuditorPromptData, validateRecentContext } from './auditor-prompt-data.mjs';
+import { buildWindowsCompatibleInvocation, terminateProcessTree } from './windows-cli-shim.mjs';
 
 const DEFAULT_CODEX_CLI_TIMEOUT_MS = 45_000;
 const DEFAULT_CODEX_CLI_MODEL = CODEX_AUDITOR_MODEL_POLICY.production.model;
@@ -129,6 +130,8 @@ export function createCodexCliAuditorBackend({
   codexBin = 'codex',
   modelProfile = null,
   resolveModelSelectionFn = resolveCodexAuditorModelSelection,
+  platform = process.platform,
+  terminateChildFn = terminateProcessTree,
 } = {}) {
   if (!Array.isArray(catalog)) {
     throw new TypeError('createCodexCliAuditorBackend: catalog must be an array');
@@ -168,6 +171,8 @@ export function createCodexCliAuditorBackend({
           spawnFn,
           timeoutMs,
           modelSelection,
+          platform,
+          terminateChildFn,
         });
         let rawFinal;
         try {
@@ -321,6 +326,8 @@ async function runCodexExec({
   spawnFn,
   timeoutMs,
   modelSelection,
+  platform,
+  terminateChildFn,
 }) {
   const args = buildCodexExecArgs({
     schemaPath,
@@ -330,10 +337,36 @@ async function runCodexExec({
     reasoningEffort: modelSelection.effectiveReasoningEffort,
   });
   const options = buildCodexCliSpawnOptions({ projectRoot, env });
+  let invocation;
+  try {
+    invocation = buildWindowsCompatibleInvocation({
+      command: codexBin,
+      args,
+      platform,
+      env,
+      allowCmdFallback: false,
+    });
+  } catch (err) {
+    throw new AuditorBackendError('E_CODEX_CLI_SPAWN', `failed to resolve ${codexBin}: ${err.message}`, {
+      backend: 'codex-cli',
+      stage,
+      diagnostics: {
+        durationMs: 0,
+        processCount: 0,
+        processCountMethod: 'resolve_failed',
+        stdout: '',
+        stderr: '',
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        modelSelection,
+      },
+      cause: err,
+    });
+  }
   const startedAt = Date.now();
   let child;
   try {
-    child = spawnFn(codexBin, args, options);
+    child = spawnFn(invocation.command, invocation.args, options);
   } catch (err) {
     throw new AuditorBackendError('E_CODEX_CLI_SPAWN', `failed to spawn ${codexBin}: ${err.message}`, {
       backend: 'codex-cli',
@@ -368,8 +401,21 @@ async function runCodexExec({
     const timer = setTimeout(() => {
       settle(async () => {
         const completed = await readSchemaValidLastMessage({ lastMessagePath, stage });
+        try {
+          await terminateChildFn(child, { platform });
+        } catch (cause) {
+          reject(new AuditorBackendError('E_CODEX_CLI_TERMINATION', 'codex-cli process tree termination could not be verified', {
+            backend: 'codex-cli',
+            stage,
+            diagnostics: {
+              ...diagnostics(),
+              lastMessageCheck: completed.reason,
+            },
+            cause,
+          }));
+          return;
+        }
         if (completed.ok) {
-          if (typeof child.kill === 'function') child.kill();
           resolve({
             diagnostics: {
               ...diagnostics(),
@@ -379,7 +425,6 @@ async function runCodexExec({
           });
           return;
         }
-        if (typeof child.kill === 'function') child.kill();
         reject(new AuditorBackendError('E_CODEX_CLI_TIMEOUT', `codex-cli did not respond within ${timeoutMs}ms`, {
           backend: 'codex-cli',
           stage,

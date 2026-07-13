@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { codexInstallNextSteps, resolveDefaultAuditorContext, runInstall } from '../src/cli/install.mjs';
+import { codexInstallNextSteps, isCodexCliPresent, resolveDefaultAuditorContext, runInstall } from '../src/cli/install.mjs';
 import { runUninstall } from '../src/cli/uninstall.mjs';
 import { mkdtemp, readFile, writeFile, rm, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,6 +24,25 @@ test('install: Codex next steps require /hooks review, new-session smoke, and pr
     codexInstallNextSteps(String.raw`C:\Projects\Spotter "smoke"`)[2],
     String.raw`confirm configuration: spotter codex-hook diagnostics --project "C:\\Projects\\Spotter \"smoke\""`,
   );
+});
+
+test('install: Windowsではcodex.cmdをcmd.exe経由で検出する', () => {
+  const calls = [];
+  const spawnSyncFn = (command, args, options) => {
+    calls.push({ command, args, options });
+    return { status: 0 };
+  };
+  assert.equal(isCodexCliPresent({ platform: 'win32', spawnSyncFn }), true);
+  assert.equal(calls[0].command, 'cmd.exe');
+  assert.deepEqual(calls[0].args, ['/d', '/s', '/c', 'codex', '--version']);
+  assert.equal(calls[0].options.windowsHide, true);
+});
+
+test('install: POSIXではcodexを直接検出し非0を未導入扱いする', () => {
+  const calls = [];
+  const spawnSyncFn = (command, args) => { calls.push({ command, args }); return { status: 1 }; };
+  assert.equal(isCodexCliPresent({ platform: 'linux', spawnSyncFn }), false);
+  assert.deepEqual(calls, [{ command: 'codex', args: ['--version'] }]);
 });
 
 test('install: hookやtool-dbより前にruntime state rootをprivateへ準備する', async () => {

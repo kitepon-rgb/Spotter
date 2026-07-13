@@ -15,6 +15,7 @@
 import { mkdir, writeFile, readFile, access, realpath } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { buildWindowsCompatibleInvocation } from '../core/windows-cli-shim.mjs';
 import { homedir } from 'node:os';
 import { join, resolve, dirname, delimiter, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -278,8 +279,17 @@ async function exists(path) {
   }
 }
 
-function isCodexCliPresent() {
-  const result = spawnSync('codex', ['--version'], {
+export function isCodexCliPresent({
+  platform = process.platform,
+  spawnSyncFn = spawnSync,
+  codexBin = 'codex',
+} = {}) {
+  const invocation = buildWindowsCompatibleInvocation({
+    command: codexBin,
+    args: ['--version'],
+    platform,
+  });
+  const result = spawnSyncFn(invocation.command, invocation.args, {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: 5_000,

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.25 — 2026-07-14
+
+- **Windows Codex CLI実行経路を修正。** `spotter install`、`spotter doctor`、Codex hook /
+  factory diagnostics、Codex CLI auditorは、Windowsのnpm shim `codex.cmd`を`cmd.exe`経由で
+  実行する。PowerShellから利用可能なCodexを未導入扱いせず、生成後のhook監査まで通す。
+- **timeout時のプロセスツリー終了を追加。** Windowsのshim経由監査は`taskkill /T /F`で
+  子Codexを残さず、終了確認に失敗すれば別codeでfail-loudにする。npm生成shimは
+  検証済みNode entrypointへ解決してから直接起動し、project pathを`cmd.exe`に
+  再解釈させない。Codex Sidecarの診断・監査・workflowも同じ解決契約へ揃える。
+  POSIXと実体`.exe`の直接spawn、stdin prompt、非0終了時のfail-loud診断は維持する。
+- **検証。** 530 tests（528 pass / 2 platform skip）、68-file pack、FOX Windows nativeの
+  tarball仮導入、install、warning 0のdoctor、Codex hooks / catalog、実Codex CLI auditor、
+  codex-sidecar auditor diagnostics、dotagents `verify-install`を通過した。
+
 ## 1.4.24 — 2026-07-14
 
 - **installerがruntime error state rootをowner-privateへ正規化。** `spotter install`は

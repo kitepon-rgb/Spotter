@@ -16,6 +16,7 @@ import {
   createSidecarResultRecord,
   spotterFindingsToSidecarContextBlocks,
 } from './sidecar-context.mjs';
+import { buildWindowsCompatibleInvocation } from './windows-cli-shim.mjs';
 
 const execFileP = promisify(execFile);
 const WORKFLOW_MAP = {
@@ -36,6 +37,7 @@ export async function runCodexReadOnlyWorkflow({
   save = true,
   outPath = null,
   execFileFn = execFileP,
+  buildInvocationFn = buildWindowsCompatibleInvocation,
   gitStatusFn = execFileP,
   env = process.env,
   now = () => new Date(),
@@ -54,6 +56,7 @@ export async function runCodexReadOnlyWorkflow({
   const effectiveHostAgent = detectHostAgent({ explicitHostAgent: hostAgent, env });
   const contextBlocks = spotterFindingsToSidecarContextBlocks(findings);
   const spawnOptions = buildSidecarSpawnOptions({ projectRoot, env });
+  spawnOptions.buildInvocationFn = buildInvocationFn;
   const diagnostics = await runDiagnostics({ projectRoot, preset: workflowSpec.preset, execFileFn, spawnOptions });
   const availability = classifySidecarAvailability({ diagnostics });
   const decision = decideCodexSidecarUse({
@@ -129,6 +132,7 @@ export async function runCodexWork({
   save = true,
   outPath = null,
   execFileFn = execFileP,
+  buildInvocationFn = buildWindowsCompatibleInvocation,
   gitStatusFn = execFileP,
   env = process.env,
   now = () => new Date(),
@@ -163,6 +167,7 @@ export async function runCodexWork({
     gitStatusFn,
   });
   const spawnOptions = buildSidecarSpawnOptions({ projectRoot, env, marker: 'codex-work' });
+  spawnOptions.buildInvocationFn = buildInvocationFn;
   const diagnostics = dirtyScope.ok
     ? await runDiagnostics({ projectRoot, preset: workflowSpec.preset, execFileFn, spawnOptions })
     : null;
@@ -481,10 +486,13 @@ function execPortable(execFileFn, cmd, args, spawnOptions) {
     windowsHide: true,
     maxBuffer: 10 * 1024 * 1024,
   };
-  if (process.platform === 'win32' && cmd !== process.execPath) {
-    return execFileFn('cmd.exe', ['/c', cmd, ...args], options);
-  }
-  return execFileFn(cmd, args, options);
+  const invocation = spawnOptions.buildInvocationFn({
+    command: cmd,
+    args,
+    env: spawnOptions.env,
+    allowCmdFallback: false,
+  });
+  return execFileFn(invocation.command, invocation.args, options);
 }
 
 function parseJsonOutput(stdout) {

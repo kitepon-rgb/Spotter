@@ -6,6 +6,7 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuditorBackend, selectAuditorBackend } from '../core/auditor-backend.mjs';
 import { resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
+import { buildWindowsCompatibleInvocation } from '../core/windows-cli-shim.mjs';
 import { codexLastAssistantMessage, readCodexToolUsage } from '../core/codex-transcript.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
 import { spawnRefreshDetached } from '../hooks/spawn-daemon.mjs';
@@ -549,13 +550,23 @@ export async function codexHookDiagnostics({
   projectRoot = null,
   env = process.env,
   spawnSyncFn = spawnSync,
+  platform = process.platform,
   resolveModelSelectionFn = resolveCodexAuditorModelSelection,
 } = {}) {
   const auditorBackend = resolveCodexHookAuditorBackend({ env });
   const auditorModelSelection = auditorBackend === 'codex-cli'
     ? resolveModelSelectionFn({ env })
     : null;
-  const features = spawnSyncFn('codex', ['features', 'list'], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
+  const invocation = buildWindowsCompatibleInvocation({
+    command: 'codex',
+    args: ['features', 'list'],
+    platform,
+  });
+  const features = spawnSyncFn(invocation.command, invocation.args, {
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+    windowsHide: true,
+  });
   const featureOutput = [features.stdout, features.stderr].filter(Boolean).join('\n');
   const hooks = await loadJson(join(codexHome, 'hooks.json'));
   const evidence = featureOutput.split('\n').find((line) => isEnabledCodexHookFeatureLine(line)) ?? null;

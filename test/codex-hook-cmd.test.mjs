@@ -1277,6 +1277,22 @@ test('codexHookDiagnostics: reports feature and hook installation state', async 
   }
 });
 
+test('codexHookDiagnostics: Windowsではnpm shim経由でfeaturesを診断する', async () => {
+  let call;
+  const result = await codexHookDiagnostics({
+    platform: 'win32',
+    resolveModelSelectionFn: () => ({ effectiveModel: 'gpt-5.6-terra' }),
+    spawnSyncFn: (command, args, options) => {
+      call = { command, args, options };
+      return { status: 0, stdout: 'hooks stable true\n', stderr: '' };
+    },
+  });
+  assert.equal(call.command, 'cmd.exe');
+  assert.deepEqual(call.args, ['/d', '/s', '/c', 'codex', 'features', 'list']);
+  assert.equal(call.options.windowsHide, true);
+  assert.equal(result.codexHooksFeature, 'enabled');
+});
+
 test('codexHookDiagnostics: reports effective overrides without probing model availability', async () => {
   const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-model-'));
   let spawnCalls = 0;

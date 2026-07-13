@@ -15,12 +15,125 @@ import {
   isCodexUsageLimitFailure,
   parseCodexTurnUsageLine,
 } from '../src/core/codex-cli-backend.mjs';
+import {
+  buildWindowsCompatibleInvocation,
+  npmShimEntryPath,
+  terminateProcessTree,
+} from '../src/core/windows-cli-shim.mjs';
 import { AuditorBackendError, createAuditorBackend } from '../src/core/auditor-backend.mjs';
 
 const catalog = [
   { name: 'mcp__caveat__caveat_search', description: 'Search known caveats.' },
   { name: 'current_time', description: 'Get current time.' },
 ];
+
+test('buildWindowsCompatibleInvocation: 未解決shimの固定probeだけcmd.exe fallbackを許す', () => {
+  assert.deepEqual(buildWindowsCompatibleInvocation({
+    command: 'codex', args: ['exec', '-'], platform: 'win32',
+  }), {
+    command: 'cmd.exe', args: ['/d', '/s', '/c', 'codex', 'exec', '-'],
+  });
+  assert.deepEqual(buildWindowsCompatibleInvocation({
+    command: 'C:\\tools\\codex.exe', args: ['--version'], platform: 'win32',
+  }), {
+    command: 'C:\\tools\\codex.exe', args: ['--version'],
+  });
+  assert.deepEqual(buildWindowsCompatibleInvocation({
+    command: 'codex', args: ['--version'], platform: 'linux',
+  }), {
+    command: 'codex', args: ['--version'],
+  });
+});
+
+test('buildWindowsCompatibleInvocation: npm cmd shimをNode entrypointへ安全に解決する', () => {
+  const shim = 'C:\\npm\\codex.cmd';
+  const script = 'C:\\npm\\node_modules\\@openai\\codex\\bin\\codex.js';
+  const files = new Set([shim.toLowerCase(), script.toLowerCase()]);
+  const invocation = buildWindowsCompatibleInvocation({
+    command: 'codex',
+    args: ['exec', '--cd', 'C:\\repo&safe', '-'],
+    platform: 'win32',
+    env: { Path: 'C:\\npm' },
+    processExecPath: 'C:\\node\\node.exe',
+    fileExistsFn: (path) => files.has(path.toLowerCase()),
+    readFileFn: () => '"%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n',
+    allowCmdFallback: false,
+  });
+  assert.deepEqual(invocation, {
+    command: 'C:\\node\\node.exe',
+    args: [script, 'exec', '--cd', 'C:\\repo&safe', '-'],
+  });
+  assert.equal(invocation.command, 'C:\\node\\node.exe');
+  assert.equal(invocation.args.includes('cmd.exe'), false);
+});
+
+test('npmShimEntryPath: npm生成形式以外とpath traversalを拒否する', () => {
+  assert.equal(npmShimEntryPath('custom.cmd %*', 'C:\\npm'), null);
+  assert.equal(npmShimEntryPath('"%dp0%\\node_modules\\..\\evil.js" %*', 'C:\\npm'), null);
+  assert.equal(npmShimEntryPath('"%dp0%\\node_modules\\safe/../../evil.js" %*', 'C:\\npm'), null);
+});
+
+test('terminateProcessTree: Windowsではtaskkill完了後にshim配下を含むtree終了を確定する', async () => {
+  let directKills = 0;
+  let call;
+  const killer = new EventEmitter();
+  const terminated = terminateProcessTree({ pid: 4321, kill: () => { directKills += 1; } }, {
+    platform: 'win32',
+    spawnFn: (command, args, options) => {
+      call = { command, args, options };
+      return killer;
+    },
+  });
+  assert.equal(call.command, 'taskkill.exe');
+  assert.deepEqual(call.args, ['/pid', '4321', '/T', '/F']);
+  assert.equal(call.options.windowsHide, true);
+  assert.equal(directKills, 0);
+  killer.emit('close', 0);
+  await terminated;
+  assert.equal(directKills, 0);
+});
+
+test('terminateProcessTree: taskkill非0はdirect killしてfail-loudにする', async () => {
+  let directKills = 0;
+  const killer = new EventEmitter();
+  const terminated = terminateProcessTree({ pid: 4321, kill: () => { directKills += 1; } }, {
+    platform: 'win32',
+    spawnFn: () => killer,
+    timeoutMs: 50,
+  });
+  killer.emit('close', 1);
+  await assert.rejects(terminated, (error) => error.code === 'E_PROCESS_TREE_TERMINATION');
+  assert.equal(directKills, 1);
+});
+
+test('createCodexCliAuditorBackend: Windowsの直接実行可能Codexをcmd.exeなしで起動する', async () => {
+  let captured;
+  const spawnFn = (command, args) => {
+    captured = { command, args };
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.stdin = new PassThrough();
+    child.kill = () => {};
+    const lastPath = args[args.indexOf('--output-last-message') + 1];
+    queueMicrotask(async () => {
+      await import('node:fs/promises').then(({ writeFile }) => writeFile(lastPath, JSON.stringify({ pass: true, missing_tools: [] }), 'utf8'));
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({
+    catalog,
+    projectRoot: '/repo',
+    platform: 'win32',
+    codexBin: 'C:\\tools\\codex.exe',
+    spawnFn,
+  });
+  await backend.judge({ stage: 'user_input', userInput: 'x' });
+  assert.equal(captured.command, 'C:\\tools\\codex.exe');
+  assert.equal(captured.args[0], 'exec');
+  assert.equal(captured.args.at(-1), '-');
+});
 
 test('buildCodexCliAuditorPrompt: uses a stateless Codex-specific prompt, not Haiku preamble', () => {
   const prompt = buildCodexCliAuditorPrompt({
@@ -446,6 +559,36 @@ test('createCodexCliAuditorBackend: timeout kills child and returns structured e
       && err.diagnostics.modelSelection.effectiveModel === 'gpt-5.6-terra'
   );
   assert.equal(killed, true);
+});
+
+test('createCodexCliAuditorBackend: Windows tree終了未確認はtimeout成功扱いせず別codeで失敗する', async () => {
+  const spawnFn = () => {
+    const child = new EventEmitter();
+    child.pid = 4321;
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({
+    catalog,
+    projectRoot: '/repo',
+    platform: 'win32',
+    codexBin: 'C:\\tools\\codex.exe',
+    spawnFn,
+    timeoutMs: 5,
+    terminateChildFn: async () => {
+      const error = new Error('taskkill failed');
+      error.code = 'E_PROCESS_TREE_TERMINATION';
+      throw error;
+    },
+  });
+  await assert.rejects(
+    backend.judge({ stage: 'user_input', userInput: 'x' }),
+    (error) => error instanceof AuditorBackendError
+      && error.code === 'E_CODEX_CLI_TERMINATION'
+      && error.stage === 'user_input',
+  );
 });
 
 test('createCodexCliAuditorBackend: timeout accepts schema-valid last-message before process close', async () => {

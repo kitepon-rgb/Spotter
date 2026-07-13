@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { loadDb, globalDbPath, localDbPath } from '../tool-db/loader.mjs';
 import { findSpotterMarker } from '../hooks/lib.mjs';
 import { codexHookDiagnostics } from './codex-hook-cmd.mjs';
+import { buildWindowsCompatibleInvocation } from '../core/windows-cli-shim.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -51,8 +52,8 @@ export async function runDoctor() {
   // Codex native readiness. These are warnings because Claude-backed installs may
   // still be valid, but Codex-first tuning needs the signal in one place.
   try {
-    const { stdout } = await execFileP('codex', ['--version'], { timeout: 5_000, windowsHide: true });
-    mark(true, `codex CLI: ${stdout.trim()}`);
+    const version = await inspectCodexCliVersion();
+    mark(true, `codex CLI: ${version}`);
   } catch (err) {
     mark(false, 'codex CLI', `not found or failed: ${err.message}`);
     warnings += 1;
@@ -113,6 +114,23 @@ export async function runDoctor() {
     process.exit(1);
   }
   console.log(`result: OK (${warnings} warnings)`);
+}
+
+export async function inspectCodexCliVersion({
+  codexBin = 'codex',
+  platform = process.platform,
+  execFileFn = execFileP,
+} = {}) {
+  const invocation = buildWindowsCompatibleInvocation({
+    command: codexBin,
+    args: ['--version'],
+    platform,
+  });
+  const { stdout } = await execFileFn(invocation.command, invocation.args, {
+    timeout: 5_000,
+    windowsHide: true,
+  });
+  return stdout.trim();
 }
 
 export async function inspectCodexHookConfiguration({ projectRoot = null, diagnosticsFn = codexHookDiagnostics } = {}) {
@@ -209,7 +227,13 @@ async function codexSidecarAuditorReadiness(projectRoot) {
   const cmd = cliPath ? process.execPath : 'codex-sidecar';
   const finalArgs = cliPath ? [cliPath, ...args] : args;
   try {
-    const { stdout } = await execFileP(cmd, finalArgs, {
+    const invocation = buildWindowsCompatibleInvocation({
+      command: cmd,
+      args: finalArgs,
+      env: process.env,
+      allowCmdFallback: false,
+    });
+    const { stdout } = await execFileP(invocation.command, invocation.args, {
       timeout: 15_000,
       windowsHide: true,
       maxBuffer: 1024 * 1024,

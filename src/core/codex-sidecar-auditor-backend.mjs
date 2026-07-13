@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { toSpotterJudgment } from './judgment.mjs';
 import { filterCatalogMisses } from './auditor-response.mjs';
 import { AuditorBackendError } from './auditor-error.mjs';
+import { buildWindowsCompatibleInvocation } from './windows-cli-shim.mjs';
 
 const execFileP = promisify(execFile);
 const DEFAULT_CODEX_SIDECAR_AUDITOR_TIMEOUT_MS = 45_000;
@@ -18,6 +19,7 @@ export function createCodexSidecarAuditorBackend({
   projectRoot,
   env = process.env,
   execFileFn = execFileP,
+  buildInvocationFn = buildWindowsCompatibleInvocation,
   timeoutMs = DEFAULT_CODEX_SIDECAR_AUDITOR_TIMEOUT_MS,
 } = {}) {
   if (!Array.isArray(catalog)) {
@@ -47,6 +49,7 @@ export function createCodexSidecarAuditorBackend({
           contextFilePath,
           env,
           execFileFn,
+          buildInvocationFn,
           timeoutMs,
         });
         const parsed = parseCodexSidecarAuditorResult(run.value, { stage });
@@ -166,14 +169,27 @@ function buildExecOptions({ projectRoot, env, timeoutMs }) {
   };
 }
 
-async function runCodexSidecarAuditor({ projectRoot, contextFilePath, env, execFileFn, timeoutMs }) {
+async function runCodexSidecarAuditor({
+  projectRoot,
+  contextFilePath,
+  env,
+  execFileFn,
+  buildInvocationFn,
+  timeoutMs,
+}) {
   const { cmd, args } = buildCodexSidecarAuditorCommand({ projectRoot, contextFilePath, env, timeoutMs });
   const options = buildExecOptions({ projectRoot, env, timeoutMs });
+  const invocation = buildInvocationFn({
+    command: cmd,
+    args,
+    env,
+    allowCmdFallback: false,
+  });
   const startedAt = Date.now();
   let stdout = '';
   let stderr = '';
   try {
-    const result = await execFileFn(cmd, args, options);
+    const result = await execFileFn(invocation.command, invocation.args, options);
     stdout = result.stdout ?? '';
     stderr = result.stderr ?? '';
   } catch (err) {

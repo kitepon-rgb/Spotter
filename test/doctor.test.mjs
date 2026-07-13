@@ -4,9 +4,25 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  inspectCodexCliVersion,
   inspectAuditorContextConfiguration,
   inspectCodexHookConfiguration,
 } from '../src/cli/doctor.mjs';
+
+test('inspectCodexCliVersion: Windowsではnpm shimをcmd.exe経由で診断する', async () => {
+  let call;
+  const version = await inspectCodexCliVersion({
+    platform: 'win32',
+    execFileFn: async (command, args, options) => {
+      call = { command, args, options };
+      return { stdout: 'codex-cli 0.144.3\r\n' };
+    },
+  });
+  assert.equal(version, 'codex-cli 0.144.3');
+  assert.equal(call.command, 'cmd.exe');
+  assert.deepEqual(call.args, ['/d', '/s', '/c', 'codex', '--version']);
+  assert.equal(call.options.windowsHide, true);
+});
 
 test('inspectCodexHookConfiguration: forwards projectRoot and rejects legacy false-success', async () => {
   let received;
