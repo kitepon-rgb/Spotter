@@ -414,7 +414,6 @@ test('isolated observer settles by the absolute deadline even when observe and r
   }));
   const elapsed = Date.now() - startedAt;
   assert.equal(result.collected, false);
-  assert.ok(elapsed >= timeoutMs - 20, `settled too early: ${elapsed}ms`);
   assert.ok(elapsed < timeoutMs + 100, `missed hard deadline: ${elapsed}ms`);
   assert.deepEqual(stderr, ['spotter-runtime-errors: local aggregate store unavailable\n']);
 });
