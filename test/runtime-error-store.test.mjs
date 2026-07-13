@@ -26,6 +26,11 @@ import {
 } from '../src/core/runtime-error-store.mjs';
 import { runRuntimeErrorDiagnosticsCommand } from '../src/cli/diagnostics-cmd.mjs';
 
+const TEST_PLATFORM = process.platform === 'win32' ? 'win32' : 'darwin';
+const TEST_PROFILE = TEST_PLATFORM === 'win32' ? 'windows-native' : 'mac';
+const TEST_CREDENTIAL_FILE = TEST_PLATFORM === 'win32' ? 'C:\\safe\\credential' : '/safe/credential';
+const ISOLATED_COMMIT_TIMEOUT_MS = TEST_PLATFORM === 'win32' ? 5_000 : 1_500;
+
 async function sandbox(config = { collection: { enabled: true } }) {
   const root = await mkdtemp(join(tmpdir(), 'spotter-runtime-errors-'));
   const configPath = join(root, 'factory-reporter.json');
@@ -33,14 +38,14 @@ async function sandbox(config = { collection: { enabled: true } }) {
   if (config !== null) {
     await writeFile(configPath, JSON.stringify({
       schema_version: '1.0',
-      host: { id: 'test-host', profile: 'mac' },
+      host: { id: 'test-host', profile: TEST_PROFILE },
       collection: { enabled: false },
       reporting: { enabled: false },
       ...config,
     }));
     if (process.platform !== 'win32') await chmod(configPath, 0o600);
   }
-  return { root, configPath, storePath };
+  return { root, configPath, storePath, platform: TEST_PLATFORM };
 }
 
 const execFileAsync = promisify(execFile);
@@ -52,7 +57,7 @@ const options = (box, extra = {}) => ({
   storePath: box.storePath,
   now: () => new Date('2026-07-13T00:00:00.000Z'),
   productVersion: '1.4.22',
-  platform: 'darwin',
+  platform: box.platform,
   arch: 'arm64',
   ...extra,
 });
@@ -107,13 +112,13 @@ test('runtime error config: endpoint is accepted only when URL parsing is canoni
   for (const endpoint of ['ftp://example.test/api', 'https://example.test:443/api', 'https://user:pass@example.test/api']) {
     const box = await sandbox({
       collection: { enabled: true },
-      reporting: { enabled: true, endpoint, credential_file: '/safe/credential' },
+      reporting: { enabled: true, endpoint, credential_file: TEST_CREDENTIAL_FILE },
     });
     assert.equal((await observeRuntimeError('daemon_transport', options(box))).collected, false, endpoint);
   }
   const box = await sandbox({
     collection: { enabled: true },
-    reporting: { enabled: true, endpoint: 'https://example.test/api', credential_file: '/safe/credential' },
+    reporting: { enabled: true, endpoint: 'https://example.test/api', credential_file: TEST_CREDENTIAL_FILE },
   });
   assert.equal((await observeRuntimeError('daemon_transport', options(box))).collected, true);
 });
@@ -158,7 +163,7 @@ test('runtime error store aggregates fixed definitions with canonical SHA-256 fi
     first_seen: '2026-07-13T00:00:00.000Z',
     last_seen: '2026-07-13T00:00:05.000Z',
     state_schema_version: '1.0',
-    os: 'darwin',
+    os: box.platform,
     arch: 'arm64',
     status: 'open',
     resolved_at: null,
@@ -331,12 +336,12 @@ setInterval(() => {}, 1000);
 `);
   const startedAt = Date.now();
   const result = await observeRuntimeErrorIsolatedSafe('daemon_transport', options(box, {
-    timeoutMs: 1_500,
+    timeoutMs: ISOLATED_COMMIT_TIMEOUT_MS,
     workerPath: worker,
     writeError: () => assert.fail('committed receipt must reconcile'),
   }));
   assert.deepEqual(result, { collected: true });
-  assert.ok(Date.now() - startedAt < 1_500);
+  assert.ok(Date.now() - startedAt < ISOLATED_COMMIT_TIMEOUT_MS);
   const observationId = await readFile(marker, 'utf8');
   assert.match(observationId, /^[a-f0-9]{32}$/);
 
@@ -382,7 +387,7 @@ setInterval(() => {}, 1000);
 `);
   const stderr = [];
   const result = await observeRuntimeErrorIsolatedSafe('daemon_transport', options(box, {
-    timeoutMs: 1_500,
+    timeoutMs: ISOLATED_COMMIT_TIMEOUT_MS,
     workerPath: worker,
     writeError: (text) => stderr.push(text),
   }));
@@ -501,7 +506,7 @@ test('runtime worker rejects extra fields, mismatched receipt IDs, and non-canon
     configPath: box.configPath,
     storePath: box.storePath,
     productVersion: '1.4.22',
-    platform: 'darwin',
+    platform: box.platform,
     arch: 'arm64',
     observationId,
   };

@@ -56,6 +56,7 @@ const MAX_RECEIPTS = 1_024;
 // unavailable. The observer remains absolutely bounded. Receipt reconciliation
 // is prewarmed in parallel, so its cold-start cost is not paid after timeout.
 const DEFAULT_ISOLATED_TIMEOUT_MS = 1_500;
+const WINDOWS_DEFAULT_ISOLATED_TIMEOUT_MS = 5_000;
 const RUNTIME_ERROR_WORKER = fileURLToPath(new URL('./runtime-error-store-worker.mjs', import.meta.url));
 const pathQueues = new Map();
 
@@ -206,7 +207,10 @@ export async function observeRuntimeErrorIsolatedSafe(input, options = {}) {
   } catch {
     return emitFixedStoreFailure(options);
   }
-  const timeoutMs = options.timeoutMs ?? DEFAULT_ISOLATED_TIMEOUT_MS;
+  const platform = options.platform ?? process.platform;
+  const timeoutMs = options.timeoutMs ?? (platform === 'win32'
+    ? WINDOWS_DEFAULT_ISOLATED_TIMEOUT_MS
+    : DEFAULT_ISOLATED_TIMEOUT_MS);
   if (!Number.isFinite(timeoutMs) || timeoutMs < 10 || timeoutMs > 10_000) {
     return emitFixedStoreFailure(options);
   }
