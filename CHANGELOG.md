@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.23 — release candidate (pending)
+
+- **Factory diagnostics と local runtime error store。** factory diagnostics と
+  `spotter diagnostics runtime-errors` の公開候補。収集は canonical dotagents config の
+  JSON boolean `collection.enabled: true` が明示された時だけ有効で既定OFF、保存は
+  local-only、network送信は行わない。npm公開、tag、CI、registry由来installの確認は未実施。
+- **隔離observerのdeadlineを実測へ整合。** 並列full-suite負荷でcold workerとreceipt
+  reconcilerが500msに収まらず、commit済みreceiptを`store_unavailable`へ誤分類するraceを
+  再現した。絶対deadlineを1.5秒へ広げたうえでreceipt reconcilerを観測workerと
+  並行prewarmし、後段cold-startの競合を除去。worker treeの強制終了と本体処理を
+  止めない契約は維持する。
+
 ## 1.4.22 — 2026-07-13
 
 - **default-on裁定の文書修正。** v1.4.21の実装どおりdefault-onは確定事項であり、7日・30 fresh resultの測定は精度改善にだけ使う。ON/OFFの再審査やdefault-off rollbackを選択肢としていた誤記をREADME、正典、SLO、計画、課題台帳から削除した。

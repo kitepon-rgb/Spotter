@@ -1,6 +1,6 @@
 # BugHub runtime error store plan
 
-Status: complete
+Status: implementation complete; v1.4.23 release pending
 
 This plan is Spotter's implementation TODO for a product-owned local runtime
 error projection. It must preserve the Claude-first hook/daemon contracts and
@@ -50,3 +50,12 @@ the recursion-safety guarantees described in `CLAUDE.md`.
 - [x] Revalidate POSIX uid/mode on every read and rebuild/verify a current-SID-only Windows DACL.
 - [x] Run the complete test suite and update product documentation.
 - [x] Commit and push this repository independently.
+
+## Release wave
+
+- [x] Bump package metadata and release-facing documentation to `1.4.23` without moving an existing tag.
+- [x] Stabilize the isolated-worker FIFO fixture at the production timeout budget and require repeated full-suite green.
+- [x] Run `node --test`, pack/secret inspection, and a temporary-prefix registry-equivalent install smoke.
+- [ ] Push the release commit and require the public macOS/Linux/Windows CI matrix to pass.
+- [ ] After the owner H gate, publish `claude-spotter@1.4.23`, create tag/release, and verify npm `latest` plus a registry-derived global install.
+- [ ] Confirm `spotter diagnostics factory` and runtime snapshot/ack from the published package, then record the public SHA and results in CHANGELOG/CLAUDE.

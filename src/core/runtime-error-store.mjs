@@ -50,7 +50,12 @@ const SEVERITIES = new Set(['fatal', 'high', 'warn', 'info']);
 const STATUS_VALUES = new Set(['open', 'resolved']);
 const MAX_SNAPSHOT_LIMIT = 500;
 const MAX_RECEIPTS = 1_024;
-const DEFAULT_ISOLATED_TIMEOUT_MS = 500;
+// A cold Node worker plus its independent receipt reconciler must both fit in
+// this budget under the parallel full-suite/CI load. 500 ms was below that
+// measured boundary and caused valid committed receipts to be reported as
+// unavailable. The observer remains absolutely bounded. Receipt reconciliation
+// is prewarmed in parallel, so its cold-start cost is not paid after timeout.
+const DEFAULT_ISOLATED_TIMEOUT_MS = 1_500;
 const RUNTIME_ERROR_WORKER = fileURLToPath(new URL('./runtime-error-store-worker.mjs', import.meta.url));
 const pathQueues = new Map();
 
@@ -218,43 +223,48 @@ export async function observeRuntimeErrorIsolatedSafe(input, options = {}) {
   };
   const encoded = Buffer.from(JSON.stringify(workerOptions), 'utf8').toString('base64url');
   const deadline = Date.now() + timeoutMs;
-  const reconciliationReserveMs = Math.min(200, Math.max(40, Math.floor(timeoutMs * 0.4)));
+  const reconciliationReserveMs = Math.min(750, Math.max(100, Math.floor(timeoutMs * 0.4)));
   const observeBudgetMs = Math.max(1, timeoutMs - reconciliationReserveMs);
   const workerPath = options.workerPath ?? RUNTIME_ERROR_WORKER;
+  const reconciliationOptions = { ...workerOptions, expectedFingerprint, waitMs: timeoutMs };
+  delete reconciliationOptions.beforeOpenDelayMs;
+  const reconciliationEncoded = Buffer.from(JSON.stringify(reconciliationOptions), 'utf8').toString('base64url');
+  const reconciliationController = new AbortController();
+  const reconciliation = runRuntimeWorker(
+    options.reconciliationWorkerPath ?? RUNTIME_ERROR_WORKER,
+    ['receipt', observationId, reconciliationEncoded],
+    timeoutMs,
+    reconciliationController.signal,
+  );
   const observed = await runRuntimeWorker(workerPath, ['observe', kind, encoded], observeBudgetMs);
-  if (observed.kind === 'exit' && observed.code === 0) return { collected: true };
-  if (observed.kind === 'exit' && observed.code === 10) return { collected: false, reason: 'collection_disabled' };
+  if (observed.kind === 'exit' && observed.code === 0) { reconciliationController.abort(); await reconciliation; return { collected: true }; }
+  if (observed.kind === 'exit' && observed.code === 10) { reconciliationController.abort(); await reconciliation; return { collected: false, reason: 'collection_disabled' }; }
 
   const remainingMs = deadline - Date.now();
   if (remainingMs > 0) {
-    const reconciliationOptions = { ...workerOptions };
-    delete reconciliationOptions.beforeOpenDelayMs;
-    reconciliationOptions.expectedFingerprint = expectedFingerprint;
-    const reconciliationEncoded = Buffer.from(JSON.stringify(reconciliationOptions), 'utf8').toString('base64url');
-    const reconciled = await runRuntimeWorker(
-      options.reconciliationWorkerPath ?? RUNTIME_ERROR_WORKER,
-      ['receipt', observationId, reconciliationEncoded],
-      remainingMs,
-    );
+    const reconciled = await reconciliation;
     if (reconciled.kind === 'exit' && reconciled.code === 0) return { collected: true };
   }
+  reconciliationController.abort(); await reconciliation;
   return emitFixedStoreFailure(options);
 }
 
-function runRuntimeWorker(workerPath, args, timeoutMs) {
+function runRuntimeWorker(workerPath, args, timeoutMs, signal) {
   return new Promise((resolve) => {
     let settled = false;
+    let stopping = false;
     let child;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
       resolve(result);
     };
-    const timer = setTimeout(() => {
-      killWorkerTree(child);
-      finish({ kind: 'timeout' });
-    }, Math.max(1, timeoutMs));
+    const stop = (kind) => { if (stopping || settled) return; stopping = true; void killWorkerTree(child).then(() => finish({ kind })); };
+    const abort = () => stop('cancelled');
+    const killGraceMs = process.platform === 'win32' ? 250 : 0;
+    const timer = setTimeout(() => stop('timeout'), Math.max(1, timeoutMs - killGraceMs));
     try {
       child = spawn(process.execPath, [workerPath, ...args], {
         stdio: 'ignore',
@@ -267,26 +277,29 @@ function runRuntimeWorker(workerPath, args, timeoutMs) {
       return;
     }
     child.once('error', () => finish({ kind: 'error' }));
-    child.once('close', (code) => finish({ kind: 'exit', code }));
+    child.once('close', (code) => { if (!stopping) finish({ kind: 'exit', code }); });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
   });
 }
 
 function killWorkerTree(child) {
-  if (!Number.isSafeInteger(child?.pid) || child.pid <= 0) return;
+  if (!Number.isSafeInteger(child?.pid) || child.pid <= 0) return Promise.resolve();
   if (process.platform === 'win32') {
-    const killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], {
-      stdio: 'ignore',
-      windowsHide: true,
+    return new Promise((resolve) => {
+      let done = false; let fallback; const finish = () => { if (done) return; done = true; clearTimeout(fallback); resolve(); };
+      let killer; try { killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }); } catch { child.kill('SIGKILL'); finish(); return; }
+      fallback = setTimeout(() => { child.kill('SIGKILL'); finish(); }, 225);
+      killer.once('error', () => { child.kill('SIGKILL'); finish(); });
+      killer.once('close', finish);
     });
-    killer.once('error', () => child.kill('SIGKILL'));
-    setTimeout(() => child.kill('SIGKILL'), 100).unref();
-    return;
   }
   try {
     process.kill(-child.pid, 'SIGKILL');
   } catch {
     child.kill('SIGKILL');
   }
+  return Promise.resolve();
 }
 
 export async function hasRuntimeErrorReceipt(observationId, expectedFingerprint, options = {}) {

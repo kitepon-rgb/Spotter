@@ -273,11 +273,15 @@ test('runtime error isolated observer kills FIFO-blocked config and store worker
     const stderr = [];
     const startedAt = Date.now();
     const result = await observeRuntimeErrorIsolatedSafe('daemon_transport', options(box, {
-      timeoutMs: 100,
+      // Keep the production default budget here. A 100 ms total budget left
+      // only 60 ms for Node startup before reconciliation and made the
+      // config-FIFO branch nondeterministically time out before it could
+      // classify the non-regular config as disabled.
+      timeoutMs: 1_500,
       writeError: (text) => stderr.push(text),
     }));
     assert.equal(result.collected, false);
-    assert.ok(Date.now() - startedAt < 1_000);
+    assert.ok(Date.now() - startedAt < 2_000);
     assert.deepEqual(stderr, index === 0 ? [] : ['spotter-runtime-errors: local aggregate store unavailable\n']);
   }
 
@@ -287,12 +291,12 @@ test('runtime error isolated observer kills FIFO-blocked config and store worker
   const stderr = [];
   const startedAt = Date.now();
   const result = await observeRuntimeErrorIsolatedSafe('daemon_transport', options(blocked, {
-    timeoutMs: 100,
+    timeoutMs: 1_500,
     workerPath: blockedWorker,
     writeError: (text) => stderr.push(text),
   }));
   assert.equal(result.collected, false);
-  assert.ok(Date.now() - startedAt < 1_000);
+  assert.ok(Date.now() - startedAt < 2_000);
   assert.deepEqual(stderr, ['spotter-runtime-errors: local aggregate store unavailable\n']);
 
   const tree = await sandbox();
@@ -300,11 +304,11 @@ test('runtime error isolated observer kills FIFO-blocked config and store worker
   const treeWorker = join(tree.root, 'blocked-tree-worker.mjs');
   await writeFile(treeWorker, [
     'import { spawn } from "node:child_process";',
-    `spawn(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(descendantMarker)}, 'bad'), 400)`) }], { stdio: "ignore" });`,
+    `spawn(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(descendantMarker)}, 'bad'), 1200)`) }], { stdio: "ignore" });`,
     'setInterval(() => {}, 1000);',
   ].join('\n'));
   await observeRuntimeErrorIsolatedSafe('daemon_transport', options(tree, {
-    timeoutMs: 100,
+    timeoutMs: 1_500,
     workerPath: treeWorker,
     writeError: () => {},
   }));
@@ -327,12 +331,12 @@ setInterval(() => {}, 1000);
 `);
   const startedAt = Date.now();
   const result = await observeRuntimeErrorIsolatedSafe('daemon_transport', options(box, {
-    timeoutMs: 500,
+    timeoutMs: 1_500,
     workerPath: worker,
     writeError: () => assert.fail('committed receipt must reconcile'),
   }));
   assert.deepEqual(result, { collected: true });
-  assert.ok(Date.now() - startedAt < 500);
+  assert.ok(Date.now() - startedAt < 1_500);
   const observationId = await readFile(marker, 'utf8');
   assert.match(observationId, /^[a-f0-9]{32}$/);
 
@@ -378,7 +382,7 @@ setInterval(() => {}, 1000);
 `);
   const stderr = [];
   const result = await observeRuntimeErrorIsolatedSafe('daemon_transport', options(box, {
-    timeoutMs: 500,
+    timeoutMs: 1_500,
     workerPath: worker,
     writeError: (text) => stderr.push(text),
   }));
