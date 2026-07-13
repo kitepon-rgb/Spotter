@@ -550,10 +550,14 @@ async function readPrivateFile(path, options, { enforceWindowsAcl }) {
   const platform = options.platform ?? process.platform;
   if (enforceWindowsAcl) {
     await enforcePrivatePath(dirname(path), options, { directory: true, repair: platform === 'win32' });
-    if (platform === 'win32') await enforcePrivatePath(path, options, { directory: false, repair: true });
   }
-  const info = await lstat(path);
+  let info = await lstat(path);
   validatePrivateStat(info, options, { directory: false, platform });
+  if (enforceWindowsAcl && platform === 'win32') {
+    await enforcePrivatePath(path, options, { directory: false, repair: true });
+    info = await lstat(path);
+    validatePrivateStat(info, options, { directory: false, platform });
+  }
   if (Number.isSafeInteger(options.beforeOpenDelayMs) && options.beforeOpenDelayMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, options.beforeOpenDelayMs));
   }
