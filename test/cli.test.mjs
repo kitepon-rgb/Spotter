@@ -7,9 +7,10 @@ import { resolve } from 'node:path';
 
 const execFileAsync = promisify(execFile);
 const BIN = resolve('bin', 'spotter.mjs');
+const CLI_OPTIONS = { env: { ...process.env, NODE_NO_WARNINGS: '1' } };
 
 test('cli: --help prints public and internal command contract', async () => {
-  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, '--help']);
+  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, '--help'], CLI_OPTIONS);
   assert.equal(stderr, '');
   assert.ok(stdout.includes('spotter install [-y]'));
   assert.ok(stdout.includes('--auditor-context disabled|throughline'));
@@ -51,13 +52,13 @@ test('cli: install rejects unknown or incomplete auditor-context arguments befor
 
 test('cli: --version prints package version', async () => {
   const pkg = JSON.parse(await readFile(resolve('package.json'), 'utf8'));
-  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, '--version']);
+  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, '--version'], CLI_OPTIONS);
   assert.equal(stderr, '');
   assert.equal(stdout, `spotter ${pkg.version}\n`);
 });
 
 test('cli: codex subcommand help exits successfully', async () => {
-  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'codex', 'risk-check', '--help']);
+  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'codex', 'risk-check', '--help'], CLI_OPTIONS);
   assert.equal(stderr, '');
   assert.ok(stdout.includes('spotter codex — Codex sidecar workflows'));
   assert.ok(stdout.includes('spotter codex risk-check --findings FILE'));
@@ -65,7 +66,7 @@ test('cli: codex subcommand help exits successfully', async () => {
 });
 
 test('cli: auditor subcommand help exits successfully', async () => {
-  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'auditor', '--help']);
+  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'auditor', '--help'], CLI_OPTIONS);
   assert.equal(stderr, '');
   assert.ok(stdout.includes('spotter auditor — experimental primary auditor smoke commands'));
   assert.ok(stdout.includes('spotter auditor judge --stage user_input|turn_end --input FILE'));
@@ -74,7 +75,7 @@ test('cli: auditor subcommand help exits successfully', async () => {
 });
 
 test('cli: codex-hook subcommand help exits successfully', async () => {
-  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'codex-hook', '--help']);
+  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'codex-hook', '--help'], CLI_OPTIONS);
   assert.equal(stderr, '');
   assert.ok(stdout.includes('spotter codex-hook — Codex native hook adapter'));
   assert.ok(stdout.includes('spotter codex-hook install [--codex-home DIR]'));
