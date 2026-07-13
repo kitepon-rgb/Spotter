@@ -609,8 +609,8 @@ export function buildWindowsAclPowerShell({ directory }) {
     `[System.IO.${ioType}]::SetAccessControl($target, $acl)`,
     `$readback = [System.IO.${ioType}]::GetAccessControl($target)`,
     '$ownerSid = $readback.GetOwner([System.Security.Principal.SecurityIdentifier]).Value',
-    '$entries = @($readback.Access)',
-    '$valid = $entries.Count -eq 1 -and $ownerSid -eq $sid.Value -and $entries[0].IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $entries[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and (($entries[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl)',
+    '$entries = @($readback.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))',
+    '$valid = $entries.Count -eq 1 -and $ownerSid -eq $sid.Value -and $entries[0].IdentityReference.Value -eq $sid.Value -and $entries[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and -not $entries[0].IsInherited -and (($entries[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl)',
     'if (-not $valid) { exit 7 }',
   ].join('; ');
 }
