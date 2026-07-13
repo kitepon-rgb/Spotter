@@ -532,8 +532,8 @@ test('Windows ACL script rebuilds current-SID-only DACL and verifies readback', 
   const script = buildWindowsAclPowerShell({ directory: false });
   assert.match(script, /SetAccessRuleProtection\(\$true, \$false\)/);
   assert.match(script, /SecurityIdentifier/);
-  assert.match(script, /Set-Acl/);
-  assert.match(script, /Get-Acl/);
+  assert.match(script, /SetAccessControl/);
+  assert.match(script, /GetAccessControl/);
   assert.match(script, /AccessControlType/);
   assert.doesNotMatch(script, /Everyone|Authenticated Users|BUILTIN\\Users/);
 });

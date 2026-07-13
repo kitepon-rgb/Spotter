@@ -592,6 +592,7 @@ function validatePrivateStat(info, options, { directory, platform }) {
 
 export function buildWindowsAclPowerShell({ directory }) {
   const securityType = directory ? 'DirectorySecurity' : 'FileSecurity';
+  const ioType = directory ? 'Directory' : 'File';
   const inheritance = directory
     ? '[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit'
     : '[System.Security.AccessControl.InheritanceFlags]::None';
@@ -605,8 +606,8 @@ export function buildWindowsAclPowerShell({ directory }) {
     `$inheritance = ${inheritance}`,
     '$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, "FullControl", $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)',
     '$acl.AddAccessRule($rule)',
-    'Set-Acl -LiteralPath $target -AclObject $acl',
-    '$readback = Get-Acl -LiteralPath $target',
+    `[System.IO.${ioType}]::SetAccessControl($target, $acl)`,
+    `$readback = [System.IO.${ioType}]::GetAccessControl($target)`,
     '$ownerSid = $readback.GetOwner([System.Security.Principal.SecurityIdentifier]).Value',
     '$entries = @($readback.Access)',
     '$valid = $entries.Count -eq 1 -and $ownerSid -eq $sid.Value -and $entries[0].IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $entries[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and (($entries[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl)',
