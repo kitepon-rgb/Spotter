@@ -1,9 +1,10 @@
 # CLAUDE.md
 
-> **v1.4.23 release candidate（公開待ち）**: factory diagnostics と opt-in の
-> local runtime error store を公開候補として準備した。collection は canonical dotagents
-> config の `collection.enabled: true` が明示された場合だけ有効で既定OFF、network送信は
-> 行わない。npm公開、tag、CI、registry由来installの確認は未実施である。
+> **v1.4.23（2026-07-13公開）**: factory diagnostics と opt-in の local runtime
+> error store を追加した。collection は canonical dotagents config の
+> `collection.enabled: true` が明示された場合だけ有効で既定OFF、network送信は行わない。
+> 公開commit `a117a99`、CI `29238199094`、npm `latest`、tag / GitHub Release、registry由来の
+> 隔離installから `--version`・factory diagnostics・runtime snapshotまで確認済み。
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 

@@ -1,11 +1,12 @@
 # Changelog
 
-## 1.4.23 — release candidate (pending)
+## 1.4.23 — 2026-07-13
 
 - **Factory diagnostics と local runtime error store。** factory diagnostics と
   `spotter diagnostics runtime-errors` の公開候補。収集は canonical dotagents config の
   JSON boolean `collection.enabled: true` が明示された時だけ有効で既定OFF、保存は
-  local-only、network送信は行わない。npm公開、tag、CI、registry由来installの確認は未実施。
+  local-only、network送信は行わない。公開commit `a117a99`、CI `29238199094`、npm
+  `latest`、tag / GitHub Release、registry由来隔離installと診断snapshotを確認済み。
 - **隔離observerのdeadlineを実測へ整合。** 並列full-suite負荷でcold workerとreceipt
   reconcilerが500msに収まらず、commit済みreceiptを`store_unavailable`へ誤分類するraceを
   再現した。絶対deadlineを1.5秒へ広げたうえでreceipt reconcilerを観測workerと

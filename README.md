@@ -248,9 +248,9 @@ otherwise the Haiku-compatible path. Codex native hooks automatically select Cod
 
 ## Local runtime error aggregates
 
-**v1.4.23 は release candidate（公開待ち）です。** 以下の factory diagnostics と
-local runtime error aggregate は collection が既定OFFで、公開・tag・CI・registry由来
-installの確認はいずれも未完了です。
+**v1.4.23 は2026-07-13に公開済みです。** 以下の factory diagnostics と local runtime
+error aggregate は collection が既定OFFです。npm `latest`、tag / GitHub Release、
+公開CI、registry由来installを確認済みです。
 
 Spotter collects fixed-code runtime failures only when the canonical dotagents factory reporter
 configuration contains the JSON boolean `collection.enabled: true`. Missing, malformed, and disabled
