@@ -17,7 +17,7 @@ auditor本体も同じWindows実行契約へ揃え、「生成は成功するが
 - [x] npm shimのNode entrypointを安全に解決し、`cmd.exe`によるproject path再解釈を監査経路から除く。
 - [x] Windows shim経由のtimeoutはtree終了完了を待ち、失敗を別codeでfail-loudにする。
 - [x] full test、pack smoke、Windows実機のinstall/diagnostics/verifyを通す。
-- [ ] patch releaseを公開し、計画を`docs/archive/`へ退避する。
+- [x] patch releaseを公開し、計画を`docs/archive/`へ退避する。
 
 ## rollback
 

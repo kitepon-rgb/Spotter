@@ -12,7 +12,9 @@
   POSIXと実体`.exe`の直接spawn、stdin prompt、非0終了時のfail-loud診断は維持する。
 - **検証。** 530 tests（528 pass / 2 platform skip）、68-file pack、FOX Windows nativeの
   tarball仮導入、install、warning 0のdoctor、Codex hooks / catalog、実Codex CLI auditor、
-  codex-sidecar auditor diagnostics、dotagents `verify-install`を通過した。
+  codex-sidecar auditor diagnostics、dotagents `verify-install`を通過した。公開commit
+  `65bccf8`をnpm `latest`、`v1.4.25` tag、GitHub Releaseへ同期し、Mac、main-server、
+  FOX WSL2、FOX Windows nativeのregistry版global installとwarning 0のdoctorを確認した。
 
 ## 1.4.24 — 2026-07-14
 
