@@ -79,6 +79,23 @@ export {
   summarizeDaemonLogText,
   summarizeDaemonLogs,
 } from './core/daemon-log-diagnostics.mjs';
+export {
+  RUNTIME_ERROR_DEFINITIONS,
+  RUNTIME_ERROR_STORE_SCHEMA,
+  acknowledgeRuntimeErrors,
+  compactRuntimeErrors,
+  defaultFactoryReporterConfigPath,
+  defaultRuntimeErrorStorePath,
+  observeRuntimeError,
+  observeRuntimeErrorIsolatedSafe,
+  observeRuntimeErrorSafe,
+  readRuntimeCollectionMode,
+  readRuntimeErrorSnapshot,
+  readRuntimeErrorStoreStatus,
+  reopenRuntimeError,
+  resolveRuntimeError,
+  runtimeErrorFingerprint,
+} from './core/runtime-error-store.mjs';
 export { loadDb, saveDb, emptyDb, ToolDbSchemaError, globalDbPath, localDbPath, normalizeToolDbHostAgent } from './tool-db/loader.mjs';
 export { resolveAll } from './tool-db/lookup.mjs';
 export { refresh, readLocal, buildInvestigationSnapshot } from './tool-db/refresh.mjs';

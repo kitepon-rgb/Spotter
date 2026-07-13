@@ -34,7 +34,7 @@
   },
   "homepage": "https://github.com/kitepon-rgb/Spotter#readme",
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.13.0"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"

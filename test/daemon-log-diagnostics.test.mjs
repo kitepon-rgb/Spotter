@@ -94,6 +94,9 @@ test('formatDaemonLogSummary: produces compact human-readable output', () => {
     text: SAMPLE_LOG,
     filePath: '/logs/daemon-session-a.log',
   });
+  summary.runtimeErrors = {
+    collection: 'enabled', store: 'available', records: 3, open: 2, resolved: 1, unacknowledged: 1,
+  };
   const output = formatDaemonLogSummary(summary);
 
   assert.match(output, /spotter diagnostics logs/);
@@ -103,4 +106,5 @@ test('formatDaemonLogSummary: produces compact human-readable output', () => {
   assert.match(output, /backends: codex-cli:n=1,avg=1200ms,max=1200ms,pass=false=0/);
   assert.match(output, /anomalies: role_collapse=1, hallucination_filtered=1/);
   assert.match(output, /codex_risk_check: dispatched=1, disabled_skips=1/);
+  assert.match(output, /runtime-errors: collection=enabled, store=available, records=3, open=2, resolved=1, unacknowledged=1/);
 });

@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { open } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
+import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
 
 function parseArgs(argv) {
   const out = { sessionId: null, projectRoot: null };
@@ -69,7 +70,12 @@ export async function runDaemonStart({ argv }) {
     // removed along with the stateless regime that required it.
     // v0.7.0: projectRoot drives tool-db loading (replaces the old tools.yaml catalog).
     // v0.12.0: orphan-cleanup is heartbeat-based inside startDaemon (no parent-PID arg).
-    running = await startDaemon({ sessionId, projectRoot, logFn: log });
+    running = await startDaemon({
+      sessionId,
+      projectRoot,
+      logFn: log,
+      runtimeErrorObserver: observeRuntimeErrorIsolatedSafe,
+    });
   } catch (err) {
     if (err instanceof DaemonAlreadyRunningError) {
       // v0.2 PID-preexist layer: a sibling daemon already serves this session.

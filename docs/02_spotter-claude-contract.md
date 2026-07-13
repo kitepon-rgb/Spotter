@@ -258,6 +258,26 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   `pass:false`, missing-tool counts, duration summaries, catalog-external drops,
   role-collapse resets, Haiku failures, handler errors, fatal exits, and Codex risk
   dispatch signals without changing daemon behavior.
+- Runtime error collection is a separate local projection gated only by the canonical dotagents
+  reporter config's JSON boolean `collection.enabled: true`. Missing/malformed/disabled config does
+  not create or touch the store. The store performs no network I/O and accepts only fixed Spotter
+  failure kinds; code, template, component, and severity come from a closed registry rather than
+  exception/provider/hook input. Fingerprints use the factory-v1 canonical SHA-256 sequence.
+- The daemon owns transport and PID-state persistence observations. The daemon owns Claude primary
+  auditor failures, while the direct Codex hook owns its own primary auditor/context availability
+  failure. Claude hook adapters do not count daemon failures again. Store failures are non-blocking
+  and emit only `spotter-runtime-errors: local aggregate store unavailable` on stderr.
+- Production owner boundaries isolate collection in a bounded, killable child-process group. Timeout
+  terminates the worker and its descendants, so FIFO/device I/O cannot indefinitely block a hook or daemon.
+  Optional reporter endpoints are valid only when the exact input equals `new URL(input).href`, uses
+  `http:` or `https:`, and contains no userinfo or fragment.
+- POSIX reads verify the current uid and exact owner-private modes on every access. Mutation locks identify
+  the holder by PID, process-start identity, and a random token; reclaim/release use atomic rename plus token
+  readback and never use mtime as a liveness signal. Windows store access replaces inherited/ambient ACLs
+  with one FullControl ACE for the current process SID and verifies the readback before continuing.
+- `spotter diagnostics runtime-errors` is the read-only allow-listed snapshot. `diagnostics logs` and
+  `diagnostics factory` expose only bounded collection/store status and counts. Cursor acknowledgement
+  is monotonic; resolve/reopen advance sequence; compaction preserves all unacknowledged records.
 
 ## Primary Backend Vs Second-Pass Workflow
 

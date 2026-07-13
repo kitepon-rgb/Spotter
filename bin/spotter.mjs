@@ -43,6 +43,8 @@ Usage:
   spotter status                        show running daemons
   spotter doctor                        environment diagnostic
   spotter diagnostics logs [--json]     summarize daemon logs for precision diagnostics
+  spotter diagnostics runtime-errors [snapshot|ack|resolve|reopen|compact]
+                                        consume the local allow-listed aggregate store
   spotter codex risk-check --findings FILE
                                         run read-only codex-sidecar risk analysis
   spotter codex review|explore|opinion --findings FILE

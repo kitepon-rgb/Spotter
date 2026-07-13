@@ -91,6 +91,12 @@ export async function startDaemon({
   auditorBackendName = process.env.SPOTTER_AUDITOR_BACKEND || (haikuCaller ? 'haiku' : 'auto'),
   auditorEnv = process.env,
   stopShortFinalMaxChars = resolveStopShortFinalMaxChars(process.env),
+  runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
+  createAuditorBackendFn = createAuditorBackend,
+  createServerFn = createServer,
+  removeStaleSocketFileFn = removeStaleSocketFile,
+  secureSocketFileFn = secureSocketFile,
+  writePidFileFn = writeFile,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -130,16 +136,31 @@ export async function startDaemon({
   // fail with E_BACKEND_HOST_UNKNOWN on Claude Code launches that don't set
   // CLAUDECODE/CLAUDE_CODE (e.g. custom wrappers), even though the daemon clearly
   // belongs to a Claude host.
-  const auditorBackend = createAuditorBackend({
-    backend: auditorBackendName,
-    catalog: toolList,
-    projectRoot,
-    hostAgent: 'claude',
-    env: auditorEnv,
-    logger: logFn,
-    haikuCaller,
-    timeoutMs: DEFAULT_HAIKU_TIMEOUT_MS,
-  });
+  const observeFailure = async (kind) => {
+    try {
+      await runtimeErrorObserver(kind);
+    } catch {
+      // The production observer is already non-throwing. Keep injected/custom observers
+      // from changing daemon behavior as the same telemetry-failure safety boundary.
+    }
+  };
+
+  let auditorBackend;
+  try {
+    auditorBackend = createAuditorBackendFn({
+      backend: auditorBackendName,
+      catalog: toolList,
+      projectRoot,
+      hostAgent: 'claude',
+      env: auditorEnv,
+      logger: logFn,
+      haikuCaller,
+      timeoutMs: DEFAULT_HAIKU_TIMEOUT_MS,
+    });
+  } catch (error) {
+    await observeFailure('auditor_unavailable');
+    throw error;
+  }
 
   // Per-turn state, reset on turn_end.
   const state = {
@@ -154,7 +175,12 @@ export async function startDaemon({
 
   const runAuditorJudgment = async (input) => {
     lastAuditorCallAt = Date.now();
-    return auditorBackend.judge(input);
+    try {
+      return await auditorBackend.judge(input);
+    } catch (error) {
+      await observeFailure('auditor_unavailable');
+      throw error;
+    }
   };
 
   // v0.12.0: heartbeat. Reset on every envelope; if no event arrives within
@@ -370,27 +396,49 @@ export async function startDaemon({
   const onErrorFn = (err, envelope) => {
     const evt = envelope?.event ?? '(pre-parse)';
     logFn(`handler error on ${evt}: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
+    // Handler/auditor failures are owned above. A connection-level error has no
+    // envelope and belongs to the transport boundary here.
+    if (envelope === null) void observeFailure('daemon_transport');
   };
 
-  const { server, path } = createServer({ sessionId, handler, onError: onErrorFn });
+  const { server, path } = createServerFn({ sessionId, handler, onError: onErrorFn });
 
   // assertNoLiveDaemon() above confirmed no live process owns this session_id. Any socket file at
   // `path` is therefore an orphan from a prior daemon that died ungracefully (stop()'s unlink runs
   // only on graceful shutdown). Remove it so listen() doesn't fail with EADDRINUSE — otherwise the
   // daemon dies before "daemon listening" and every resurrect crash-loops, leaving the session
   // permanently unaudited.
-  await removeStaleSocketFile(path);
+  await removeStaleSocketFileFn(path);
 
-  await new Promise((resolve, reject) => {
-    server.on('error', (err) => reject(err));
-    server.listen(path, resolve);
-  });
-  await secureSocketFile(path);
+  let listening = false;
+  try {
+    await new Promise((resolve, reject) => {
+      server.on('error', (error) => {
+        if (!listening) reject(error);
+        else void observeFailure('daemon_transport');
+      });
+      server.listen(path, () => {
+        listening = true;
+        resolve();
+      });
+    });
+  } catch (error) {
+    await observeFailure('daemon_transport');
+    throw error;
+  }
+  await secureSocketFileFn(path);
   logFn(`daemon listening on ${path}`);
 
   // Write PID file so uninstall/doctor can reason about liveness (§15.3 doctor).
   const pidPath = pidFilePath(sessionId);
-  await writeFile(pidPath, String(process.pid), 'utf8');
+  try {
+    await writePidFileFn(pidPath, String(process.pid), 'utf8');
+  } catch (error) {
+    await observeFailure('daemon_persistence');
+    await new Promise((resolve) => server.close(resolve)).catch(() => {});
+    if (process.platform !== 'win32') await unlink(path).catch(() => {});
+    throw error;
+  }
 
   // Start the heartbeat. The first hook event (typically SessionStart's readiness
   // ping moments later) will reset it; if nothing arrives in heartbeatTimeoutMs we self-shut.

@@ -569,6 +569,7 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
   const project = await makeProject();
   const out = [];
   const errOut = [];
+  const observations = [];
   try {
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
@@ -592,6 +593,7 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
       }),
       writeOutput: (text) => out.push(text),
       writeError: (text) => errOut.push(text),
+      runtimeErrorObserver: async (kind) => observations.push(kind),
     });
 
     const parsed = JSON.parse(out.join(''));
@@ -599,6 +601,7 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
     assert.match(errOut.join(''), /利用上限/);
     assert.doesNotMatch(out.join('') + errOut.join(''), /usage limit reached|You've hit your usage limit/);
     assert.equal(parsed.hookSpecificOutput, undefined);
+    assert.deepEqual(observations, ['auditor_unavailable']);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -814,6 +817,7 @@ test('runCodexStopHook: backend error is fixed diagnostics and is not delivered 
   const stopOut = [];
   const stopErr = [];
   const userOut = [];
+  const observations = [];
   const longFinalResponse = 'GPU について断定しました。'.repeat(20);
   try {
     await runCodexStopHook({
@@ -834,11 +838,13 @@ test('runCodexStopHook: backend error is fixed diagnostics and is not delivered 
       }),
       writeOutput: (text) => stopOut.push(text),
       writeError: (text) => stopErr.push(text),
+      runtimeErrorObserver: async (kind) => observations.push(kind),
     });
 
     assert.match(JSON.parse(stopOut.join('')).systemMessage, /時間内に完了しなかった/);
     assert.match(stopErr.join(''), /時間内に完了しなかった/);
     assert.doesNotMatch(stopOut.join('') + stopErr.join(''), /codex-cli did not respond|E_CODEX_CLI_TIMEOUT/);
+    assert.deepEqual(observations, ['auditor_unavailable']);
 
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({

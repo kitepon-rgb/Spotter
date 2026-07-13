@@ -301,7 +301,7 @@ hook boundary が event 契約に従って loud degradation へ変換する。ex
 
 現行実装はこれらを満たすこと:
 
-- **Node.js 22.5+** (組み込み fetch, test runner 使用)
+- **Node.js 22.13+** (`node:sqlite` の flag 不要化以降。組み込み fetch, test runner 使用)
 - **Claude Code 2.0+**
 - **Codex CLI** (Codex host の auto-selected primary backend。Claude host でも PATH にあれば既定で選択)
 - **Claude Max plan** (`SPOTTER_AUDITOR_BACKEND=haiku` または Codex CLI 不在時の Claude fallback path が `claude -p` を使う場合)
@@ -343,7 +343,7 @@ auditor policy の production selection（現在 `gpt-5.6-terra × medium`）と
 model override は unverified として diagnostics に残る。`gpt-5.6-luna × low` / `gpt-5.6-terra × low` /
 `gpt-5.6-terra × medium` は model-matrix から明示選択でき、eval artifact から自動で production へ昇格しない。
 
-テストランナーは Node 組み込み (`node --test`)。現行 CI は `.github/workflows/ci.yml` で Node 22.5 / 22.x の Linux / Windows / macOS matrix を `node --test` で走らせる。
+テストランナーは Node 組み込み (`node --test`)。現行 CI は `.github/workflows/ci.yml` で Node 22.13 / 22.x の Linux / Windows / macOS matrix を `node --test` で走らせる。
 
 `.claude/settings.json` は端末固有の生成物として追跡しない。hook 登録は `spotter install -y` で再生成し、読み取り系 allowlist が必要な環境では `fewer-permission-prompts` で生成してから内容を確認する。
 

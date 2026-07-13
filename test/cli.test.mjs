@@ -20,6 +20,7 @@ test('cli: --help prints public and internal command contract', async () => {
   assert.ok(stdout.includes('spotter status'));
   assert.ok(stdout.includes('spotter doctor'));
   assert.ok(stdout.includes('spotter diagnostics logs [--json]'));
+  assert.ok(stdout.includes('spotter diagnostics runtime-errors'));
   assert.ok(stdout.includes('spotter codex risk-check --findings FILE'));
   assert.ok(stdout.includes('spotter codex review|explore|opinion --findings FILE'));
   assert.ok(stdout.includes('spotter codex work --findings FILE --approve-work --allowed-path PATH'));

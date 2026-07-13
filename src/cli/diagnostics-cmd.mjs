@@ -1,11 +1,23 @@
 import { resolve } from 'node:path';
 import { defaultDaemonLogDir, summarizeDaemonLogs } from '../core/daemon-log-diagnostics.mjs';
 import { summarizeHookEvents } from '../core/hook-event-log.mjs';
+import {
+  acknowledgeRuntimeErrors,
+  compactRuntimeErrors,
+  readRuntimeErrorSnapshot,
+  readRuntimeErrorStoreStatus,
+  reopenRuntimeError,
+  resolveRuntimeError,
+} from '../core/runtime-error-store.mjs';
 
 const DIAGNOSTICS_USAGE = `spotter diagnostics — read-only operational diagnostics
 
 Usage:
   spotter diagnostics logs [--log-dir DIR] [--project DIR] [--json]
+  spotter diagnostics runtime-errors [snapshot] [--after-cursor N] [--limit N]
+  spotter diagnostics runtime-errors ack CURSOR
+  spotter diagnostics runtime-errors resolve|reopen FINGERPRINT
+  spotter diagnostics runtime-errors compact
 
   --log-dir   daemon log directory (default: ~/.spotter/runtime)
   --project   project root for hook-events.jsonl (default: cwd)
@@ -17,6 +29,10 @@ export async function runDiagnosticsCommand({ argv = process.argv.slice(2) } = {
     await runDiagnosticsLogsCommand({ argv: argv.slice(1) });
     return;
   }
+  if (sub === 'runtime-errors') {
+    await runRuntimeErrorDiagnosticsCommand({ argv: argv.slice(1) });
+    return;
+  }
   process.stderr.write(`unknown diagnostics subcommand: ${sub}\n${DIAGNOSTICS_USAGE}`);
   process.exit(2);
 }
@@ -25,6 +41,7 @@ export async function runDiagnosticsLogsCommand({
   argv = [],
   summarizeDaemonLogsFn = summarizeDaemonLogs,
   summarizeHookEventsFn = summarizeHookEvents,
+  readRuntimeErrorStoreStatusFn = readRuntimeErrorStoreStatus,
   writeOutput = (text) => process.stdout.write(text),
 } = {}) {
   const opts = parseLogsArgs(argv);
@@ -33,7 +50,8 @@ export async function runDiagnosticsLogsCommand({
   // the hook-side observations (skip reasons, drained pending counts, transport errors
   // that never reach the daemon) surface in the same diagnostics output.
   const hookEvents = await summarizeHookEventsFn({ projectRoot: opts.projectRoot });
-  const merged = { ...summary, hookEvents };
+  const runtimeErrors = await readRuntimeErrorStoreStatusFn();
+  const merged = { ...summary, hookEvents, runtimeErrors };
   if (opts.json) {
     writeOutput(JSON.stringify(merged, null, 2) + '\n');
     return;
@@ -110,7 +128,76 @@ export function formatDaemonLogSummary(summary) {
     }
   }
 
+  const runtimeErrors = summary.runtimeErrors;
+  if (runtimeErrors) {
+    lines.push(
+      `  runtime-errors: collection=${runtimeErrors.collection}, store=${runtimeErrors.store}, records=${runtimeErrors.records}, open=${runtimeErrors.open}, resolved=${runtimeErrors.resolved}, unacknowledged=${runtimeErrors.unacknowledged}`
+    );
+  }
+
   return lines.join('\n') + '\n';
+}
+
+export async function runRuntimeErrorDiagnosticsCommand({
+  argv = [],
+  readSnapshotFn = readRuntimeErrorSnapshot,
+  acknowledgeFn = acknowledgeRuntimeErrors,
+  resolveFn = resolveRuntimeError,
+  reopenFn = reopenRuntimeError,
+  compactFn = compactRuntimeErrors,
+  writeOutput = (text) => process.stdout.write(text),
+} = {}) {
+  const action = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'snapshot';
+  const actionArgs = action === 'snapshot' && argv[0] !== 'snapshot' ? argv : argv.slice(1);
+  if (!['snapshot', 'ack', 'resolve', 'reopen', 'compact'].includes(action)) throw runtimeErrorUsage();
+  try {
+    if (action === 'ack') {
+      if (actionArgs.length !== 1) throw runtimeErrorUsage();
+      const result = await acknowledgeFn({ cursor: parseNonNegativeInteger(actionArgs[0], 'cursor') });
+      writeOutput(`${JSON.stringify(result)}\n`);
+      return;
+    }
+    if (action === 'resolve' || action === 'reopen') {
+      if (actionArgs.length !== 1 || !/^[a-f0-9]{64}$/.test(actionArgs[0])) throw runtimeErrorUsage();
+      const result = await (action === 'resolve' ? resolveFn : reopenFn)({ fingerprint: actionArgs[0] });
+      writeOutput(`${JSON.stringify(result)}\n`);
+      return;
+    }
+    if (action === 'compact') {
+      if (actionArgs.length !== 0) throw runtimeErrorUsage();
+      writeOutput(`${JSON.stringify(await compactFn())}\n`);
+      return;
+    }
+  let afterCursor = 0;
+  let limit = 100;
+  for (let index = 0; index < actionArgs.length; index += 1) {
+    const arg = actionArgs[index];
+    if (arg === '--after-cursor') {
+      afterCursor = parseNonNegativeInteger(requireValue(actionArgs, (index += 1), '--after-cursor'), '--after-cursor');
+      continue;
+    }
+    if (arg === '--limit') {
+      limit = parsePositiveInteger(requireValue(actionArgs, (index += 1), '--limit'), '--limit');
+      continue;
+    }
+    throw Object.assign(new Error(`unknown diagnostics runtime-errors option: ${arg}`), { exitCode: 2 });
+  }
+  const snapshot = await readSnapshotFn({ afterCursor, limit });
+  writeOutput(`${JSON.stringify(snapshot)}\n`);
+  } catch (error) {
+    if (error?.exitCode === 2) throw error;
+    const fixed = new Error('runtime error store unavailable');
+    fixed.stack = '';
+    fixed.exitCode = 1;
+    throw fixed;
+  }
+}
+
+function runtimeErrorUsage() {
+  const error = new Error('usage: spotter diagnostics runtime-errors snapshot|ack|resolve|reopen|compact');
+  error.stack = '';
+  error.exitCode = 2;
+  return error;
 }
 
 function formatCounter(counter) {
@@ -153,6 +240,16 @@ function requireValue(argv, index, option) {
     throw Object.assign(new Error(`${option} requires a value`), { exitCode: 2 });
   }
   return value;
+}
+
+function parseNonNegativeInteger(value, option) {
+  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) throw Object.assign(new Error(`${option} requires a non-negative integer`), { exitCode: 2 });
+  return Number(value);
+}
+
+function parsePositiveInteger(value, option) {
+  if (!/^[1-9][0-9]*$/.test(value)) throw Object.assign(new Error(`${option} requires a positive integer`), { exitCode: 2 });
+  return Number(value);
 }
 
 function topCounter(counter, limit) {

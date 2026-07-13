@@ -14,6 +14,7 @@ import { mkdtemp, writeFile, rm, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 
 // v0.7.0: tests pass `tools` directly to startDaemon (an array of {name, description}).
 // `dir` is still returned for parity with prior cleanup paths and for tests that need a
@@ -412,6 +413,75 @@ test('startDaemon: turn_end with schema-violating Haiku output → silent pass +
     await running.stop();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('startDaemon: auditor failure is collected once at the daemon owner boundary', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `runtime-auditor-${randomUUID()}`;
+  const observations = [];
+  const haikuCaller = async () => {
+    throw new HaikuError('E_HAIKU_TIMEOUT', 'SENTINEL_PROVIDER_FAILURE');
+  };
+  haikuCaller.reset = () => {};
+  const running = await startDaemon({
+    sessionId,
+    tools,
+    haikuCaller,
+    runtimeErrorObserver: async (kind) => observations.push(kind),
+  });
+  try {
+    const response = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '監査して' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(response.ok, false);
+    assert.deepEqual(observations, ['auditor_unavailable']);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: PID persistence failure is collected once and closes the listener', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `runtime-persistence-${randomUUID()}`;
+  const observations = [];
+  await assert.rejects(startDaemon({
+    sessionId,
+    tools,
+    haikuCaller: async () => JSON.stringify({ pass: true, missing_tools: [] }),
+    runtimeErrorObserver: async (kind) => observations.push(kind),
+    writePidFileFn: async () => { throw Object.assign(new Error('SENTINEL_PID'), { code: 'EIO' }); },
+  }), { code: 'EIO' });
+  assert.deepEqual(observations, ['daemon_persistence']);
+  await assert.rejects(sendRequest({
+    sessionId,
+    event: 'readiness',
+    payload: {},
+    timeoutMs: 100,
+  }), { code: 'E_UNREACHABLE' });
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('startDaemon: listen failure is collected once at the transport owner boundary', async () => {
+  const { dir, tools } = await setupCatalog();
+  const observations = [];
+  const server = new EventEmitter();
+  server.listen = () => queueMicrotask(() => {
+    server.emit('error', Object.assign(new Error('SENTINEL_LISTEN'), { code: 'EADDRINUSE' }));
+  });
+  await assert.rejects(startDaemon({
+    sessionId: `runtime-transport-${randomUUID()}`,
+    tools,
+    haikuCaller: async () => JSON.stringify({ pass: true, missing_tools: [] }),
+    runtimeErrorObserver: async (kind) => observations.push(kind),
+    createServerFn: () => ({ server, path: '/tmp/spotter-test-runtime-transport.sock' }),
+    removeStaleSocketFileFn: async () => {},
+  }), { code: 'EADDRINUSE' });
+  assert.deepEqual(observations, ['daemon_transport']);
+  await rm(dir, { recursive: true, force: true });
 });
 
 test('startDaemon: user_input log records duration_ms and mode=first', async () => {

@@ -71,7 +71,7 @@ test('workflow does not edit model policy and only creates issues for update-ava
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /concurrency:\s*\n\s*group: codex-model-policy-check/s);
-  assert.match(workflow, /node-version: '22\.5\.0'/);
+  assert.match(workflow, /node-version: '22\.13\.0'/);
   assert.doesNotMatch(workflow, /codex-auditor-model-policy\.mjs.*(?:sed|perl|node -e|mv|cp)/s);
   assert.match(workflow, /steps\.check\.outputs\.status == 'update-available'/);
   assert.match(workflow, /gh issue list --state all/);

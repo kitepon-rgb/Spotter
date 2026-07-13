@@ -18,8 +18,9 @@ test('factory diagnostics: 非activation projectは固定fieldだけで対象外
   assert.equal(out.checks[0].status, 'skipped');
   assert.deepEqual(Object.keys(out).sort(), [
     'catalogs', 'checks', 'codex_hook_readiness', 'marker_schema_version',
-    'overall_status', 'product', 'schema_version', 'throughline_context', 'version',
+    'overall_status', 'product', 'runtime_error_store', 'schema_version', 'throughline_context', 'version',
   ]);
+  assert.equal(out.runtime_error_store.schema, 'spotter.runtime_error_status.v1');
   assertSafe(out);
 });
 

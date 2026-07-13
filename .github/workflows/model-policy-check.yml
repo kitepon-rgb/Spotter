@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.5.0'
+          node-version: '22.13.0'
       - id: check
         name: Fetch official model metadata
         run: |

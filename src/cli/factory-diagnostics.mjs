@@ -4,6 +4,7 @@ import { codexHookDiagnostics } from './codex-hook-cmd.mjs';
 import { inspectAuditorContextConfiguration } from './doctor.mjs';
 import { loadDb, localDbPath } from '../tool-db/loader.mjs';
 import { version } from '../version.mjs';
+import { readRuntimeErrorStoreStatus } from '../core/runtime-error-store.mjs';
 
 const KNOWN_MARKER_VERSIONS = new Set(['1', '2']);
 const SAFE_CONTEXT_MODES = new Set(['disabled', 'throughline']);
@@ -18,14 +19,16 @@ export async function runFactoryDiagnostics({
   projectRoot = process.cwd(),
   codexHookDiagnosticsFn = codexHookDiagnostics,
   inspectAuditorContextFn = inspectAuditorContextConfiguration,
+  readRuntimeErrorStoreStatusFn = readRuntimeErrorStoreStatus,
 } = {}) {
+  const runtimeErrorStore = await readRuntimeErrorStoreStatusFn();
   const markerResult = await readMarker(join(projectRoot, '.spotter', 'marker.json'));
-  if (markerResult.status === 'missing') return inactiveSnapshot();
+  if (markerResult.status === 'missing') return inactiveSnapshot(runtimeErrorStore);
 
   const checks = [];
   if (markerResult.status !== 'valid') {
     checks.push(check('project_activation', 'unverified', markerResult.reasonCode));
-    return snapshot({ overallStatus: 'unverified', checks });
+    return snapshot({ overallStatus: 'unverified', checks, runtimeErrorStore });
   }
 
   const marker = markerResult.value;
@@ -83,13 +86,15 @@ export async function runFactoryDiagnostics({
     throughlineContext: contextMode ?? 'unverified',
     catalogs,
     codexHookReadiness: codexReadiness,
+    runtimeErrorStore,
     checks,
   });
 }
 
-function inactiveSnapshot() {
+function inactiveSnapshot(runtimeErrorStore) {
   return snapshot({
     overallStatus: 'not_applicable',
+    runtimeErrorStore,
     checks: [check('project_activation', 'skipped', 'project_not_activated')],
   });
 }
@@ -100,6 +105,7 @@ function snapshot({
   throughlineContext = 'unverified',
   catalogs = { claude: 'not_applicable', codex: 'not_applicable' },
   codexHookReadiness = 'not_applicable',
+  runtimeErrorStore,
   checks,
 }) {
   return {
@@ -111,6 +117,7 @@ function snapshot({
     throughline_context: throughlineContext,
     catalogs,
     codex_hook_readiness: codexHookReadiness,
+    runtime_error_store: runtimeErrorStore,
     checks,
   };
 }

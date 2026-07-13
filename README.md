@@ -80,7 +80,7 @@ spotter codex-hook install
 
 ## Requirements
 
-- **Node.js 22.5+**
+- **Node.js 22.13+**
 - **Claude Code 2.0+**
 - **Codex CLI** for the default Codex-native backend and the preferred Claude-host auditor path. The auto-selected Codex backend does not fall back to Haiku after a runtime failure
 - **Claude Max plan** only when a Claude host selects the Haiku path (Codex CLI is absent or `SPOTTER_AUDITOR_BACKEND=haiku` is explicit)
@@ -214,6 +214,8 @@ spotter db rebuild       # wipe Claude local + Claude global DBs and refresh fro
 spotter status           # list running daemons
 spotter doctor           # environment check (Node / claude CLI / Codex readiness / tool-db integrity)
 spotter diagnostics logs # summarize daemon logs for pass=false / backend latency / anomaly signals
+spotter diagnostics runtime-errors
+                         # print the local allow-listed runtime-error aggregate snapshot (no network)
 spotter codex risk-check --findings findings.json --host-agent claude
                          # run read-only codex-sidecar risk analysis for Spotter findings
 spotter codex review|explore|opinion --findings findings.json --host-agent claude
@@ -243,6 +245,34 @@ in a detached process. Hook responses do not wait for Codex. Add
 Primary auditor backend policy: Claude hooks automatically select Codex CLI when it is available on PATH,
 otherwise the Haiku-compatible path. Codex native hooks automatically select Codex CLI. An explicit
 `SPOTTER_AUDITOR_BACKEND` override wins on either host; runtime failure never triggers a hidden fallback.
+
+## Local runtime error aggregates
+
+Spotter collects fixed-code runtime failures only when the canonical dotagents factory reporter
+configuration contains the JSON boolean `collection.enabled: true`. Missing, malformed, and disabled
+configuration all fail closed. Collection is local-only: Spotter has no reporting credential or network
+transport code. The owner-private atomic store contains only fixed templates and allow-listed aggregates;
+raw exceptions, stdout/stderr, stacks, prompts, hook payloads, findings, file contents, and absolute paths
+are not accepted by its API.
+
+Daemon and direct Codex-hook owner boundaries perform collection in a killable child-process group with
+a bounded timeout. A blocked FIFO or descendant therefore cannot stall the hook or daemon. HTTP reporting
+metadata, when present in the shared config, is accepted only when `new URL(value).href === value` and the
+scheme is HTTP(S); Spotter still neither reads credentials nor sends the aggregate anywhere.
+
+On POSIX, every config/store read revalidates the current uid and exact `0600` file / `0700` directory
+modes. Store mutations use a private SQLite `BEGIN IMMEDIATE` mutex that the OS releases on process crash;
+there is no PID/mtime stale-owner reclaim path. On Windows, every
+store access rebuilds the DACL to one FullControl ACE for the current process SID and verifies the ACL
+readback before use.
+
+`spotter diagnostics runtime-errors` emits the read-only cursor snapshot. Its
+`ack`, `resolve`, `reopen`, and `compact` actions are the machine lifecycle
+surface used after report acceptance. `spotter diagnostics logs`
+and `spotter diagnostics factory` include only bounded store counts/status, never the store/config path
+or record payload. Programmatic consumers can import `readRuntimeErrorSnapshot`,
+`acknowledgeRuntimeErrors`, `resolveRuntimeError`, `reopenRuntimeError`, and `compactRuntimeErrors`.
+Acknowledgement is monotonic, and compaction never removes an unacknowledged record.
 The Codex SessionStart hook refreshes `.spotter/tool-db.codex.json` in the background
 without touching the Claude DB.
 Codex CLI auditor child processes use a versioned product policy. The production selection is

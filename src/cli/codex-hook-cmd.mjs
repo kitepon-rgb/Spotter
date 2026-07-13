@@ -32,6 +32,7 @@ import {
   loadAuditorContext,
   readProjectAuditorContextConfig,
 } from '../core/auditor-context.mjs';
+import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
@@ -77,11 +78,11 @@ export async function runCodexHookCommand({ argv = process.argv.slice(2) } = {})
     return;
   }
   if (sub === 'user-prompt-submit') {
-    await runCodexUserPromptSubmitHook();
+    await runCodexUserPromptSubmitHook({ runtimeErrorObserver: observeRuntimeErrorIsolatedSafe });
     return;
   }
   if (sub === 'stop') {
-    await runCodexStopHook();
+    await runCodexStopHook({ runtimeErrorObserver: observeRuntimeErrorIsolatedSafe });
     return;
   }
   process.stderr.write(`unknown codex-hook subcommand: ${sub}\n${CODEX_HOOK_USAGE}`);
@@ -121,6 +122,7 @@ export async function runCodexUserPromptSubmitHook({
   loadAuditorContextFn = loadAuditorContext,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
+  runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -160,6 +162,7 @@ export async function runCodexUserPromptSubmitHook({
     });
     contextDurationMs = Date.now() - contextStartedAt;
   } catch (err) {
+    await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
     contextDurationMs = Date.now() - contextStartedAt;
     const failure = projectBackendFailure(err?.code);
     safeWriteError(writeError, failure.stderr);
@@ -179,6 +182,7 @@ export async function runCodexUserPromptSubmitHook({
     return;
   }
   if (context.status === 'unavailable' || context.status === 'schema_mismatch') {
+    await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
     const failure = projectBackendFailure(context.status === 'unavailable'
       ? 'E_AUDITOR_CONTEXT_UNAVAILABLE'
       : 'E_AUDITOR_CONTEXT_SCHEMA');
@@ -219,8 +223,10 @@ export async function runCodexUserPromptSubmitHook({
   let catalog;
   let backend;
   let judgment;
+  let enteredAuditorBoundary = false;
   try {
     catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
+    enteredAuditorBoundary = true;
     backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
     judgment = await backend.judge({
       stage: 'user_input',
@@ -229,6 +235,7 @@ export async function runCodexUserPromptSubmitHook({
       contextStatus: 'fresh',
     });
   } catch (err) {
+    if (enteredAuditorBoundary) await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
     const failure = projectBackendFailure(err?.code);
     safeWriteError(writeError, failure.stderr);
     await recordCodexHookEventSafe(recordHookEventFn, {
@@ -281,6 +288,7 @@ export async function runCodexStopHook({
   recordHookEventFn = appendCodexHookEvent,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
+  runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -331,11 +339,14 @@ export async function runCodexStopHook({
   let catalog;
   let backend;
   let judgment;
+  let enteredAuditorBoundary = false;
   try {
     catalog = await readLocalFn({ projectRoot, hostAgent: 'codex' });
+    enteredAuditorBoundary = true;
     backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
     judgment = await backend.judge({ stage: 'turn_end', finalResponse, usedTools });
   } catch (err) {
+    if (enteredAuditorBoundary) await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
     const failure = projectBackendFailure(err?.code);
     reportError(failure.stderr);
     writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
@@ -651,6 +662,14 @@ function createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBack
     env: process.env,
     timeoutMs: codexHookAuditorTimeoutMs(process.env),
   });
+}
+
+async function observeRuntimeFailure(observer, kind) {
+  try {
+    await observer(kind);
+  } catch {
+    // Runtime error telemetry must not alter hook output or exit behavior.
+  }
 }
 
 function resolveCodexHookAuditorBackend({ env }) {
