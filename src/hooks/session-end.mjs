@@ -20,6 +20,7 @@ export async function runSessionEnd({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
   recordHookEventFn = recordClaudeHookEvent,
+  writeError = (text) => process.stderr.write(text),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -41,6 +42,13 @@ export async function runSessionEnd({
       event: { hook: 'SessionEnd', status: 'shutdown', durationMs: Date.now() - startedAt },
     });
   } catch (err) {
+    if (err?.code === 'E_UNREACHABLE') {
+      await recordHookEventFn({
+        projectRoot,
+        event: { hook: 'SessionEnd', status: 'already-stopped', durationMs: Date.now() - startedAt },
+      });
+      return;
+    }
     await recordHookEventFn({
       projectRoot,
       event: {
@@ -51,8 +59,7 @@ export async function runSessionEnd({
       },
     });
     // §14.1 exception — don't fail the Claude Code session just because cleanup failed.
-    process.stderr.write(`spotter-hook: session-end shutdown warning: ${err.code ?? '?'}: ${err.message}\n`);
-    process.exit(0);
+    writeError(`spotter-hook: session-end shutdown warning: ${err.code ?? '?'}: ${err.message}\n`);
   }
 }
 

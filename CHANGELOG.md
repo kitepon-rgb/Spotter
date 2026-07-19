@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.26 — 2026-07-20
+
+- **SessionEnd cleanupを冪等化。** daemonが未起動または既に停止済みの`E_UNREACHABLE`は
+  `already-stopped`として記録し、正常な終了状態をstderr warningへ誤分類しない。他のcleanup
+  failureは従来どおりwarningと構造eventを残す。
+- **Windows native Codex hookをPowerShell実行可能に修正。** quoted Node commandの先頭へ
+  Windowsだけcall operator `&`を付ける。installerのownership判定は新旧両形式を認識し、
+  再installで旧形式をcanonicalへ更新、uninstallでも除去できる。
+
 ## 1.4.25 — 2026-07-14
 
 - **Windows Codex CLI実行経路を修正。** `spotter install`、`spotter doctor`、Codex hook /

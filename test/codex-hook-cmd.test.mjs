@@ -257,11 +257,11 @@ test('installCodexHooks and uninstallCodexHooks: recognize quoted Windows node.c
       hooks: { Stop: [{ hooks: [{ type: 'command', command: legacyCommand, timeoutSec: 60, async: false }] }] },
     }), 'utf8');
 
-    await installCodexHooks({ codexHome, nodePath, spotterBin });
+    await installCodexHooks({ codexHome, nodePath, spotterBin, platform: 'win32' });
     let hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
     assert.deepEqual(hooks.hooks.Stop, [{ hooks: [{
       type: 'command',
-      command: String.raw`"C:\\Program Files\\nodejs\\node.cmd" "C:\\Program Files\\claude-spotter\\bin\\spotter.mjs" codex-hook stop`,
+      command: String.raw`& "C:\\Program Files\\nodejs\\node.cmd" "C:\\Program Files\\claude-spotter\\bin\\spotter.mjs" codex-hook stop`,
       timeout: 60,
     }] }]);
 

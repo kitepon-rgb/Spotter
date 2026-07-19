@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter v1.4.24（published / rollout 3 host installed、2026-07-14）の未完事項だけを記録する。
+Spotter v1.4.26（release candidate、2026-07-20）の未完事項だけを記録する。
 完了済みの実装・過去バージョンの観測・採用しなかった案はCHANGELOGと`docs/archive/`を参照する。
 
 ## 運用ルール

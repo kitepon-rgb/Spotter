@@ -464,11 +464,11 @@ export async function runCodexHookDiagnosticsCommand({
   writeOutput(JSON.stringify(result, null, 2) + '\n');
 }
 
-export async function installCodexHooks({ codexHome = defaultCodexHome(), nodePath = resolveCodexHookNodePath(), spotterBin = SPOTTER_BIN } = {}) {
+export async function installCodexHooks({ codexHome = defaultCodexHome(), nodePath = resolveCodexHookNodePath(), spotterBin = SPOTTER_BIN, platform = process.platform } = {}) {
   const hooksPath = join(codexHome, 'hooks.json');
   const configPath = join(codexHome, 'config.toml');
   const current = await loadJson(hooksPath);
-  const next = mergeCodexHooks(current, { nodePath, spotterBin });
+  const next = mergeCodexHooks(current, { nodePath, spotterBin, platform });
   const hooksChanged = JSON.stringify(current) !== JSON.stringify(next);
   if (hooksChanged) {
     await mkdir(dirname(hooksPath), { recursive: true });
@@ -879,14 +879,15 @@ async function loadJson(path) {
   }
 }
 
-function mergeCodexHooks(current, { nodePath, spotterBin }) {
+function mergeCodexHooks(current, { nodePath, spotterBin, platform = process.platform }) {
   const next = structuredClone(current ?? {});
   next.hooks = next.hooks ?? {};
-  addCodexHook(next, 'SessionStart', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook session-start`, {
+  const prefix = platform === 'win32' ? '& ' : '';
+  addCodexHook(next, 'SessionStart', `${prefix}${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook session-start`, {
     timeout: 5,
   });
-  addCodexHook(next, 'UserPromptSubmit', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook user-prompt-submit`);
-  addCodexHook(next, 'Stop', `${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook stop`);
+  addCodexHook(next, 'UserPromptSubmit', `${prefix}${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook user-prompt-submit`);
+  addCodexHook(next, 'Stop', `${prefix}${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook stop`);
   return next;
 }
 
@@ -943,7 +944,7 @@ function isSpotterCodexHook(hook) {
 }
 
 function isSpotterCodexCommand(command, event = null) {
-  const match = command.match(/^(?:"((?:\\.|[^"\\])*)"|(\S+))\s+(?:"((?:\\.|[^"\\])*)"|(\S+))\s+codex-hook\s+(session-start|user-prompt-submit|stop)\s*$/);
+  const match = command.match(/^(?:&\s+)?(?:"((?:\\.|[^"\\])*)"|(\S+))\s+(?:"((?:\\.|[^"\\])*)"|(\S+))\s+codex-hook\s+(session-start|user-prompt-submit|stop)\s*$/);
   if (!match) return false;
   const nodePath = unescapeQuotedCommandToken(match[1] ?? match[2]);
   const spotterPath = unescapeQuotedCommandToken(match[3] ?? match[4]);

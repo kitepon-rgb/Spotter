@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
+import { runSessionEnd } from '../src/hooks/session-end.mjs';
 import { runUserPrompt } from '../src/hooks/user-prompt.mjs';
 import { runStop } from '../src/hooks/stop.mjs';
 import { runPreToolUse } from '../src/hooks/pre-tool-use.mjs';
@@ -99,6 +100,48 @@ function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
 }
+
+test('SessionEnd treats an unreachable daemon as idempotent already-stopped cleanup', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-session-end-'));
+  const events = [];
+  const errors = [];
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await runSessionEnd({
+      readInput: async () => ({ session_id: 'ended', cwd: project }),
+      sendRequestFn: async () => { throw new TransportError('E_UNREACHABLE', 'daemon absent'); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeError: (text) => { errors.push(text); },
+    });
+    assert.equal(errors.length, 0);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'already-stopped');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('SessionEnd still warns for cleanup failures other than an absent daemon', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-session-end-'));
+  const events = [];
+  const errors = [];
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await runSessionEnd({
+      readInput: async () => ({ session_id: 'ended', cwd: project }),
+      sendRequestFn: async () => { throw Object.assign(new Error('broken'), { code: 'E_INTERNAL' }); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeError: (text) => { errors.push(text); },
+    });
+    assert.equal(events[0].status, 'error');
+    assert.equal(events[0].code, 'E_INTERNAL');
+    assert.match(errors[0], /E_INTERNAL: broken/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
 
 test('isSubagentCall: true when input.agent_id is a non-empty string', () => {
   assert.equal(isSubagentCall({ agent_id: 'abc' }), true);

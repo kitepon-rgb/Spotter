@@ -145,6 +145,7 @@ no used tools are skipped to avoid duplicate post-answer latency.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
 - `SessionEnd`
   - requests daemon shutdown for the session.
+  - treats `E_UNREACHABLE` as idempotent `already-stopped` cleanup without stderr noise.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl` (cleanup
     failures are warned to stderr, not failed).
 
