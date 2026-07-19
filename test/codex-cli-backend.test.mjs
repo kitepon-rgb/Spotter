@@ -9,7 +9,7 @@ import {
   buildCodexCliSpawnOptions,
   buildCodexExecArgs,
   CODEX_AUDITOR_SCHEMA,
-  createCodexCliAuditorBackend,
+  createCodexCliAuditorBackend as createCodexCliAuditorBackendImpl,
   isCodexAuthFailure,
   isCodexModelUnavailableFailure,
   isCodexUsageLimitFailure,
@@ -26,6 +26,13 @@ const catalog = [
   { name: 'mcp__caveat__caveat_search', description: 'Search known caveats.' },
   { name: 'current_time', description: 'Get current time.' },
 ];
+
+function createCodexCliAuditorBackend(options) {
+  return createCodexCliAuditorBackendImpl({
+    ...options,
+    platform: options?.platform ?? 'linux',
+  });
+}
 
 test('buildWindowsCompatibleInvocation: 未解決shimの固定probeだけcmd.exe fallbackを許す', () => {
   assert.deepEqual(buildWindowsCompatibleInvocation({

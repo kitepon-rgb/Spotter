@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   codexHookDiagnostics,
-  installCodexHooks,
+  installCodexHooks as installCodexHooksImpl,
   resolveCodexHookNodePath,
   runCodexHookInstallCommand,
   runCodexSessionStartHook,
@@ -15,6 +15,13 @@ import {
 } from '../src/cli/codex-hook-cmd.mjs';
 import { AuditorBackendError } from '../src/core/auditor-error.mjs';
 import { CodexAuditorModelPolicyError } from '../src/core/codex-auditor-model-policy.mjs';
+
+function installCodexHooks(options) {
+  return installCodexHooksImpl({
+    ...options,
+    platform: options?.platform ?? 'linux',
+  });
+}
 
 async function makeProject() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-codex-hook-project-'));
