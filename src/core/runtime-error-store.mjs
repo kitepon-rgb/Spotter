@@ -635,7 +635,7 @@ async function runWindowsAcl(path, { directory }, options) {
   const executable = options.powerShellPath ?? 'powershell.exe';
   const script = buildWindowsAclPowerShell({ directory });
   await spawnForExit(executable, ['-NoProfile', '-NonInteractive', '-Command', script], {
-    timeoutMs: options.aclTimeoutMs ?? 3_000,
+    timeoutMs: options.aclTimeoutMs ?? 15_000,
     env: { ...process.env, SPOTTER_ACL_PATH: path },
   });
 }

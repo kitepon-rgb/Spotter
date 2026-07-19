@@ -8,6 +8,8 @@
 - **Windows native Codex hookをPowerShell実行可能に修正。** quoted Node commandの先頭へ
   Windowsだけcall operator `&`を付ける。installerのownership判定は新旧両形式を認識し、
   再installで旧形式をcanonicalへ更新、uninstallでも除去できる。
+- **Windows runtime error storeのACL処理を安定化。** 混雑したWindows runnerでも
+  PowerShellによるprivate ACL設定が誤ってtimeoutしないよう、上限を15秒へ拡張した。
 
 ## 1.4.25 — 2026-07-14
 
