@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.27 — 2026-07-21
+
+- **Windows PowerShell 5.1向け診断JSONをASCII安全化。** `spotter diagnostics logs --json`は
+  非ASCII文字をJSONのUnicode escapeとして出力する。履歴上のtool名に全角括弧などが含まれても、
+  Windows PowerShell 5.1のnative stdout誤復号でJSON構造が壊れず、`ConvertFrom-Json`で読める。
+
 ## 1.4.26 — 2026-07-20
 
 - **SessionEnd cleanupを冪等化。** daemonが未起動または既に停止済みの`E_UNREACHABLE`は

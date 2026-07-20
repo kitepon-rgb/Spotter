@@ -53,10 +53,16 @@ export async function runDiagnosticsLogsCommand({
   const runtimeErrors = await readRuntimeErrorStoreStatusFn();
   const merged = { ...summary, hookEvents, runtimeErrors };
   if (opts.json) {
-    writeOutput(JSON.stringify(merged, null, 2) + '\n');
+    writeOutput(stringifyAsciiJson(merged) + '\n');
     return;
   }
   writeOutput(formatDaemonLogSummary(merged));
+}
+
+function stringifyAsciiJson(value) {
+  return JSON.stringify(value, null, 2).replace(/[\u007f-\uffff]/g, (character) =>
+    `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
+  );
 }
 
 export function formatDaemonLogSummary(summary) {

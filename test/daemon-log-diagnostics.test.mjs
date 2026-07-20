@@ -7,7 +7,10 @@ import {
   summarizeDaemonLogText,
   summarizeDaemonLogs,
 } from '../src/core/daemon-log-diagnostics.mjs';
-import { formatDaemonLogSummary } from '../src/cli/diagnostics-cmd.mjs';
+import {
+  formatDaemonLogSummary,
+  runDiagnosticsLogsCommand,
+} from '../src/cli/diagnostics-cmd.mjs';
 
 const SAMPLE_LOG = [
   '[2026-05-06T00:00:00.000Z] tool-db loaded: 268 tools (project=/repo)',
@@ -107,4 +110,26 @@ test('formatDaemonLogSummary: produces compact human-readable output', () => {
   assert.match(output, /anomalies: role_collapse=1, hallucination_filtered=1/);
   assert.match(output, /codex_risk_check: dispatched=1, disabled_skips=1/);
   assert.match(output, /runtime-errors: collection=enabled, store=available, records=3, open=2, resolved=1, unacknowledged=1/);
+});
+
+test('runDiagnosticsLogsCommand: emits ASCII-safe JSON for Windows PowerShell 5.1', async () => {
+  let output = '';
+  await runDiagnosticsLogsCommand({
+    argv: ['--json'],
+    summarizeDaemonLogsFn: async () => ({
+      stages: {
+        user_input: { missingByTool: { 'Agent（subagent_type=Explore）': 3 } },
+      },
+    }),
+    summarizeHookEventsFn: async () => ({ exists: false }),
+    readRuntimeErrorStoreStatusFn: async () => ({ store: 'absent' }),
+    writeOutput: (text) => { output += text; },
+  });
+
+  assert.match(output, /Agent\\uff08subagent_type=Explore\\uff09/);
+  assert.doesNotMatch(output, /[^\x00-\x7f]/);
+  assert.equal(
+    JSON.parse(output).stages.user_input.missingByTool['Agent（subagent_type=Explore）'],
+    3
+  );
 });

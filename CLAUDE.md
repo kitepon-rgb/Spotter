@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-> **v1.4.26（2026-07-20公開候補）**: SessionEndの既停止daemonを冪等cleanupとして扱い、
-> Windows native Codex hookのquoted Node commandへPowerShell call operator `&`を付ける。
+> **v1.4.27（2026-07-21公開候補）**: Windows PowerShell 5.1でも診断JSONを壊さないよう、
+> `spotter diagnostics logs --json`の非ASCII文字をUnicode escapeで出力する。
 
 > **v1.4.23（2026-07-13公開）**: factory diagnostics と opt-in の local runtime
 > error store を追加した。collection は canonical dotagents config の
@@ -25,9 +25,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v1.4.26 (release candidate 2026-07-20)**: SessionEndの`E_UNREACHABLE`を
-`already-stopped`として無音で閉じる。Windows native Codex hookは`&`付きcanonical commandを
-生成し、旧形式を再installで移行する。
+**v1.4.27 (release candidate 2026-07-21)**: `spotter diagnostics logs --json`をASCII安全な
+JSON出力へ変更する。Windows PowerShell 5.1がUTF-8の全角括弧を誤復号してもJSONの引用構造を
+壊さず、`ConvertFrom-Json`で読める。
+
+**v1.4.26 (published 2026-07-20)**: SessionEndの`E_UNREACHABLE`を`already-stopped`として
+無音で閉じる。Windows native Codex hookは`&`付きcanonical commandを生成し、旧形式を
+再installで移行する。
 
 **v1.4.24 (published 2026-07-14)**: installerがruntime state rootを製品のprivate権限契約へ
 正規化し、既存の緩いmodeも修復する。POSIX symlink・owner不一致はchmod前に拒否する。
