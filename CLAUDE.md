@@ -1,7 +1,9 @@
 # CLAUDE.md
 
-> **v1.4.27（2026-07-21公開候補）**: Windows PowerShell 5.1でも診断JSONを壊さないよう、
-> `spotter diagnostics logs --json`の非ASCII文字をUnicode escapeで出力する。
+> **v1.4.27（2026-07-21公開）**: Windows PowerShell 5.1でも診断JSONを壊さないよう、
+> `spotter diagnostics logs --json`の非ASCII文字をUnicode escapeで出力する。公開commit
+> `eb1efbd`、CI 6/6、npm `latest`、tag / GitHub Release、4 host配布、Windows実ログの
+> `ConvertFrom-Json`まで確認済み。
 
 > **v1.4.23（2026-07-13公開）**: factory diagnostics と opt-in の local runtime
 > error store を追加した。collection は canonical dotagents config の
@@ -25,9 +27,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v1.4.27 (release candidate 2026-07-21)**: `spotter diagnostics logs --json`をASCII安全な
+**v1.4.27 (published 2026-07-21)**: `spotter diagnostics logs --json`をASCII安全な
 JSON出力へ変更する。Windows PowerShell 5.1がUTF-8の全角括弧を誤復号してもJSONの引用構造を
-壊さず、`ConvertFrom-Json`で読める。
+壊さず、`ConvertFrom-Json`で読める。公開commit `eb1efbd`、CI 6/6、npm `latest`、tag /
+GitHub Release、4 host配布、Windows実ログ291件・hook event 19件の変換を確認した。
 
 **v1.4.26 (published 2026-07-20)**: SessionEndの`E_UNREACHABLE`を`already-stopped`として
 無音で閉じる。Windows native Codex hookは`&`付きcanonical commandを生成し、旧形式を
