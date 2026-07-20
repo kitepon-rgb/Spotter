@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.28 — 2026-07-21
+
+- **Windows Codex SessionStartの誤timeoutを修正。** detached refreshを起動するSpotter所有hookの
+  host側上限を5秒から30秒へ変更し、Windows nativeのNode起動・project discoveryが5秒を超えても
+  SessionStart失敗として切られないようにした。再installは旧5秒設定をcanonical 30秒へ正規化する。
+
 ## 1.4.27 — 2026-07-21
 
 - **Windows PowerShell 5.1向け診断JSONをASCII安全化。** `spotter diagnostics logs --json`は

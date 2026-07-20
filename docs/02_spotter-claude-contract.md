@@ -95,6 +95,10 @@ Codex hook auditor calls use the production model policy (currently `gpt-5.6-ter
 Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
 
+Codex `SessionStart` handler timeout is 30 seconds. The hook itself only launches detached refresh, but
+Windows nativeではNode起動とproject discoveryが5秒を超える実測があるため、installerは旧5秒設定を
+再install時に30秒へ正規化する。UserPromptSubmit / Stopは従来どおり60秒である。
+
 - Claude `SessionStart`
   - returns without spawning when `SPOTTER_PARENT_PID` is set.
   - returns without spawning when `agent_id` is present.

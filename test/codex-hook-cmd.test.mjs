@@ -65,7 +65,7 @@ test('installCodexHooks: fresh install generates only canonical Codex hook field
     assert.deepEqual(hooks.hooks.SessionStart[0].hooks[0], {
       type: 'command',
       command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook session-start',
-      timeout: 5,
+      timeout: 30,
     });
     assert.equal(hooks.hooks.UserPromptSubmit.length, 2);
     assert.equal(hooks.hooks.UserPromptSubmit[0].hooks[0].command, 'keep me');
@@ -139,7 +139,7 @@ test('installCodexHooks: reinstall normalizes installer-owned Spotter handlers, 
     const hooks = JSON.parse(await readFile(join(codexHome, 'hooks.json'), 'utf8'));
 
     for (const [event, subcommand, timeout] of [
-      ['SessionStart', 'session-start', 5],
+      ['SessionStart', 'session-start', 30],
       ['UserPromptSubmit', 'user-prompt-submit', 60],
       ['Stop', 'stop', 60],
     ]) {
@@ -196,7 +196,7 @@ test('installCodexHooks: preserves mixed-group metadata and non-Spotter handlers
         unknownGroupField: { keep: true },
         hooks: [
           firstOther,
-          { type: 'command', command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook session-start', timeout: 5 },
+          { type: 'command', command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook session-start', timeout: 30 },
           secondOther,
         ],
       },
@@ -221,7 +221,7 @@ test('installCodexHooks: does not clean up a known Spotter subcommand placed und
     assert.deepEqual(hooks.hooks.SessionStart[1].hooks[0], {
       type: 'command',
       command: '"/usr/bin/node" "/repo/bin/spotter.mjs" codex-hook session-start',
-      timeout: 5,
+      timeout: 30,
     });
   } finally {
     await rm(codexHome, { recursive: true, force: true });
@@ -1393,7 +1393,7 @@ test('codexHookDiagnostics: legacy async SessionStart remains availability avail
 test('codexHookDiagnostics: compatibility matrix distinguishes missing, structural errors, and harmless noncanonical fields', async () => {
   const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-diagnostics-matrix-'));
   const base = () => ({ hooks: {
-    SessionStart: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook session-start', timeout: 5 }] }],
+    SessionStart: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook session-start', timeout: 30 }] }],
     UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook user-prompt-submit', timeout: 60 }] }],
     Stop: [{ hooks: [{ type: 'command', command: 'node /repo/spotter.mjs codex-hook stop', timeout: 60 }] }],
   } });
@@ -1430,6 +1430,10 @@ test('codexHookDiagnostics: compatibility matrix distinguishes missing, structur
       {
         name: 'timeout zero', mutate: (value) => { value.hooks.Stop[0].hooks[0].timeout = 0; return value; }, readiness: 'misconfigured',
         event: 'stop', count: 1, compatible: false, canonical: false, issues: ['timeout-invalid'],
+      },
+      {
+        name: 'stale SessionStart timeout', mutate: (value) => { value.hooks.SessionStart[0].hooks[0].timeout = 5; return value; }, readiness: 'misconfigured',
+        event: 'sessionStart', count: 1, compatible: false, canonical: false, issues: ['timeout!=30'],
       },
       {
         name: 'timeoutSec only', mutate: (value) => { delete value.hooks.Stop[0].hooks[0].timeout; value.hooks.Stop[0].hooks[0].timeoutSec = 60; return value; }, readiness: 'misconfigured',

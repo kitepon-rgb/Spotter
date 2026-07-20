@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+> **v1.4.28（2026-07-21公開準備中）**: Windows native Codexで実測したSessionStartの
+> 5秒超過を修正するため、Spotter所有hookのhost側上限を30秒へ変更し、再installで旧5秒設定を
+> canonical 30秒へ正規化する。
+
 > **v1.4.27（2026-07-21公開）**: Windows PowerShell 5.1でも診断JSONを壊さないよう、
 > `spotter diagnostics logs --json`の非ASCII文字をUnicode escapeで出力する。公開commit
 > `eb1efbd`、CI 6/6、npm `latest`、tag / GitHub Release、4 host配布、Windows実ログの
@@ -26,6 +30,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.4.28 (release preparation 2026-07-21)**: Windows native CodexのSessionStartで、
+Node起動とproject discoveryが5秒を超えてSpotter hookが誤timeoutする実測を受け、installer所有entryの
+上限を30秒へ変更する。diagnosticsも旧5秒をmisconfiguredとして報告し、再installで正規化する。
 
 **v1.4.27 (published 2026-07-21)**: `spotter diagnostics logs --json`をASCII安全な
 JSON出力へ変更する。Windows PowerShell 5.1がUTF-8の全角括弧を誤復号してもJSONの引用構造を

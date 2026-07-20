@@ -39,6 +39,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
 const SPOTTER_BIN = join(PACKAGE_ROOT, 'bin', 'spotter.mjs');
 const CODEX_HOOK_TIMEOUT_SEC = 60;
+const CODEX_SESSION_START_TIMEOUT_SEC = 30;
 const DEFAULT_CODEX_HOOK_AUDITOR_TIMEOUT_MS = 20_000;
 const DEFAULT_CODEX_STOP_SHORT_FINAL_MAX_CHARS = 120;
 const CODEX_HOOK_FEATURE_NAMES = ['hooks', 'codex_hooks'];
@@ -623,6 +624,7 @@ function validateSpotterCodexHookEvent(settings, event) {
   const candidates = allEntries.filter((hook) => isSpotterCodexCommand(String(hook?.command ?? '')));
   const expectedCandidates = candidates.filter((hook) => isSpotterCodexCommand(String(hook.command ?? ''), event));
   const expected = expectedCandidates.filter((hook) => hook?.type === 'command');
+  const expectedTimeout = event === 'SessionStart' ? CODEX_SESSION_START_TIMEOUT_SEC : CODEX_HOOK_TIMEOUT_SEC;
   const issues = [];
   if (expectedCandidates.length === 0) issues.push('missing');
   if (expectedCandidates.length > 1) issues.push('duplicate');
@@ -632,6 +634,7 @@ function validateSpotterCodexHookEvent(settings, event) {
     if (hook.async === true) issues.push('async:true');
     if (!Object.hasOwn(hook, 'timeout')) issues.push('timeout:missing');
     else if (!Number.isFinite(hook.timeout) || hook.timeout <= 0) issues.push('timeout-invalid');
+    else if (hook.timeout !== expectedTimeout) issues.push(`timeout!=${expectedTimeout}`);
     if (Object.hasOwn(hook, 'timeoutSec')) issues.push('timeoutSec');
     if (hook.async === false) issues.push('async:false');
     if (hook.statusMessage === null) issues.push('statusMessage:null');
@@ -658,6 +661,8 @@ function isIncompatibleSpotterHookIssue(issue) {
     'type!=command',
     'async:true',
     'timeout-invalid',
+    'timeout!=30',
+    'timeout!=60',
     'timeoutSec',
     'commandWindows-invalid',
   ].includes(issue);
@@ -884,7 +889,7 @@ function mergeCodexHooks(current, { nodePath, spotterBin, platform = process.pla
   next.hooks = next.hooks ?? {};
   const prefix = platform === 'win32' ? '& ' : '';
   addCodexHook(next, 'SessionStart', `${prefix}${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook session-start`, {
-    timeout: 5,
+    timeout: CODEX_SESSION_START_TIMEOUT_SEC,
   });
   addCodexHook(next, 'UserPromptSubmit', `${prefix}${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook user-prompt-submit`);
   addCodexHook(next, 'Stop', `${prefix}${quoteArg(nodePath)} ${quoteArg(spotterBin)} codex-hook stop`);
