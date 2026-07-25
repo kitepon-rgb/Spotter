@@ -13,6 +13,14 @@
 
 > **Separate the spotter from the doer.** Spotter runs alongside Claude Code and quietly flags the moments when your primary Claude **forgets to use a tool it has access to**.
 
+## Factory role
+
+Spotter is one of the ten self-owned core products managed by the
+[dotagents development factory](https://github.com/kitepon-rgb/dotagents).
+This repository owns auditor behavior, project markers, installers, release,
+and diagnostics; dotagents owns cross-product catalog and host integration.
+MarkItDown is managed separately as a third-party CLI.
+
 Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It may skip a project memory MCP when a decision should be recorded, answer from stale memory instead of a docs-lookup MCP, or reason about UI state without a browser-automation MCP. The model can't always tell when it doesn't know — so the tool stays unused.
 
 Spotter runs a separate auditor with the full tool catalog and checks both the user's prompt and the primary agent's reply. Automatic selection uses Codex CLI on a Claude host when available, otherwise the session-scoped Haiku path; on a Codex host it defaults to Codex CLI. An explicit backend override takes precedence, but a runtime failure never silently switches backend. Before the primary reply, validated tool IDs may become fixed, non-directive advice; after the reply, findings remain structured events and are not injected into a later turn. Auditor prose never enters the parent session. **The primary agent is never asked to self-audit** — that would defeat the premise. Detection happens through hooks, independent of the primary agent's intent.

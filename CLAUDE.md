@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **v1.4.28（2026-07-21公開準備中）**: Windows native Codexで実測したSessionStartの
+> **v1.4.28（2026-07-21公開）**: Windows native Codexで実測したSessionStartの
 > 5秒超過を修正するため、Spotter所有hookのhost側上限を30秒へ変更し、再installで旧5秒設定を
 > canonical 30秒へ正規化する。
 
@@ -31,7 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Status
 
-**v1.4.28 (release preparation 2026-07-21)**: Windows native CodexのSessionStartで、
+**v1.4.28 (published 2026-07-21)**: Windows native CodexのSessionStartで、
 Node起動とproject discoveryが5秒を超えてSpotter hookが誤timeoutする実測を受け、installer所有entryの
 上限を30秒へ変更する。diagnosticsも旧5秒をmisconfiguredとして報告し、再installで正規化する。
 

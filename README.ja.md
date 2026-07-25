@@ -13,6 +13,12 @@
 
 > **気づく役と実行する役を分離する。** Claude Code の横で並走し、主役の Claude が**ツールを呼び忘れたとき**だけ静かに指摘する監査役。
 
+## 開発工場での位置づけ
+
+Spotterは[dotagents開発工場](https://github.com/kitepon-rgb/dotagents)が管理する
+自作コア10製品の一つです。本repoは監査挙動、project marker、installer、release、diagnosticsを所有し、
+dotagentsは製品横断のcatalogとhost統合を所有します。MarkItDownは別区分の第三者CLIです。
+
 Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。記録すべき決定を memory / caveat MCP に残さない、docs lookup MCP を呼ばずに古い知識で応答する、ブラウザ自動化 MCP で確認せず UI 状態を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
 
 Spotter はツールカタログを完全に把握した別の監査エージェントで、ユーザー入力と主役 AI の応答を並走監査します。自動選択では Claude host は Codex CLI があればそれを、なければ session-scoped Haiku を選び、Codex host は Codex CLI を既定にします。明示 backend override は host より優先しますが、runtime failure で別 backend へ黙って切り替えません。応答前は検証済みtool IDだけを固定・非命令形の助言へ変換でき、応答後のfindingは構造eventに留めて後続turnへ注入しません。監査用AIの自由文が親セッションへ入ることはありません。**主役 AI が自覚して自己監査する**設計は本プロダクトの存在意義を破壊するため、hook 経由でその意思と独立に検出します。
