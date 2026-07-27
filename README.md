@@ -13,12 +13,14 @@
 
 > **Separate the spotter from the doer.** Spotter runs alongside Claude Code and quietly flags the moments when your primary Claude **forgets to use a tool it has access to**.
 
-## Factory role
+Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https://kitepon.dev/en).
 
-Spotter is one of the ten self-owned core products managed by the
-[dotagents development factory](https://github.com/kitepon-rgb/dotagents).
+## Ownership boundary
+
 This repository owns auditor behavior, project markers, installers, release,
-and diagnostics; dotagents owns cross-product catalog and host integration.
+and diagnostics. The cross-product catalog and host integration are handled by
+[dotagents](https://github.com/kitepon-rgb/dotagents), the internal development
+toolchain behind kitepon.dev's products.
 MarkItDown is managed separately as a third-party CLI.
 
 Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It may skip a project memory MCP when a decision should be recorded, answer from stale memory instead of a docs-lookup MCP, or reason about UI state without a browser-automation MCP. The model can't always tell when it doesn't know — so the tool stays unused.

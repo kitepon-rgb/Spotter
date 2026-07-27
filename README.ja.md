@@ -13,11 +13,15 @@
 
 > **気づく役と実行する役を分離する。** Claude Code の横で並走し、主役の Claude が**ツールを呼び忘れたとき**だけ静かに指摘する監査役。
 
-## 開発工場での位置づけ
+[kitepon.dev](https://kitepon.dev/)を運営する[クオ（@QLyun35332）](https://x.com/QLyun35332)が
+開発・メンテナンスしています。
 
-Spotterは[dotagents開発工場](https://github.com/kitepon-rgb/dotagents)が管理する
-自作コア10製品の一つです。本repoは監査挙動、project marker、installer、release、diagnosticsを所有し、
-dotagentsは製品横断のcatalogとhost統合を所有します。MarkItDownは別区分の第三者CLIです。
+## 所有境界
+
+本repositoryは監査挙動、project marker、installer、release、diagnosticsを所有します。
+製品横断のcatalogとhost統合は、kitepon.devの製品開発を支える内部基盤
+[dotagents](https://github.com/kitepon-rgb/dotagents)が担当します。
+MarkItDownは別区分の第三者CLIです。
 
 Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。記録すべき決定を memory / caveat MCP に残さない、docs lookup MCP を呼ばずに古い知識で応答する、ブラウザ自動化 MCP で確認せず UI 状態を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
 
