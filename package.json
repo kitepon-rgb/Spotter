@@ -23,7 +23,10 @@
     "audit",
     "spotter"
   ],
-  "author": "kitepon",
+  "author": {
+    "name": "Quo / クオ at kitepon.dev",
+    "url": "https://x.com/QLyun35332"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
