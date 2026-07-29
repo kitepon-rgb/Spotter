@@ -1,0 +1,15 @@
+{
+  "base": "og.svg",
+  "logo": "kitepon-dev-on-night.png",
+  "output": "og.png",
+  "endorsement": {
+    "x": 88,
+    "y": 24,
+    "width": 135,
+    "height": 41
+  },
+  "output_size": {
+    "width": 1280,
+    "height": 640
+  }
+}
