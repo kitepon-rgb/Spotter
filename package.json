@@ -11,6 +11,8 @@
   },
   "scripts": {
     "test": "node --test",
+    "verify:release-commit": "node scripts/verify-release-commit.mjs",
+    "prepublishOnly": "npm run verify:release-commit && npm test",
     "postinstall": "node scripts/postinstall.mjs",
     "preuninstall": "node scripts/preuninstall.mjs"
   },
