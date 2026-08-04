@@ -1,0 +1,16 @@
+{
+  "capacity":{"executors":3},
+  "claim_mode":"exact_minimum",
+  "executor_capability":{"adapters":["actual-agent"]},
+  "manual_witness":{
+    "T4-claude":{"affected_tests":["test/hooks.test.mjs","test/daemon.test.mjs"],"owns":[],"reads":["src/core/evaluation-store.mjs","src/core/evaluation-context.mjs","src/core/evaluation-tool-id.mjs"],"resources":[],"sensor_provenance":{"queries":[]},"state_effects":[],"unknowns":[],"writes":["src/hooks/user-prompt.mjs","src/hooks/pre-tool-use.mjs","src/hooks/stop.mjs","src/daemon/daemon.mjs","test/hooks.test.mjs","test/daemon.test.mjs"]},
+    "T5-codex":{"affected_tests":["test/codex-hook-cmd.test.mjs","test/codex-transcript.test.mjs"],"owns":[],"reads":["src/core/evaluation-store.mjs","src/core/evaluation-context.mjs","src/core/evaluation-tool-id.mjs"],"resources":[],"sensor_provenance":{"queries":[]},"state_effects":[],"unknowns":[],"writes":["src/cli/codex-hook-cmd.mjs","src/core/codex-transcript.mjs","test/codex-hook-cmd.test.mjs","test/codex-transcript.test.mjs"]},
+    "T6-cli":{"affected_tests":["test/evaluation.test.mjs"],"owns":[],"reads":["src/core/evaluation-store.mjs"],"resources":[],"sensor_provenance":{"queries":[]},"state_effects":[],"unknowns":[],"writes":["src/core/evaluation-report.mjs","src/cli/evaluation-cmd.mjs","bin/spotter.mjs","test/evaluation.test.mjs"]}
+  },
+  "repo":{"base_sha":"150d9e7671ee23e71d50c64e921da206c812c035","root_kind":"git-worktree"},
+  "request_digest":"ab0c52f0bf162139890cb3a78b1a91cfc573aa5dee72f34affae7ece4c1d0ea9",
+  "request_id":"spotter-eval-wave2",
+  "schema":"lattice.run_request.v1",
+  "sensor_query_set":{"queries":[{"id":"witness-status","operation":"status"}]},
+  "todos":[{"todo_id":"T4-claude"},{"todo_id":"T5-codex"},{"todo_id":"T6-cli"}]
+}
