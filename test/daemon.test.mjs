@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  startDaemon,
+  startDaemon as startDaemonImpl,
   DaemonAlreadyRunningError,
   pidFilePath,
   shouldSkipShortStop,
@@ -15,6 +15,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+
+const NOOP_EVALUATION_STORE = Object.freeze({
+  recordTurn() {},
+  recordUsage() {},
+  markUsageIncomplete() {},
+  closeTurn() {},
+  closeOpenTurnsForSession() {},
+  close() {},
+});
+
+function startDaemon(options = {}) {
+  return startDaemonImpl({
+    ...options,
+    evaluationStore: options.evaluationStore ?? NOOP_EVALUATION_STORE,
+  });
+}
 
 // v0.7.0: tests pass `tools` directly to startDaemon (an array of {name, description}).
 // `dir` is still returned for parity with prior cleanup paths and for tests that need a
