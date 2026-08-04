@@ -9,6 +9,12 @@ import { runUserPrompt } from '../src/hooks/user-prompt.mjs';
 import { runCodexUserPromptSubmitHook } from '../src/cli/codex-hook-cmd.mjs';
 import { runCodexStopHook } from '../src/cli/codex-hook-cmd.mjs';
 
+const NOOP_EVALUATION_STORE = { recordTurn() {}, close() {} };
+const NOOP_CODEX_EVALUATION_STORE = {
+  database: { prepare: () => ({ get: () => null }) },
+  close() {},
+};
+
 test('projectParentAdvice: projects only bounded safe tool IDs without reasons', () => {
   const sentinel = 'SENTINEL_SHOULD_NOT_LEAK';
   const advice = projectParentAdvice([
@@ -34,6 +40,7 @@ test('Codex Stop emits fixed systemMessage without pending or provider text', as
       readCodexToolUsageFn: async () => ({ usedTools: ['shell'], anomalies: [], stats: {} }),
       readLocalFn: async () => [],
       createAuditorBackendFn: () => { const err = new Error('SENTINEL_MESSAGE'); err.code = 'E_CODEX_CLI_TIMEOUT'; err.diagnostics = { stdout: 'SENTINEL_STDOUT', stderr: 'SENTINEL_STDERR' }; throw err; },
+      createEvaluationStoreFn: () => NOOP_CODEX_EVALUATION_STORE,
       writeOutput: (text) => { output += text; },
       writeError: (text) => { stderr += text; },
     });
@@ -100,6 +107,8 @@ test('Claude and Codex UserPromptSubmit project identical advice and exclude aud
       readAuditorContextConfigFn: async () => ({ mode: 'throughline', command: '/bin/throughline', args: [] }),
       loadAuditorContextFn: async () => freshContext,
       sendRequestFn: async () => ({ ok: true, result }),
+      createEvaluationStoreFn: () => NOOP_EVALUATION_STORE,
+      loadEvaluationObserverContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
       writeOutput: (text) => { claudeOutput += text; },
     });
     let codexOutput = '';
@@ -116,6 +125,8 @@ test('Claude and Codex UserPromptSubmit project identical advice and exclude aud
           meta: { backend: 'codex-cli' },
         }),
       }),
+      createEvaluationStoreFn: () => NOOP_EVALUATION_STORE,
+      loadEvaluationObserverContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
       writeOutput: (text) => { codexOutput += text; },
     });
     const claudeAdvice = JSON.parse(claudeOutput).hookSpecificOutput.additionalContext;
