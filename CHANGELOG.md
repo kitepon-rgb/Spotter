@@ -7,6 +7,9 @@
 - **Windows nativeとWSL2のloopback portを分離。** WSL2 localhost relayがWindows側の53940も
   占有する実環境に合わせ、Windows native deviceを53944へ移し、main-serverの53943 tunnelも
   53944へ接続する。Windowsを選んだ時にWSL2の評価DBが表示される衝突を解消した。
+- **評価SQLiteの初回同時open待ちを実測に合わせた。** 高負荷のNode 22.13でschema作成の競合が
+  既定1秒を超えたため、SQLite自身のbounded `busy_timeout`を5秒へ変更した。retry、lockfile、
+  background処理は追加せず、lockがない通常処理は待たない。
 
 ## 1.5.1 — 2026-08-04
 

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 export const EVALUATION_STORE_SCHEMA = 'spotter.evaluation_store.v1';
-export const DEFAULT_EVALUATION_BUSY_TIMEOUT_MS = 1_000;
+export const DEFAULT_EVALUATION_BUSY_TIMEOUT_MS = 5_000;
 // daemonの無通信寿命と同じ30分を超えたopen観測は、保存行を変更せず、
 // report上だけproposal itemをoutcome_missingとして扱う。
 export const DEFAULT_OPEN_TURN_STALE_MS = 30 * 60 * 1_000;
@@ -29,7 +29,7 @@ export function createEvaluationStore({
   mkdirSync(dirname(databasePath), { recursive: true, mode: 0o700 });
   const database = new DatabaseSync(databasePath);
   // cold startでは別projectのprocessも同じ未作成DBを同時に開き得る。
-  // WAL化とschema作成が最初のwrite lockを競う前に、既定1秒のbounded waitを有効にする。
+  // WAL化とschema作成が最初のwrite lockを競う前に、既定5秒のbounded waitを有効にする。
   database.exec(`PRAGMA busy_timeout=${busyTimeoutMs};`);
   database.exec('PRAGMA foreign_keys=ON;');
   initialize(database);
