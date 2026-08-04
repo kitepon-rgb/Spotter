@@ -37,7 +37,11 @@ import {
 import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
 import { loadEvaluationObserverContext } from '../core/evaluation-context.mjs';
-import { canonicalizeProposedToolIds, canonicalizeUsedToolIds } from '../core/evaluation-tool-id.mjs';
+import {
+  canonicalizeCodexSkillReadToolIds,
+  canonicalizeProposedToolIds,
+  canonicalizeUsedToolIds,
+} from '../core/evaluation-tool-id.mjs';
 import { version as SPOTTER_VERSION } from '../version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -367,6 +371,7 @@ export async function runCodexStopHook({
   writeError = (text) => process.stderr.write(text),
   runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
   createEvaluationStoreFn = createEvaluationStore,
+  codexHome = process.env.CODEX_HOME || join(homedir(), '.codex'),
   now = () => Date.now(),
 } = {}) {
   if (isChildCall()) return;
@@ -411,15 +416,12 @@ export async function runCodexStopHook({
     return;
   }
   const usedTools = Array.isArray(toolUsage?.usedTools) ? toolUsage.usedTools : [];
-  const evaluationUsages = (toolUsage?.toolCalls ?? usedTools.map((toolName) => ({ toolName })))
-    .filter((usage) => isCodexEvaluationUsage(usage?.toolName));
-  const canonicalUsage = canonicalizeUsedToolIds(evaluationUsages, { host: 'codex' });
-  const usageStatus = isCompleteCodexUsage(toolUsage, canonicalUsage) ? 'complete' : 'incomplete';
   await closeCodexEvaluationTurn({
     createEvaluationStoreFn,
     sessionId: codexSessionId(input),
-    usedToolIds: canonicalUsage.resolvedToolIds,
-    usageStatus,
+    toolUsage,
+    projectRoot,
+    codexHome,
     completedAtMs: now(),
     writeError: reportError,
   });
@@ -903,6 +905,9 @@ async function closeCodexEvaluationTurn({
   sessionId,
   usedToolIds = [],
   usageStatus,
+  toolUsage = null,
+  projectRoot = null,
+  codexHome = process.env.CODEX_HOME || join(homedir(), '.codex'),
   completedAtMs,
   writeError,
 }) {
@@ -919,6 +924,21 @@ async function closeCodexEvaluationTurn({
         ORDER BY recorded_at_ms DESC LIMIT 1
       `).get(sessionId);
       if (!row) return;
+      if (toolUsage) {
+        const proposals = store.database.prepare(`
+          SELECT tool_id FROM evaluation_items WHERE observation_id = ? ORDER BY tool_id
+        `).all(row.observation_id).map((item) => item.tool_id);
+        const allUsages = toolUsage.toolCalls ?? toolUsage.usedTools.map((toolName) => ({ toolName }));
+        const evaluationUsages = allUsages.filter((usage) => isCodexEvaluationUsage(usage?.toolName));
+        const canonicalUsage = canonicalizeUsedToolIds(evaluationUsages, { host: 'codex' });
+        const skillReads = await canonicalizeCodexSkillReadToolIds(allUsages, {
+          proposedToolIds: proposals,
+          projectRoot,
+          codexHome,
+        });
+        usedToolIds = [...new Set([...canonicalUsage.resolvedToolIds, ...skillReads])];
+        usageStatus = isCompleteCodexUsage(toolUsage, canonicalUsage) ? 'complete' : 'incomplete';
+      }
       store.closeTurn({ observationId: row.observation_id, usedToolIds, usageStatus, completedAtMs });
     } finally {
       store.close();

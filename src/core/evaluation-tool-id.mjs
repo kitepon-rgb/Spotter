@@ -1,3 +1,7 @@
+import { join, normalize, sep, win32 } from 'node:path';
+import { homedir } from 'node:os';
+import { readFrontmatter } from '../tool-db/frontmatter.mjs';
+
 // Canonical tool IDs for proposal-adoption evaluation.
 //
 // The catalog already owns tool identity. This module only converts the identifiers emitted by
@@ -36,6 +40,117 @@ function readToolInput(toolInput) {
   } catch {
     return null;
   }
+}
+
+function codexShellInput(toolInput) {
+  const parsed = readToolInput(toolInput);
+  if (parsed) {
+    const command = parsed.cmd ?? parsed.command;
+    return typeof command === 'string' ? command : '';
+  }
+  if (typeof toolInput !== 'string') return '';
+  // Current `exec` custom calls wrap exec_command in JavaScript. Extract only its cmd/command
+  // string literal so text merely mentioned elsewhere in the wrapper cannot count as a read.
+  const match = /(?:["']?(?:cmd|command)["']?)\s*:\s*("(?:\\.|[^"\\])*")/u.exec(toolInput);
+  if (!match) return '';
+  try {
+    const command = JSON.parse(match[1]);
+    return typeof command === 'string' ? command : '';
+  } catch {
+    return '';
+  }
+}
+
+function escapedRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function mentionedSkillFiles(command) {
+  const matches = [
+    ...(command.match(/(?:[A-Za-z]:[\\/]|\/)[^\s"'`;&|]+[\\/]SKILL\.md/gu) ?? []),
+    ...(command.match(/(?<=")(?:[A-Za-z]:[\\/]|\/)[^"]+[\\/]SKILL\.md(?=")/gu) ?? []),
+    ...(command.match(/(?<=')(?:[A-Za-z]:[\\/]|\/)[^']+[\\/]SKILL\.md(?=')/gu) ?? []),
+  ];
+  return [...new Set(matches)];
+}
+
+function isReadCommandForPath(command, skillPath) {
+  const pathPattern = skillPath.split(/[\\/]/u).map(escapedRegExp).join('[\\\\/]');
+  return new RegExp(
+    String.raw`(?:^|[;&|\n(])\s*(?:cat|sed|head|tail|less|more)\b[^;&|\n]*${pathPattern}`,
+    'u',
+  ).test(command);
+}
+
+function normalizedPortablePath(value) {
+  if (win32.isAbsolute(value)) return win32.normalize(value).replaceAll('\\', '/');
+  return normalize(value).split(sep).join('/');
+}
+
+function relativeSkillIdentity(skillPath, { projectRoot, codexHome }) {
+  const path = normalizedPortablePath(skillPath);
+  const home = normalizedPortablePath(codexHome);
+  const project = normalizedPortablePath(projectRoot);
+  const roots = [
+    { prefix: `${home}/skills/.system/`, plugin: null },
+    { prefix: `${home}/skills/`, plugin: null },
+    { prefix: `${project}/.codex/skills/`, plugin: null },
+  ];
+  for (const root of roots) {
+    if (!path.startsWith(root.prefix) || !path.endsWith('/SKILL.md')) continue;
+    const relative = path.slice(root.prefix.length, -'/SKILL.md'.length);
+    if (relative.length > 0 && !relative.includes('/')) return { plugin: root.plugin, directory: relative };
+  }
+
+  const pluginPrefix = `${home}/plugins/cache/`;
+  if (!path.startsWith(pluginPrefix) || !path.endsWith('/SKILL.md')) return null;
+  const parts = path.slice(pluginPrefix.length).split('/');
+  // <marketplace>/<plugin>/<version>/skills/<skill>/SKILL.md
+  if (parts.length !== 6 || parts[3] !== 'skills' || parts[5] !== 'SKILL.md') return null;
+  return { plugin: parts[1], directory: parts[4] };
+}
+
+/**
+ * Recognizes Codex skill adoption through the actual invocation form: reading a proposed
+ * skill's SKILL.md with a shell read command. Ordinary shell use is deliberately ignored.
+ */
+export async function canonicalizeCodexSkillReadToolIds(usages, {
+  proposedToolIds = [],
+  projectRoot,
+  codexHome = process.env.CODEX_HOME || join(homedir(), '.codex'),
+  readFrontmatterFn = readFrontmatter,
+} = {}) {
+  if (!Array.isArray(usages) || !Array.isArray(proposedToolIds)
+    || typeof projectRoot !== 'string' || projectRoot.length === 0
+    || typeof codexHome !== 'string' || codexHome.length === 0) return [];
+
+  const proposed = new Set(proposedToolIds.filter((toolId) => validCatalogId(toolId)
+    && !MCP_ID_PATTERN.test(toolId)));
+  if (proposed.size === 0) return [];
+
+  const adopted = new Set();
+  for (const usage of usages) {
+    if (!isRecord(usage) || (usage.toolName !== 'exec' && usage.toolName !== 'exec_command')) continue;
+    const command = codexShellInput(usage.toolInput);
+    if (!command) continue;
+    for (const skillPath of mentionedSkillFiles(command)) {
+      if (!isReadCommandForPath(command, skillPath)) continue;
+      const identity = relativeSkillIdentity(skillPath, { projectRoot, codexHome });
+      if (!identity) continue;
+      let frontmatter;
+      try {
+        frontmatter = await readFrontmatterFn(skillPath);
+      } catch {
+        continue;
+      }
+      const skillName = typeof frontmatter?.name === 'string' && frontmatter.name.length > 0
+        ? frontmatter.name
+        : identity.directory;
+      const toolId = identity.plugin ? `${identity.plugin}:${skillName}` : skillName;
+      if (proposed.has(toolId)) adopted.add(toolId);
+    }
+  }
+  return [...adopted];
 }
 
 function selectorFromInput(toolInput, keys) {
