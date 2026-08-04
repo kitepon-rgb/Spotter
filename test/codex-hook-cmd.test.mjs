@@ -608,9 +608,11 @@ test('Codex evaluation lifecycle: records projected proposal and closes the late
           meta: { backend: 'codex-cli', modelSelection: { effectiveModel: 'gpt-test' } },
         }),
       }),
-      loadEvaluationObserverContextFn: async ({ config, recordedAtMs }) => {
+      loadEvaluationObserverContextFn: async ({ config, recordedAtMs, host, sessionId }) => {
         assert.equal(config, THROUGHLINE_CONFIG);
         assert.equal(recordedAtMs, 1500);
+        assert.equal(host, 'codex');
+        assert.equal(sessionId, 'evaluation-session');
         return { status: 'context_available', recordedAtMs, snapshot: observerSnapshot };
       },
     });

@@ -73,7 +73,13 @@ export async function runUserPrompt({
         : [];
       const proposalRecordedAtMs = proposedToolIds.length > 0 ? now() : null;
       const observer = proposedToolIds.length > 0
-        ? await loadEvaluationObserverContextFn({ projectRoot, config: auditContext?.config, recordedAtMs: proposalRecordedAtMs })
+        ? await loadEvaluationObserverContextFn({
+          projectRoot,
+          host: 'claude',
+          sessionId,
+          config: auditContext?.config,
+          recordedAtMs: proposalRecordedAtMs,
+        })
         : { status: 'not_requested', snapshot: null };
       const store = createEvaluationStoreFn();
       try {

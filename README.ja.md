@@ -217,6 +217,12 @@ spotter db rebuild       # Claude local + Claude global DB を両方消してか
 spotter status           # 稼働中の daemon 一覧
 spotter doctor           # 環境診断 (Node / claude CLI / Codex readiness / tool-db 整合性)
 spotter diagnostics logs # daemon log から pass=false / backend latency / anomaly signal を集計
+spotter evaluation report
+                         # 端末内DBからproject横断の提案率・tool採用率を集計
+spotter evaluation cases --outcome not-adopted
+                         # 提案されたが同じturnで使われなかったtool itemを一覧
+spotter evaluation case <observation-id>
+                         # request、2種類の文脈、提案、利用、outcomeを確認
 spotter codex risk-check --findings findings.json --host-agent claude
                          # Spotter finding を codex-sidecar に渡して read-only risk analysis
 spotter codex review|explore|opinion --findings findings.json --host-agent claude

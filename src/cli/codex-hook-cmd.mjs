@@ -164,6 +164,8 @@ export async function runCodexUserPromptSubmitHook({
         proposedAtMs = now();
         observerContext = await loadEvaluationObserverContextFn({
           projectRoot,
+          host: 'codex',
+          sessionId,
           config,
           recordedAtMs: proposedAtMs,
         });

@@ -1318,6 +1318,8 @@ test('runUserPrompt: records only safe projected proposal IDs with one proposal-
     });
     assert.equal(observerCalls.length, 1);
     assert.equal(observerCalls[0].recordedAtMs, 123456789);
+    assert.equal(observerCalls[0].host, 'claude');
+    assert.equal(observerCalls[0].sessionId, 's-evaluation');
     assert.equal(turns.length, 1);
     assert.deepEqual(turns[0].proposedToolIds, ['mcp__caveat__caveat_search']);
     assert.equal(turns[0].auditStatus, 'success');
