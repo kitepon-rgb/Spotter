@@ -11,6 +11,7 @@ import { runCodexCommand } from '../src/cli/codex-cmd.mjs';
 import { runCodexHookCommand } from '../src/cli/codex-hook-cmd.mjs';
 import { runAuditorCommand } from '../src/cli/auditor-cmd.mjs';
 import { runDiagnosticsCommand } from '../src/cli/diagnostics-cmd.mjs';
+import { runEvaluationCommand } from '../src/cli/evaluation-cmd.mjs';
 import { runFactoryDiagnostics } from '../src/cli/factory-diagnostics.mjs';
 import { runDaemonStart } from '../src/cli/daemon-cmd.mjs';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
@@ -45,6 +46,10 @@ Usage:
   spotter diagnostics logs [--json]     summarize daemon logs for precision diagnostics
   spotter diagnostics runtime-errors [snapshot|ack|resolve|reopen|compact]
                                         consume the local allow-listed aggregate store
+  spotter evaluation report [--project PATH] [--from ISO] [--to ISO] [--json]
+  spotter evaluation cases --outcome OUTCOME [filters] [--json]
+  spotter evaluation case OBSERVATION_ID [--json]
+                                        read saved proposal-adoption observations
   spotter codex risk-check --findings FILE
                                         run read-only codex-sidecar risk analysis
   spotter codex review|explore|opinion --findings FILE
@@ -123,6 +128,9 @@ async function main() {
         return;
       }
       await runDiagnosticsCommand({ argv: rest });
+      return;
+    case 'evaluation':
+      await runEvaluationCommand({ argv: rest });
       return;
     case 'daemon': {
       const sub = rest[0];
