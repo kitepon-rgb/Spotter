@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
 import { formatEvaluationCase, formatEvaluationCases, formatEvaluationReport } from '../core/evaluation-report.mjs';
+import { stringifyAsciiJson } from './diagnostics-cmd.mjs';
 
 const USAGE = `spotter evaluation — saved proposal-adoption observations
 
@@ -21,7 +22,7 @@ export async function runEvaluationCommand({
     const options = parseOptions(argv.slice(1), { requireOutcome: false, cwd });
     return withStore(createStoreFn, (store) => {
       const report = store.summarize(options.filters);
-      writeOutput(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatEvaluationReport(report));
+      writeOutput(options.json ? `${stringifyAsciiJson(report)}\n` : formatEvaluationReport(report));
       return report;
     });
   }
@@ -29,7 +30,7 @@ export async function runEvaluationCommand({
     const options = parseOptions(argv.slice(1), { requireOutcome: true, cwd });
     return withStore(createStoreFn, (store) => {
       const cases = store.listCases({ outcome: options.outcome, ...options.filters });
-      writeOutput(options.json ? `${JSON.stringify(cases, null, 2)}\n` : formatEvaluationCases(cases));
+      writeOutput(options.json ? `${stringifyAsciiJson(cases)}\n` : formatEvaluationCases(cases));
       return cases;
     });
   }
@@ -39,7 +40,7 @@ export async function runEvaluationCommand({
     return withStore(createStoreFn, (store) => {
       const item = store.getCase(argv[1]);
       if (!item) throw Object.assign(new Error(`evaluation observation not found: ${argv[1]}`), { exitCode: 1 });
-      writeOutput(json ? `${JSON.stringify(item, null, 2)}\n` : formatEvaluationCase(item));
+      writeOutput(json ? `${stringifyAsciiJson(item)}\n` : formatEvaluationCase(item));
       return item;
     });
   }
