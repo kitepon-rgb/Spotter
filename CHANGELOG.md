@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.6 — 2026-08-05
+
+- **Codexの動的nested MCP利用を採用として記録する。** `functions.exec`内で
+  `ALL_TOOLS.find(...name === "mcp__...")`から取得したtoolを`tools[tool.name](...)`で実行する
+  現行Codexの呼び方を認識する。単なるlookupや文字列・コメント内の記述は利用として数えない。
+- **実際の誤判定を回帰化。** `mcp__aiterm__pty_open`を実行済みなのに`usedToolIds=[]`となった形を
+  focused testとStop hookの評価DB統合テストへ固定し、`adopted`になることを確認する。
+
 ## 1.5.5 — 2026-08-05
 
 - **提案時文脈をexact sessionへ戻した。** 評価記録がproject全体の最新threadを読む

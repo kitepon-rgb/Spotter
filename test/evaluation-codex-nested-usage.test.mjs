@@ -15,12 +15,16 @@ test('Codex nested MCP canonicalization accepts executable calls but rejects pro
       // tools.mcp__fake__from_line_comment({});
       /* tools.mcp__fake__from_block_comment({}); */
       const result = await tools.mcp__caveat__caveat_search({ query: "known trap" });
+      const selected = ALL_TOOLS.find(x => x.name === "mcp__aiterm__pty_open");
+      const lookupOnly = ALL_TOOLS.find(x => x.name === "mcp__fake__lookup_only");
+      const terminal = await tools[selected.name]({ name: "release", shell: "zsh" });
       text(result);
     `,
   }];
 
   assert.deepEqual(canonicalizeCodexNestedMcpToolIds(usages), [
     'mcp__caveat__caveat_search',
+    'mcp__aiterm__pty_open',
   ]);
 });
 
@@ -63,7 +67,8 @@ test('Codex Stop adopts nested MCP and exact SKILL.md text-field read from disti
         toolCalls: [
           {
             toolName: 'exec',
-            toolInput: 'const result = await tools.mcp__caveat__caveat_search({query:"x"}); text(result);',
+            toolInput: `const tool = ALL_TOOLS.find(x => x.name === "mcp__caveat__caveat_search");
+              const result = await tools[tool.name]({query:"x"}); text(result);`,
           },
           {
             toolName: 'exec',

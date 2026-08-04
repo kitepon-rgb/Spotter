@@ -167,8 +167,26 @@ function codexShellInputs(toolInput) {
 function nestedMcpToolIds(toolInput) {
   if (typeof toolInput !== 'string') return [];
   const executable = maskJavaScriptLiteralsAndComments(toolInput);
-  const matches = executable.matchAll(/\btools\.(mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_.:/-]+)\s*\(/gu);
-  return [...new Set([...matches].map((match) => match[1]).filter(validCatalogId))];
+  const adopted = new Set(
+    [...executable.matchAll(/\btools\.(mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_.:/-]+)\s*\(/gu)]
+      .map((match) => match[1])
+      .filter(validCatalogId),
+  );
+
+  // Codex may resolve a lazily exposed MCP tool by its exact name, then invoke it through the
+  // returned metadata object: `const tool = ALL_TOOLS.find(x => x.name === "mcp__...");
+  // await tools[tool.name](...)`. Count only bindings that are followed by that executable call.
+  const bindingPattern = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*ALL_TOOLS\.find\s*\(\s*([A-Za-z_$][\w$]*)\s*=>\s*\2\.name\s*={2,3}/gu;
+  for (const binding of executable.matchAll(bindingPattern)) {
+    let valueStart = binding.index + binding[0].length;
+    while (/\s/u.test(toolInput[valueStart] ?? '')) valueStart += 1;
+    const parsedName = parseJavaScriptStringAt(toolInput, valueStart);
+    if (!parsedName || !MCP_ID_PATTERN.test(parsedName.value)) continue;
+    const variable = escapedRegExp(binding[1]);
+    const callPattern = new RegExp(String.raw`\btools\s*\[\s*${variable}\.name\s*\]\s*\(`, 'u');
+    if (callPattern.test(executable.slice(parsedName.end))) adopted.add(parsedName.value);
+  }
+  return [...adopted];
 }
 
 function escapedRegExp(value) {

@@ -1,5 +1,8 @@
 # AGENTS.md
 
+> **v1.5.6（2026-08-05公開）**: Codexの`functions.exec`内で、`ALL_TOOLS`からexact IDで
+> 解決して`tools[tool.name](...)`と実行したnested MCPを、評価上の採用として記録する。
+
 > **v1.5.5（2026-08-05公開）**: 提案時の評価文脈取得をproject-wide `observer-read`から
 > 提案元sessionとtranscriptへ束縛する既存`auditor-context`へ戻す。Throughline本文をauditor入力へ
 > 戻さず、評価証拠だけをexact sessionから取得する。
@@ -115,6 +118,10 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.5.6 (published 2026-08-05)**: Codexのouter `functions.exec`が、lazy tool一覧から
+`ALL_TOOLS.find(...name === "mcp__...")`でexact IDを解決し`tools[tool.name](...)`で実行した場合も、
+そのnested MCPを同一turnの利用として認識する。lookupだけ、文字列・コメント内の記述は採用にしない。
 
 **v1.5.5 (published 2026-08-05)**: Claude / Codexの提案時評価文脈は、UserPromptSubmit payloadの
 exact `session_id` / `host` / `transcript_path`を既存Throughline `auditor-context`へ渡して取得する。

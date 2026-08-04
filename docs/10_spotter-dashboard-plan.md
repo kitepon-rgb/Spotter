@@ -1,6 +1,6 @@
 # Spotter端末横断Web dashboard実装計画
 
-状態: **実装・公開・4端末配布完了**。現行配布版は`claude-spotter@1.5.5`。
+状態: **実装・公開・4端末配布完了**。現行配布版は`claude-spotter@1.5.6`。
 
 ## 目的
 
