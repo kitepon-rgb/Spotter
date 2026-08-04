@@ -64,6 +64,10 @@ throughline observer-read \
 採用結果の記録は続け、評価文脈だけ`context_unavailable`とする。retry、定期回収、別経路fallbackは
 行わない。snapshotの`truncated`と`historyTruncated`もそのままcaseへ表示する。
 
+`observer-read`はproject内のthreadを直接指定できないため、返却された`host`と`thread_sha256`を
+提案元sessionの期待値へ照合する。別host / sessionならsnapshotを破棄して`context_unavailable`とし、
+別threadの文脈を提案時文脈として保存しない。目的threadの再問い合わせは行わない。
+
 この計画では、cursorを使った後続delta回収やfinal assistant responseの取得は行わない。「結果」は
 Spotterが既に観測できる、提案toolが同じturnで使われたかどうかである。
 
@@ -129,6 +133,8 @@ passも`evaluation_turns`へ1行記録するがitemは0件とする。これが�
 - proposal tool IDsは、親向け出力生成に使う配列そのものを保存する。raw findingは保存しない。
 - Stop findingは親へtool提案として提示する経路ではないため、この集計へ入れない。
 - 新しいUserPromptSubmit開始時に同じsessionの古いopen rowがあれば、そのitemsを`outcome_missing`で閉じる。
+- 最終turnなどでStopも次のUserPromptSubmitも来ないopen proposalは、daemonのidle lifetimeと同じ30分を
+  経過した後、report時にだけ`outcome_missing`として投影する。DBを書き換える常時回収処理は置かない。
 
 ### Claude
 
@@ -156,7 +162,9 @@ passも`evaluation_turns`へ1行記録するがitemは0件とする。これが�
 - MCP: catalog IDの`mcp__server__tool`へ揃える。
 - Claude Skill: PreToolUseの`tool_input`内skill selectorをcatalog IDへ揃える。
 - Claude sub-agent: PreToolUseの`tool_input.subagent_type`をcatalog IDへ揃える。
-- Codex MCP / Skill: current-turn transcriptの識別子をcatalog IDへ揃える。
+- Codex MCP: current-turn transcriptの識別子をcatalog IDへ揃える。
+- Codex Skill: current-turnの`exec` / `exec_command`が、提案済みskillの正規root配下にある実在
+  `SKILL.md`をreadした時だけ、frontmatter nameとplugin prefixからcatalog IDへ揃える。
 
 別identity DB、catalog sidecar、collision監視は作らない。Claude/Codexの実fixtureで、現在proposal対象に
 なり得るtool種別を一意に変換できることを実装時に固定する。変換不能な種類を`not_adopted`として

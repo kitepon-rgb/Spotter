@@ -8,9 +8,15 @@
   `outcome_missing`へ分離する。組込みtoolは評価対象外で、既存turn-end auditorのraw usedToolsは変更しない。
 - **提案時の別文脈を保存。** proposal確定時刻を記録し、既存Throughline `observer-read`を一度だけ呼ぶ。
   Spotterがauditorへ渡したcontextとは別fieldに保存し、失敗時はcontextだけunavailableとしてretryしない。
+  返却されたhost / thread hashを提案元sessionと照合し、同じprojectの並行sessionを取り違えた場合も
+  snapshotを保存しない。
+- **欠測とtool identityを率から分離。** Claudeの利用記録失敗、Codex transcript不全、Stopが30分以上
+  欠落したopen proposalは`outcome_missing`として投影し、非採用へ混ぜない。Codex Skillは提案済みの
+  正規`SKILL.md`を実際にreadしたcallだけを採用として認識する。
 - **評価CLIを追加。** `spotter evaluation report`で全project / project / tool / host別の
   `S/P/I/C/A/M`、`P/S`、`A/C`を表示し、`cases` / `case`で非採用caseのrequest、2種類の文脈、
-  提案ID、利用ID、outcomeを確認できる。reportは保存済みSQLiteだけを読む。
+  提案ID、利用ID、outcomeを確認できる。reportは保存済みSQLiteだけを読み、JSONはWindows
+  PowerShell 5.1でも壊れないASCII-safe形式で出力する。
 
 ## 1.4.28 — 2026-07-21
 
