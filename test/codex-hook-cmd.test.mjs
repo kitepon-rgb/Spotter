@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,12 +9,13 @@ import {
   resolveCodexHookNodePath,
   runCodexHookInstallCommand,
   runCodexSessionStartHook,
-  runCodexStopHook,
-  runCodexUserPromptSubmitHook,
+  runCodexStopHook as runCodexStopHookImpl,
+  runCodexUserPromptSubmitHook as runCodexUserPromptSubmitHookImpl,
   uninstallCodexHooks,
 } from '../src/cli/codex-hook-cmd.mjs';
 import { AuditorBackendError } from '../src/core/auditor-error.mjs';
 import { CodexAuditorModelPolicyError } from '../src/core/codex-auditor-model-policy.mjs';
+import { createEvaluationStore } from '../src/core/evaluation-store.mjs';
 
 function installCodexHooks(options) {
   return installCodexHooksImpl({
@@ -22,6 +23,28 @@ function installCodexHooks(options) {
     platform: options?.platform ?? 'linux',
   });
 }
+
+const evaluationTestRoot = await mkdtemp(join(tmpdir(), 'spotter-codex-evaluation-test-'));
+const evaluationTestDatabasePath = join(evaluationTestRoot, 'evaluation.db');
+const createTestEvaluationStore = () => createEvaluationStore({ databasePath: evaluationTestDatabasePath });
+
+function runCodexUserPromptSubmitHook(options = {}) {
+  return runCodexUserPromptSubmitHookImpl({
+    ...options,
+    createEvaluationStoreFn: options.createEvaluationStoreFn ?? createTestEvaluationStore,
+  });
+}
+
+function runCodexStopHook(options = {}) {
+  return runCodexStopHookImpl({
+    ...options,
+    createEvaluationStoreFn: options.createEvaluationStoreFn ?? createTestEvaluationStore,
+  });
+}
+
+after(async () => {
+  await rm(evaluationTestRoot, { recursive: true, force: true });
+});
 
 async function makeProject() {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-codex-hook-project-'));
@@ -552,6 +575,116 @@ test('runCodexUserPromptSubmitHook: invokes Codex CLI auditor and emits Codex ad
       stage: 'user_input', userInput: 'GeForce 5000 番台について既知の罠を調べて',
       recentContext: FRESH_CONTEXT.turns, contextStatus: 'fresh',
     });
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('Codex evaluation lifecycle: records projected proposal and closes the latest observation before Stop audit', async () => {
+  const project = await makeProject();
+  const databasePath = join(project, 'evaluation.db');
+  const evaluationDeps = { createEvaluationStoreFn: () => createEvaluationStore({ databasePath }) };
+  const observerSnapshot = {
+    schema: 'throughline.observer_read.v1', status: 'snapshot', host: 'codex',
+    thread_sha256: 'a'.repeat(64), turns: [], historyTruncated: false,
+    afterCursor: null, throughCursor: null, page: { complete: true, nextToken: null },
+  };
+  try {
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project, session_id: 'evaluation-session', transcript_path: '/tmp/evaluation.jsonl', prompt: '既知の罠を確認して',
+      }),
+      ...freshContextDeps,
+      ...evaluationDeps,
+      randomUUIDFn: () => '11111111-1111-4111-8111-111111111111',
+      now: (() => { let calls = 0; return () => (calls += 1) === 1 ? 1000 : 1500; })(),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search traps.' }],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async () => ({
+          pass: false,
+          findings: [{ toolName: 'mcp__caveat__caveat_search', reason: 'unused' }],
+          anomalies: [],
+          meta: { backend: 'codex-cli', modelSelection: { effectiveModel: 'gpt-test' } },
+        }),
+      }),
+      loadEvaluationObserverContextFn: async ({ config, recordedAtMs }) => {
+        assert.equal(config, THROUGHLINE_CONFIG);
+        assert.equal(recordedAtMs, 1500);
+        return { status: 'context_available', recordedAtMs, snapshot: observerSnapshot };
+      },
+    });
+
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project, session_id: 'evaluation-session', transcript_path: '/tmp/evaluation.jsonl', last_assistant_message: '短い回答です。',
+      }),
+      ...evaluationDeps,
+      now: () => 2000,
+      readCodexToolUsageFn: async () => ({
+        scope: 'current-turn', usedTools: ['exec', 'mcp__caveat__caveat_search'],
+        toolCalls: [
+          { toolName: 'exec', toolInput: 'private command' },
+          { toolName: 'mcp__caveat__caveat_search', toolInput: null },
+        ],
+        anomalies: [], stats: {},
+      }),
+      readLocalFn: async () => [],
+      createAuditorBackendFn: () => ({ judge: async () => ({ pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } }) }),
+    });
+
+    const store = createEvaluationStore({ databasePath });
+    try {
+      const recorded = store.getCase('11111111-1111-4111-8111-111111111111');
+      assert.equal(recorded.auditStatus, 'success');
+      assert.equal(recorded.recordedAtMs, 1000);
+      assert.equal(recorded.proposedAtMs, 1500);
+      assert.equal(recorded.completedAtMs, 2000);
+      assert.equal(recorded.usageStatus, 'complete');
+      assert.equal(recorded.backend, 'codex-cli');
+      assert.equal(recorded.model, 'gpt-test');
+      assert.deepEqual(recorded.proposedToolIds, ['mcp__caveat__caveat_search']);
+      assert.deepEqual(recorded.usedToolIds, ['mcp__caveat__caveat_search']);
+      assert.deepEqual(recorded.items, [{ toolId: 'mcp__caveat__caveat_search', outcome: 'adopted' }]);
+    } finally {
+      store.close();
+    }
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexStopHook: stop_hook_active closes the latest evaluation observation without reentering transcript or auditor work', async () => {
+  const project = await makeProject();
+  const databasePath = join(project, 'evaluation.db');
+  const evaluationDeps = { createEvaluationStoreFn: () => createEvaluationStore({ databasePath }) };
+  try {
+    const store = createEvaluationStore({ databasePath });
+    try {
+      store.recordTurn({
+        observationId: '22222222-2222-4222-8222-222222222222', recordedAtMs: 1000,
+        projectPath: project, host: 'codex', sessionId: 'active-stop-session', auditStatus: 'success',
+        proposedToolIds: ['mcp__caveat__caveat_search'], observerContextStatus: 'not_requested',
+      });
+    } finally {
+      store.close();
+    }
+    await runCodexStopHook({
+      readInput: async () => ({ cwd: project, session_id: 'active-stop-session', stop_hook_active: true }),
+      ...evaluationDeps,
+      now: () => 2000,
+      readCodexToolUsageFn: async () => { throw new Error('must not read transcript while stop hook is active'); },
+      createAuditorBackendFn: () => { throw new Error('must not create auditor while stop hook is active'); },
+    });
+    const closed = createEvaluationStore({ databasePath });
+    try {
+      const recorded = closed.getCase('22222222-2222-4222-8222-222222222222');
+      assert.equal(recorded.completedAtMs, 2000);
+      assert.equal(recorded.usageStatus, 'incomplete');
+      assert.deepEqual(recorded.items, [{ toolId: 'mcp__caveat__caveat_search', outcome: 'outcome_missing' }]);
+    } finally {
+      closed.close();
+    }
   } finally {
     await rm(project, { recursive: true, force: true });
   }

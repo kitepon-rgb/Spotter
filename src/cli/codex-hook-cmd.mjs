@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -34,6 +35,10 @@ import {
   readProjectAuditorContextConfig,
 } from '../core/auditor-context.mjs';
 import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
+import { createEvaluationStore } from '../core/evaluation-store.mjs';
+import { loadEvaluationObserverContext } from '../core/evaluation-context.mjs';
+import { canonicalizeProposedToolIds, canonicalizeUsedToolIds } from '../core/evaluation-tool-id.mjs';
+import { version as SPOTTER_VERSION } from '../version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..', '..');
@@ -125,22 +130,75 @@ export async function runCodexUserPromptSubmitHook({
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
   runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
+  createEvaluationStoreFn = createEvaluationStore,
+  loadEvaluationObserverContextFn = loadEvaluationObserverContext,
+  randomUUIDFn = randomUUID,
+  now = () => Date.now(),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
+  const observationId = randomUUIDFn();
+  const recordedAtMs = now();
   const projectRoot = findSpotterMarker(input.cwd);
   if (!projectRoot) return;
   const startedAt = Date.now();
   let contextDurationMs = null;
+  let auditorContextConfig;
 
   const prompt = requireString(input, 'prompt');
+  const sessionId = codexSessionId(input);
+  const recordEvaluation = async ({ auditStatus, proposedToolIds = [], backend = null, model = null, auditorSeenContext = null, config = undefined }) => {
+    if (!sessionId) {
+      reportEvaluationFailure(writeError);
+      return;
+    }
+    const proposals = canonicalizeProposedToolIds(proposedToolIds);
+    let observerContext = { status: 'not_requested', snapshot: null };
+    let proposedAtMs = recordedAtMs;
+    try {
+      if (auditStatus === 'success' && proposals.resolvedToolIds.length > 0) {
+        proposedAtMs = now();
+        observerContext = await loadEvaluationObserverContextFn({
+          projectRoot,
+          config,
+          recordedAtMs: proposedAtMs,
+        });
+      }
+      const store = createEvaluationStoreFn();
+      try {
+        store.recordTurn({
+          observationId,
+          recordedAtMs,
+          proposedAtMs,
+          projectPath: projectRoot,
+          host: 'codex',
+          sessionId,
+          auditStatus,
+          requestText: prompt,
+          auditorSeenContext,
+          observerContextStatus: observerContext.status,
+          observerSnapshot: observerContext.snapshot,
+          proposedToolIds: proposals.resolvedToolIds,
+          backend,
+          model,
+          spotterVersion: SPOTTER_VERSION,
+        });
+      } finally {
+        store.close();
+      }
+    } catch {
+      reportEvaluationFailure(writeError);
+    }
+  };
   const legacyPending = await discardLegacyPendingFn({ projectRoot, sessionId: codexSessionId(input) });
   let context;
   const contextStartedAt = Date.now();
   try {
     const config = await readAuditorContextConfigFn(projectRoot);
+    auditorContextConfig = config;
     contextDurationMs = Date.now() - contextStartedAt;
     if (config.mode === 'disabled') {
+      await recordEvaluation({ auditStatus: 'skipped' });
       await recordCodexHookEventSafe(recordHookEventFn, {
         projectRoot,
         event: {
@@ -164,6 +222,7 @@ export async function runCodexUserPromptSubmitHook({
     });
     contextDurationMs = Date.now() - contextStartedAt;
   } catch (err) {
+    await recordEvaluation({ auditStatus: 'error' });
     await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
     contextDurationMs = Date.now() - contextStartedAt;
     const failure = projectBackendFailure(err?.code);
@@ -184,6 +243,7 @@ export async function runCodexUserPromptSubmitHook({
     return;
   }
   if (context.status === 'unavailable' || context.status === 'schema_mismatch') {
+    await recordEvaluation({ auditStatus: 'error' });
     await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
     const failure = projectBackendFailure(context.status === 'unavailable'
       ? 'E_AUDITOR_CONTEXT_UNAVAILABLE'
@@ -205,6 +265,7 @@ export async function runCodexUserPromptSubmitHook({
     return;
   }
   if (context.status !== 'fresh') {
+    await recordEvaluation({ auditStatus: 'skipped' });
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
       event: {
@@ -237,6 +298,7 @@ export async function runCodexUserPromptSubmitHook({
       contextStatus: 'fresh',
     });
   } catch (err) {
+    await recordEvaluation({ auditStatus: 'error', backend: err?.backend ?? null, model: err?.diagnostics?.modelSelection?.effectiveModel ?? null });
     if (enteredAuditorBoundary) await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
     const failure = projectBackendFailure(err?.code);
     safeWriteError(writeError, failure.stderr);
@@ -274,10 +336,23 @@ export async function runCodexUserPromptSubmitHook({
     },
   }, writeError);
   if (judgment.pass === true) {
+    await recordEvaluation({
+      auditStatus: 'success',
+      backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
+      model: judgment.meta?.modelSelection?.effectiveModel ?? null,
+    });
     return;
   }
 
   const toolIds = projectToolIds(judgment.findings.map((finding) => finding.toolName));
+  await recordEvaluation({
+    auditStatus: 'success',
+    proposedToolIds: toolIds,
+    backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
+    model: judgment.meta?.modelSelection?.effectiveModel ?? null,
+    auditorSeenContext: JSON.stringify(context.turns),
+    config: auditorContextConfig,
+  });
   const advice = projectParentAdvice(toolIds);
   if (advice) writeCodexUserPromptContexts({ contexts: [advice], writeOutput });
 }
@@ -291,20 +366,34 @@ export async function runCodexStopHook({
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
   runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
+  createEvaluationStoreFn = createEvaluationStore,
+  now = () => Date.now(),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
-  if (input.stop_hook_active === true) return;
   const projectRoot = findSpotterMarker(input.cwd);
   if (!projectRoot) return;
   const startedAt = Date.now();
   const reportError = (text) => safeWriteError(writeError, text);
+  if (input.stop_hook_active === true) {
+    await closeCodexEvaluationTurn({
+      createEvaluationStoreFn,
+      sessionId: codexSessionId(input),
+      usageStatus: 'incomplete',
+      completedAtMs: now(),
+      writeError: reportError,
+    });
+    return;
+  }
   const transcriptPath = requireString(input, 'transcript_path');
   const finalResponse = codexLastAssistantMessage(input) ?? '(no final response available)';
   let toolUsage;
   try {
     toolUsage = await readCodexToolUsageFn(transcriptPath);
   } catch (err) {
+    await closeCodexEvaluationTurn({
+      createEvaluationStoreFn, sessionId: codexSessionId(input), usageStatus: 'incomplete', completedAtMs: now(), writeError: reportError,
+    });
     const failure = projectBackendFailure(err?.code);
     reportError(failure.stderr);
     writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
@@ -322,6 +411,18 @@ export async function runCodexStopHook({
     return;
   }
   const usedTools = Array.isArray(toolUsage?.usedTools) ? toolUsage.usedTools : [];
+  const evaluationUsages = (toolUsage?.toolCalls ?? usedTools.map((toolName) => ({ toolName })))
+    .filter((usage) => isCodexEvaluationUsage(usage?.toolName));
+  const canonicalUsage = canonicalizeUsedToolIds(evaluationUsages, { host: 'codex' });
+  const usageStatus = isCompleteCodexUsage(toolUsage, canonicalUsage) ? 'complete' : 'incomplete';
+  await closeCodexEvaluationTurn({
+    createEvaluationStoreFn,
+    sessionId: codexSessionId(input),
+    usedToolIds: canonicalUsage.resolvedToolIds,
+    usageStatus,
+    completedAtMs: now(),
+    writeError: reportError,
+  });
   const toolUsageEvent = compactCodexToolUsageForEvent(toolUsage);
   if (toolUsageEvent.toolUsageAnomalyCount === 0
     && shouldSkipShortCodexStop({ finalResponse, usedTools, env: process.env })) {
@@ -774,6 +875,56 @@ function safeWriteError(writeError, text) {
     writeError(text);
   } catch {
     // Hook degradation must not become a host-blocking process failure when stderr is unavailable.
+  }
+}
+
+function reportEvaluationFailure(writeError) {
+  safeWriteError(writeError, 'Spotter の評価記録に失敗しました。\n');
+}
+
+function isCompleteCodexUsage(toolUsage, canonicalUsage) {
+  if (!toolUsage || !Array.isArray(toolUsage.usedTools) || !Array.isArray(toolUsage.toolCalls)) return false;
+  if (toolUsage.scope !== 'current-turn') return false;
+  if (Array.isArray(toolUsage.anomalies) && toolUsage.anomalies.length > 0) return false;
+  return canonicalUsage.missingCount === 0;
+}
+
+function isCodexEvaluationUsage(toolName) {
+  return typeof toolName === 'string' && (
+    /^mcp__[A-Za-z0-9_-]+__/u.test(toolName)
+    || toolName === 'Skill'
+    || toolName === 'skill'
+    || /^(?:skills?|Skill)(?:__|\.)/u.test(toolName)
+  );
+}
+
+async function closeCodexEvaluationTurn({
+  createEvaluationStoreFn,
+  sessionId,
+  usedToolIds = [],
+  usageStatus,
+  completedAtMs,
+  writeError,
+}) {
+  if (!sessionId) {
+    reportEvaluationFailure(writeError);
+    return;
+  }
+  try {
+    const store = createEvaluationStoreFn();
+    try {
+      const row = store.database.prepare(`
+        SELECT observation_id FROM evaluation_turns
+        WHERE session_id = ? AND completed_at_ms IS NULL
+        ORDER BY recorded_at_ms DESC LIMIT 1
+      `).get(sessionId);
+      if (!row) return;
+      store.closeTurn({ observationId: row.observation_id, usedToolIds, usageStatus, completedAtMs });
+    } finally {
+      store.close();
+    }
+  } catch {
+    reportEvaluationFailure(writeError);
   }
 }
 

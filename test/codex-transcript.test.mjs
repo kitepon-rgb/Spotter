@@ -71,6 +71,14 @@ test('readCodexToolUsage: recognizes current shell, legacy function, MCP, and ag
       'mcp__codex_apps__github___create_pull_request',
       'agents.spawn_agent',
     ]);
+    assert.deepEqual(usage.toolCalls, [
+      { toolName: 'exec', toolInput: 'private command' },
+      { toolName: 'exec_command', toolInput: null },
+      { toolName: 'mcp__codegraph__codegraph_explore', toolInput: null },
+      { toolName: 'mcp__caveat__caveat_search', toolInput: null },
+      { toolName: 'mcp__codex_apps__github___create_pull_request', toolInput: null },
+      { toolName: 'agents.spawn_agent', toolInput: null },
+    ]);
     assert.deepEqual(usage.anomalies, []);
     assert.deepEqual(usage.stats, { lines: 8, parsedLines: 8, toolCalls: 6, recognized: 6, anomalies: 0 });
   } finally {

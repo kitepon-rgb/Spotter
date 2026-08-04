@@ -20,6 +20,7 @@ function parseArgs(raw) {
 function emptyToolUsage(scope = 'unavailable') {
   return {
     usedTools: [],
+    toolCalls: [],
     anomalies: [],
     scope,
     stats: { lines: 0, parsedLines: 0, toolCalls: 0, recognized: 0, anomalies: 0 },
@@ -139,6 +140,7 @@ export async function readCodexToolUsage(transcriptPath, {
     // session. Current rollouts emit one top-level turn_context before each turn.
     if (isRecord(parsed) && parsed.type === 'turn_context') {
       usage.usedTools.length = 0;
+      usage.toolCalls.length = 0;
       usage.anomalies.length = 0;
       Object.assign(usage.stats, emptyToolUsage().stats);
       seenCallIds.clear();
@@ -180,6 +182,10 @@ export async function readCodexToolUsage(transcriptPath, {
     if (callId) seenCallIds.add(callId);
     seenNames.add(name);
     usage.usedTools.push(name);
+    usage.toolCalls.push({
+      toolName: name,
+      toolInput: payload.arguments ?? payload.input ?? null,
+    });
   }
   if (tail.incomplete) addToolUsageAnomaly(usage, 'E_CODEX_TRANSCRIPT_READ_INCOMPLETE');
   if (tail.truncated && !sawTurnContext) {
