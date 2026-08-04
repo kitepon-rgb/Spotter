@@ -44,7 +44,7 @@ test('device server serves health, filtered overview links, and case detail from
   assert.match(overview.headers.get('content-type'), /^text\/html/);
   assert.match(overviewHtml, /Development Mac/);
   assert.match(overviewHtml, /href="\/devices\/mac%20local\/"/);
-  assert.match(overviewHtml, /S<\/span><strong>1<\/strong>/);
+  assert.match(overviewHtml, /対象ターン<\/span><strong>1<\/strong>/);
   assert.match(overviewHtml, /\/projects\/alpha/);
   assert.doesNotMatch(overviewHtml, /\/projects\/beta/);
   assert.match(overviewHtml, /mcp__caveat__search/);
