@@ -308,7 +308,7 @@ function summarizeRows(rows) {
       I += 1;
       if (item.outcome === 'adopted') { C += 1; A += 1; }
       else if (item.outcome === 'not_adopted') C += 1;
-      else M += 1;
+      else if (item.outcome === 'outcome_missing') M += 1;
     }
   }
   return { S, P, I, C, A, M, proposalRate: S === 0 ? null : P / S, toolAdoptionRate: C === 0 ? null : A / C };

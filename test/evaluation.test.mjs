@@ -58,6 +58,30 @@ test('evaluation cases filter saved items and case keeps both contexts in separa
   } finally { await fixture.cleanup(); }
 });
 
+test('evaluation report does not count an active turn as missing outcome', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'spotter-evaluation-open-'));
+  const store = createEvaluationStore({ databasePath: join(directory, 'evaluation.db') });
+  try {
+    store.recordTurn({
+      observationId: 'open-turn',
+      projectPath: '/projects/open',
+      host: 'claude',
+      sessionId: 'open-session',
+      auditStatus: 'success',
+      proposedToolIds: ['mcp__tools__pending'],
+      requestText: 'still running',
+      observerContextStatus: 'context_unavailable',
+    });
+    assert.deepEqual(store.summarize().totals, {
+      S: 1, P: 1, I: 1, C: 0, A: 0, M: 0,
+      proposalRate: 1, toolAdoptionRate: null,
+    });
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 async function createFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'spotter-evaluation-cli-'));
   const store = createEvaluationStore({ databasePath: join(directory, 'evaluation.db') });
