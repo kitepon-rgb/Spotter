@@ -223,6 +223,10 @@ spotter evaluation cases --outcome not-adopted
                          # 提案されたが同じturnで使われなかったtool itemを一覧
 spotter evaluation case <observation-id>
                          # request、2種類の文脈、提案、利用、outcomeを確認
+spotter dashboard device --id mac --name Mac
+                         # この端末の評価DBを127.0.0.1:53940で配信
+spotter dashboard hub --config dashboard-hub.json --host 172.18.0.1
+                         # 端末一覧と/devices/<id>/の端末別proxyを配信
 spotter codex risk-check --findings findings.json --host-agent claude
                          # Spotter finding を codex-sidecar に渡して read-only risk analysis
 spotter codex review|explore|opinion --findings findings.json --host-agent claude
@@ -238,6 +242,17 @@ spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.js
                          # pinned auditor model profile を再現可能に比較する experimental eval
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ```
+
+### 端末別評価dashboard
+
+dashboardはlocal-firstで動く。各端末が自身の`~/.spotter/evaluation.db`を読み、hubは固定の
+端末・upstream対応だけを持つ。評価データをcloud DBへ複製しない。端末画面では
+`S/P/I/C/A/M`、提案率、採用率、project/tool内訳、非採用case、別々に取得した2種類の文脈を
+確認できる。health確認は端末一覧request時だけなので、端末がofflineでもbackground監視や
+retry queueを作らず、その端末だけを切り離せる。
+
+4端末のservice、reverse tunnel、Caddy/Cloudflare構成は
+[docs/11_dashboard-operations.md](docs/11_dashboard-operations.md)を参照。
 
 Codex risk dispatch を daemon から非同期に流す場合:
 

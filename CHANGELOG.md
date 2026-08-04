@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.0 — 2026-08-04
+
+- **評価結果を端末別Web dashboardで表示。** 各端末の`~/.spotter/evaluation.db`をrequestごとに読み、
+  `S/P/I/C/A/M`、提案率`P/S`、採用率`A/C`、project/tool内訳、非採用caseと詳細を
+  dependency-freeのserver-side HTMLで表示する。request、auditorへ渡したcontext、Throughline
+  observer snapshotは混同せず別欄に置く。
+- **端末選択hubを追加。** 静的な4端末mapから一覧を表示し、`/devices/<id>/`を各device serverへ
+  proxyする。healthは一覧request時に各端末1回だけ取得し、offlineやtimeoutは該当端末だけ502にする。
+  DB同期、background monitor、retry queue、reconcilerは追加しない。
+- **運用面を同梱。** `spotter dashboard device` / `hub`、Mac LaunchAgent、Linux systemd user、
+  Windows Task Scheduler、SSH reverse tunnel、main-server hub config、Caddy/Cloudflare Accessの
+  配備手順を追加した。評価データは端末内に留め、公開面だけをowner emailのAccessで保護する。
+- **検証。** dashboard focused test 16件、fixture SQLiteからdevice HTTP・hub proxyまでの経路、
+  full suite 584件（582 pass / 2 platform skip）を通過した。
+
 ## 1.4.29 — 2026-08-04
 
 - **提案率とtool採用率の端末内評価を追加。** Claude / Codexの成功UserPromptSubmitを母数に、

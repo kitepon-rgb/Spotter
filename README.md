@@ -232,6 +232,10 @@ spotter evaluation cases --outcome not-adopted
                          # list proposed tools that were not used in the same turn
 spotter evaluation case <observation-id>
                          # inspect request, Spotter context, Throughline snapshot, proposal, usage, and outcome
+spotter dashboard device --id mac --name Mac
+                         # serve this terminal's local evaluation DB on 127.0.0.1:53940
+spotter dashboard hub --config dashboard-hub.json --host 172.18.0.1
+                         # list terminals and proxy /devices/<id>/ to their local servers
 spotter codex risk-check --findings findings.json --host-agent claude
                          # run read-only codex-sidecar risk analysis for Spotter findings
 spotter codex review|explore|opinion --findings findings.json --host-agent claude
@@ -247,6 +251,18 @@ spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.js
                          # experimental reproducible comparison of pinned auditor model profiles
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
 ```
+
+### Device-routed evaluation dashboard
+
+The dashboard is local-first. Every terminal reads its own `~/.spotter/evaluation.db`; the hub
+keeps only a static device-to-upstream map and does not copy evaluation data into a cloud database.
+The device view shows `S/P/I/C/A/M`, proposal and adoption rates, project/tool breakdowns,
+non-adopted cases, and the two separately captured context sources. The hub checks health only
+when the device list is requested, so an offline terminal is isolated without a background monitor
+or retry queue.
+
+The reference four-terminal service, reverse-tunnel, and Caddy/Cloudflare layout is documented in
+[docs/11_dashboard-operations.md](docs/11_dashboard-operations.md).
 
 Optional async Codex risk dispatch:
 

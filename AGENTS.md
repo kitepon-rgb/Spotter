@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.0（2026-08-04公開）**: `spotter.kitepon.dev`向けの端末選択dashboardを追加する。
+> 各端末は自身の評価SQLiteをloopbackで配信し、main-server hubが4端末を選択・proxyする。
+> cloud同期、background monitor、retry queueは持たず、外部公開面だけをCloudflare Accessで保護する。
+
 > **v1.4.29（2026-08-04公開）**: Claude / Codexの実提示toolと同一turn利用を
 > 端末内SQLiteへ記録し、project横断の提案率・tool採用率と非採用caseを確認する
 > `spotter evaluation report / cases / case`を追加する。提案時文脈は既存Throughline
@@ -92,6 +96,13 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.5.0 (published 2026-08-04)**: 各端末の`~/.spotter/evaluation.db`から
+`S/P/I/C/A/M`、提案率、採用率、project/tool内訳、非採用case詳細を表示するlocal device serverと、
+4端末を選択してpath proxyするmain-server hubを追加する。healthは一覧request時だけ取得し、
+端末障害はその端末のoffline/502へ閉じる。評価DBのcloud同期、background監視、retry/reconcilerは
+追加しない。Mac LaunchAgent、Linux systemd user、Windows Task Scheduler、SSH reverse tunnel、
+Caddy/Cloudflare Accessの運用定義を同梱する。
 
 **v1.4.29 (published 2026-08-04)**: Claude / Codexの成功UserPromptSubmit、safe projector後の
 実提示tool ID、同一turnのcanonical利用IDを`~/.spotter/evaluation.db`へ記録する。提案時に既存Throughline
@@ -421,6 +432,8 @@ spotter diagnostics logs [--json]
 spotter evaluation report [--project <path>] [--from <ISO>] [--to <ISO>] [--json]
 spotter evaluation cases --outcome not-adopted [filters] [--json]
 spotter evaluation case <observation-id> [--json]
+spotter dashboard device --id <id> [--name <name>] [--host <host>] [--port <port>] [--db <path>]
+spotter dashboard hub --config <file> [--host <host>] [--port <port>]
 spotter codex risk-check --findings <file> [--host-agent <agent>]
 spotter codex review / explore / opinion --findings <file> [--host-agent <agent>]
 spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path> (--preserve-worktree | --remove-worktree)
