@@ -46,7 +46,7 @@ Usage:
   spotter diagnostics logs [--json]     summarize daemon logs for precision diagnostics
   spotter diagnostics runtime-errors [snapshot|ack|resolve|reopen|compact]
                                         consume the local allow-listed aggregate store
-  spotter evaluation report [--project PATH] [--from ISO] [--to ISO] [--json]
+  spotter evaluation report [filters] [--json]
   spotter evaluation cases --outcome OUTCOME [filters] [--json]
   spotter evaluation case OBSERVATION_ID [--json]
                                         read saved proposal-adoption observations

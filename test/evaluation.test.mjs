@@ -33,7 +33,7 @@ test('evaluation cases filter saved items and case keeps both contexts in separa
   try {
     const output = [];
     const cases = await runEvaluationCommand({
-      argv: ['cases', '--outcome', 'not_adopted', '--project', '/projects/alpha', '--tool-id', 'mcp__tools__delta', '--json'],
+      argv: ['cases', '--outcome', 'not-adopted', '--project', '/projects/alpha', '--tool-id', 'mcp__tools__delta', '--backend', 'codex-cli', '--model', 'gpt-5.6-terra', '--spotter-version', '1.5.0', '--json'],
       createStoreFn: () => fixture.store,
       writeOutput: (text) => output.push(text),
     });
@@ -73,8 +73,8 @@ test('evaluation report does not count an active turn as missing outcome', async
       observerContextStatus: 'context_unavailable',
     });
     assert.deepEqual(store.summarize().totals, {
-      S: 1, P: 1, I: 1, C: 0, A: 0, M: 0,
-      proposalRate: 1, toolAdoptionRate: null,
+      S: 0, P: 0, I: 0, C: 0, A: 0, M: 0,
+      proposalRate: null, toolAdoptionRate: null,
     });
   } finally {
     store.close();

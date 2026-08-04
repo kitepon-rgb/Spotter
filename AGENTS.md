@@ -1,5 +1,10 @@
 # AGENTS.md
 
+> **v1.4.29（2026-08-04公開予定）**: Claude / Codexの実提示toolと同一turn利用を
+> 端末内SQLiteへ記録し、project横断の提案率・tool採用率と非採用caseを確認する
+> `spotter evaluation report / cases / case`を追加する。提案時文脈は既存Throughline
+> `observer-read`から一度だけ取得し、auditor入力とは分離して保存する。
+
 > **v1.4.28（2026-07-21公開）**: Windows native Codexで実測したSessionStartの
 > 5秒超過を修正するため、Spotter所有hookのhost側上限を30秒へ変更し、再installで旧5秒設定を
 > canonical 30秒へ正規化する。
@@ -87,6 +92,12 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.4.29 (release candidate 2026-08-04)**: Claude / Codexの成功UserPromptSubmit、safe projector後の
+実提示tool ID、同一turnのcanonical利用IDを`~/.spotter/evaluation.db`へ記録する。提案時に既存Throughline
+`observer-read`を一度だけ呼び、Spotterがauditorへ渡したcontextとは別に保存する。採用率は
+outcome確定itemだけを母数にし、観測不全は`outcome_missing`へ分離する。集計とcase確認は
+`spotter evaluation report / cases / case`で行い、network送信、background回収、常時validatorは追加しない。
 
 **v1.4.28 (published 2026-07-21)**: Windows native CodexのSessionStartで、
 Node起動とproject discoveryが5秒を超えてSpotter hookが誤timeoutする実測を受け、installer所有entryの
@@ -407,6 +418,9 @@ spotter install / uninstall
 spotter db list / refresh / rebuild
 spotter status / doctor
 spotter diagnostics logs [--json]
+spotter evaluation report [--project <path>] [--from <ISO>] [--to <ISO>] [--json]
+spotter evaluation cases --outcome not-adopted [filters] [--json]
+spotter evaluation case <observation-id> [--json]
 spotter codex risk-check --findings <file> [--host-agent <agent>]
 spotter codex review / explore / opinion --findings <file> [--host-agent <agent>]
 spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path> (--preserve-worktree | --remove-worktree)

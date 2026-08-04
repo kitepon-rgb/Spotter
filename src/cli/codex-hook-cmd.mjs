@@ -168,7 +168,7 @@ export async function runCodexUserPromptSubmitHook({
       try {
         store.recordTurn({
           observationId,
-          recordedAtMs,
+          recordedAtMs: proposals.resolvedToolIds.length > 0 ? proposedAtMs : recordedAtMs,
           proposedAtMs,
           projectPath: projectRoot,
           host: 'codex',

@@ -193,7 +193,7 @@ export class EvaluationStore {
   }
 
   #selectTurns(filters) {
-    const clauses = [];
+    const clauses = ['t.completed_at_ms IS NOT NULL'];
     const values = [];
     appendFilters(clauses, values, filters, 't');
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
@@ -288,6 +288,9 @@ function appendFilters(clauses, values, filters, alias) {
   if (!filters || typeof filters !== 'object' || Array.isArray(filters)) throw new TypeError('filters must be an object');
   if (filters.projectPath !== undefined) { clauses.push(`${alias}.project_path = ?`); values.push(requiredString(filters.projectPath, 'projectPath')); }
   if (filters.host !== undefined) { clauses.push(`${alias}.host = ?`); values.push(requiredString(filters.host, 'host')); }
+  if (filters.backend !== undefined) { clauses.push(`${alias}.backend = ?`); values.push(requiredString(filters.backend, 'backend')); }
+  if (filters.model !== undefined) { clauses.push(`${alias}.model = ?`); values.push(requiredString(filters.model, 'model')); }
+  if (filters.spotterVersion !== undefined) { clauses.push(`${alias}.spotter_version = ?`); values.push(requiredString(filters.spotterVersion, 'spotterVersion')); }
   if (filters.fromMs !== undefined) { assertTimestamp(filters.fromMs, 'fromMs'); clauses.push(`${alias}.recorded_at_ms >= ?`); values.push(filters.fromMs); }
   if (filters.toMs !== undefined) { assertTimestamp(filters.toMs, 'toMs'); clauses.push(`${alias}.recorded_at_ms <= ?`); values.push(filters.toMs); }
   if (filters.toolId !== undefined) { clauses.push('i.tool_id = ?'); values.push(requiredString(filters.toolId, 'toolId')); }

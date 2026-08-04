@@ -637,7 +637,7 @@ test('Codex evaluation lifecycle: records projected proposal and closes the late
     try {
       const recorded = store.getCase('11111111-1111-4111-8111-111111111111');
       assert.equal(recorded.auditStatus, 'success');
-      assert.equal(recorded.recordedAtMs, 1000);
+      assert.equal(recorded.recordedAtMs, 1500);
       assert.equal(recorded.proposedAtMs, 1500);
       assert.equal(recorded.completedAtMs, 2000);
       assert.equal(recorded.usageStatus, 'complete');

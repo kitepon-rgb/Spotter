@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.29 — 2026-08-04
+
+- **提案率とtool採用率の端末内評価を追加。** Claude / Codexの成功UserPromptSubmitを母数に、
+  safe projector後に実際に提示したtool itemと、同じturnでのcanonical tool利用を
+  `~/.spotter/evaluation.db`へ記録する。採用率の母数はoutcome確定itemだけとし、利用記録不全は
+  `outcome_missing`へ分離する。組込みtoolは評価対象外で、既存turn-end auditorのraw usedToolsは変更しない。
+- **提案時の別文脈を保存。** proposal確定時刻を記録し、既存Throughline `observer-read`を一度だけ呼ぶ。
+  Spotterがauditorへ渡したcontextとは別fieldに保存し、失敗時はcontextだけunavailableとしてretryしない。
+- **評価CLIを追加。** `spotter evaluation report`で全project / project / tool / host別の
+  `S/P/I/C/A/M`、`P/S`、`A/C`を表示し、`cases` / `case`で非採用caseのrequest、2種類の文脈、
+  提案ID、利用ID、outcomeを確認できる。reportは保存済みSQLiteだけを読む。
+
 ## 1.4.28 — 2026-07-21
 
 - **Windows Codex SessionStartの誤timeoutを修正。** detached refreshを起動するSpotter所有hookの

@@ -5,8 +5,8 @@ import { formatEvaluationCase, formatEvaluationCases, formatEvaluationReport } f
 const USAGE = `spotter evaluation — saved proposal-adoption observations
 
 Usage:
-  spotter evaluation report [--project PATH] [--from ISO] [--to ISO] [--json]
-  spotter evaluation cases --outcome OUTCOME [--project PATH] [--from ISO] [--to ISO] [--host HOST] [--tool-id ID] [--json]
+  spotter evaluation report [--project PATH] [--from ISO] [--to ISO] [--host HOST] [--tool-id ID] [--backend NAME] [--model NAME] [--spotter-version VERSION] [--json]
+  spotter evaluation cases --outcome OUTCOME [--project PATH] [--from ISO] [--to ISO] [--host HOST] [--tool-id ID] [--backend NAME] [--model NAME] [--spotter-version VERSION] [--json]
   spotter evaluation case OBSERVATION_ID [--json]
 `;
 
@@ -83,7 +83,16 @@ function parseOptions(argv, { requireOutcome, cwd }) {
       filters.toolId = requiredValue(argv, ++index, option);
     } else if (option === '--outcome' && requireOutcome) {
       if (outcome !== undefined) throw usageError();
-      outcome = requiredValue(argv, ++index, option);
+      outcome = normalizeOutcome(requiredValue(argv, ++index, option));
+    } else if (option === '--backend') {
+      if (filters.backend !== undefined) throw usageError();
+      filters.backend = requiredValue(argv, ++index, option);
+    } else if (option === '--model') {
+      if (filters.model !== undefined) throw usageError();
+      filters.model = requiredValue(argv, ++index, option);
+    } else if (option === '--spotter-version') {
+      if (filters.spotterVersion !== undefined) throw usageError();
+      filters.spotterVersion = requiredValue(argv, ++index, option);
     } else {
       throw usageError();
     }
@@ -91,6 +100,12 @@ function parseOptions(argv, { requireOutcome, cwd }) {
   if (requireOutcome && outcome === undefined) throw usageError();
   if (filters.fromMs !== undefined && filters.toMs !== undefined && filters.fromMs > filters.toMs) throw usageError();
   return { filters, outcome, json };
+}
+
+function normalizeOutcome(value) {
+  if (value === 'not-adopted') return 'not_adopted';
+  if (value === 'outcome-missing') return 'outcome_missing';
+  return value;
 }
 
 function requiredValue(argv, index, option) {

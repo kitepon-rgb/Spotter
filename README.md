@@ -226,6 +226,12 @@ spotter doctor           # environment check (Node / claude CLI / Codex readines
 spotter diagnostics logs # summarize daemon logs for pass=false / backend latency / anomaly signals
 spotter diagnostics runtime-errors
                          # print the local allow-listed runtime-error aggregate snapshot (no network)
+spotter evaluation report
+                         # show cross-project proposal/adoption counts and rates from the local DB
+spotter evaluation cases --outcome not-adopted
+                         # list proposed tools that were not used in the same turn
+spotter evaluation case <observation-id>
+                         # inspect request, Spotter context, Throughline snapshot, proposal, usage, and outcome
 spotter codex risk-check --findings findings.json --host-agent claude
                          # run read-only codex-sidecar risk analysis for Spotter findings
 spotter codex review|explore|opinion --findings findings.json --host-agent claude

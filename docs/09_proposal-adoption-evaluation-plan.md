@@ -2,12 +2,12 @@
 
 ## 0. 状態
 
-- 状態: **実装中**
+- 状態: **実装完了・baseline受入中**
 - 工程正本: Lattice plan `proposal-adoption-eval`。本文書は目的、設計判断、非目標、受入条件を持つ。
 - 実装対象repo: `/Users/kite/Developer/Spotter`
 - 外部依存: Throughlineの既存read-only I/F `throughline observer-read`。Throughline側は変更しない。
 - 対象範囲: この1台の端末内にあるproject横断の観測と集計。network送信、共有server、dashboardは作らない。
-- 実装開始裁定: 2026-08-04。Latticeのready frontierとPhase gateに従って実装・検証する。
+- 実装開始裁定: 2026-08-04。Latticeのready frontierとPhase gateに従って実装・検証した。
 
 ## 1. 測るもの
 
