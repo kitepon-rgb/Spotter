@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
@@ -30,6 +31,8 @@ const UNAVAILABLE_STATUSES = new Set([
  */
 export async function loadEvaluationObserverContext({
   projectRoot,
+  host,
+  sessionId,
   config,
   recordedAtMs = Date.now(),
   timeoutMs = DEFAULT_AUDITOR_CONTEXT_TIMEOUT_MS,
@@ -43,6 +46,15 @@ export async function loadEvaluationObserverContext({
   }
   if (typeof projectRoot !== 'string' || projectRoot.length === 0 || !isAbsoluteProjectPath(projectRoot)) {
     throw new TypeError('projectRoot must be an absolute path');
+  }
+  if (host !== 'claude' && host !== 'codex') {
+    throw new TypeError('host must be claude or codex');
+  }
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    throw new TypeError('sessionId must be a non-empty string');
+  }
+  if (host === 'codex' && sessionId === 'codex:') {
+    throw new TypeError('sessionId must identify a thread');
   }
 
   let canonicalProjectRoot;
@@ -99,6 +111,12 @@ export async function loadEvaluationObserverContext({
   if (!isObserverSnapshot(snapshot)) {
     return unavailableResult(recordedAtMs, 'observer_read_invalid');
   }
+  if (snapshot.host !== null && snapshot.host !== host) {
+    return unavailableResult(recordedAtMs, 'observer_host_mismatch');
+  }
+  if (snapshot.thread_sha256 !== null && snapshot.thread_sha256 !== expectedThreadHash(host, sessionId)) {
+    return unavailableResult(recordedAtMs, 'observer_session_mismatch');
+  }
   return Object.freeze({
     status: EVALUATION_OBSERVER_CONTEXT_AVAILABLE,
     recordedAtMs,
@@ -132,9 +150,21 @@ function isObserverSnapshot(value) {
   if (!Array.isArray(value.turns) || value.turns.length > DEFAULT_EVALUATION_OBSERVER_LIMIT) return false;
   if (typeof value.historyTruncated !== 'boolean' || !isNullableString(value.afterCursor) || !isNullableString(value.throughCursor)) return false;
   if (!isRecord(value.page) || typeof value.page.complete !== 'boolean' || !isNullableString(value.page.nextToken)) return false;
-  return value.host === null
-    ? value.thread_sha256 === null
-    : (value.host === 'claude' || value.host === 'codex') && /^[a-f0-9]{64}$/.test(value.thread_sha256);
+  if (value.host === null) return value.thread_sha256 === null && value.turns.length === 0;
+  if ((value.host !== 'claude' && value.host !== 'codex') || !/^[a-f0-9]{64}$/.test(value.thread_sha256)) return false;
+  return value.turns.every((turn) => isRecord(turn) &&
+    turn.host === value.host && turn.thread_sha256 === value.thread_sha256);
+}
+
+// Throughline observer-read hashes the Claude session ID directly. Codex hook
+// session IDs may already carry Throughline's `codex:` namespace, while the
+// observer feed hashes the underlying Codex thread ID.
+function expectedThreadHash(host, sessionId) {
+  const threadId = host === 'codex' && sessionId.startsWith('codex:')
+    ? sessionId.slice('codex:'.length)
+    : sessionId;
+  if (threadId.length === 0) throw new TypeError('sessionId must identify a thread');
+  return createHash('sha256').update(threadId, 'utf8').digest('hex');
 }
 
 function freezeSnapshot(snapshot) {
