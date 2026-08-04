@@ -54,7 +54,9 @@ test('evaluation store cold-starts one new SQLite database from two workers', as
       }
     }
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    // Node/Linuxではworker終了後もSQLiteのWAL sidecar unlinkと一瞬競合し得る。
+    // 既に要求したfixture削除の完了だけを待ち、product operation自体は再試行しない。
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
   }
 });
 
