@@ -5,6 +5,9 @@ import { DatabaseSync } from 'node:sqlite';
 
 export const EVALUATION_STORE_SCHEMA = 'spotter.evaluation_store.v1';
 export const DEFAULT_EVALUATION_BUSY_TIMEOUT_MS = 1_000;
+// daemonの無通信寿命と同じ30分を超えたopen観測は、保存行を変更せず、
+// report上だけproposal itemをoutcome_missingとして扱う。
+export const DEFAULT_OPEN_TURN_STALE_MS = 30 * 60 * 1_000;
 
 const AUDIT_STATUSES = new Set(['success', 'error', 'skipped']);
 const USAGE_STATUSES = new Set(['open', 'complete', 'incomplete']);
@@ -132,15 +135,20 @@ export class EvaluationStore {
     });
   }
 
-  summarize(filters = {}) {
-    const turns = this.#selectTurns(filters);
+  summarize(filters = {}, {
+    nowMs = Date.now(),
+    openTurnStaleMs = DEFAULT_OPEN_TURN_STALE_MS,
+  } = {}) {
+    assertTimestamp(nowMs, 'nowMs');
+    assertPositiveDuration(openTurnStaleMs, 'openTurnStaleMs');
+    const turns = this.#selectTurns(filters, { nowMs, openTurnStaleMs });
     const aggregate = summarizeRows(turns);
     return {
       schema: EVALUATION_STORE_SCHEMA,
       totals: aggregate,
       byProject: groupSummary(turns, (row) => row.project_path),
       byHost: groupSummary(turns, (row) => row.host),
-      byTool: groupSummary(turns, (row) => row.tool_id ?? '(no_proposal)'),
+      byTool: toolGroupSummary(turns, filters.toolId),
     };
   }
 
@@ -192,15 +200,23 @@ export class EvaluationStore {
     return { closed: true, usageStatus: finalStatus };
   }
 
-  #selectTurns(filters) {
-    const clauses = ['t.completed_at_ms IS NOT NULL'];
-    const values = [];
-    appendFilters(clauses, values, filters, 't');
+  #selectTurns(filters, { nowMs, openTurnStaleMs }) {
+    const staleBeforeMs = nowMs - openTurnStaleMs;
+    const clauses = ['(t.completed_at_ms IS NOT NULL OR t.recorded_at_ms <= ?)'];
+    const filterValues = [staleBeforeMs];
+    appendFilters(clauses, filterValues, filters, 't', { includeToolId: false });
+    const toolId = filters?.toolId === undefined ? null : requiredString(filters.toolId, 'toolId');
+    const join = toolId === null
+      ? 'LEFT JOIN evaluation_items i USING (observation_id)'
+      : 'LEFT JOIN evaluation_items i ON i.observation_id = t.observation_id AND i.tool_id = ?';
+    const values = toolId === null ? filterValues : [toolId, ...filterValues];
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     return this.database.prepare(`
       SELECT t.observation_id, t.project_path, t.host, t.audit_status, t.completed_at_ms,
-             i.tool_id, i.outcome
-      FROM evaluation_turns t LEFT JOIN evaluation_items i USING (observation_id)
+             i.tool_id,
+             CASE WHEN t.completed_at_ms IS NULL AND i.tool_id IS NOT NULL
+               THEN 'outcome_missing' ELSE i.outcome END AS outcome
+      FROM evaluation_turns t ${join}
       ${where}
     `).all(...values);
   }
@@ -284,7 +300,7 @@ function normalizeTurn(input) {
   };
 }
 
-function appendFilters(clauses, values, filters, alias) {
+function appendFilters(clauses, values, filters, alias, { includeToolId = true } = {}) {
   if (!filters || typeof filters !== 'object' || Array.isArray(filters)) throw new TypeError('filters must be an object');
   if (filters.projectPath !== undefined) { clauses.push(`${alias}.project_path = ?`); values.push(requiredString(filters.projectPath, 'projectPath')); }
   if (filters.host !== undefined) { clauses.push(`${alias}.host = ?`); values.push(requiredString(filters.host, 'host')); }
@@ -293,7 +309,7 @@ function appendFilters(clauses, values, filters, alias) {
   if (filters.spotterVersion !== undefined) { clauses.push(`${alias}.spotter_version = ?`); values.push(requiredString(filters.spotterVersion, 'spotterVersion')); }
   if (filters.fromMs !== undefined) { assertTimestamp(filters.fromMs, 'fromMs'); clauses.push(`${alias}.recorded_at_ms >= ?`); values.push(filters.fromMs); }
   if (filters.toMs !== undefined) { assertTimestamp(filters.toMs, 'toMs'); clauses.push(`${alias}.recorded_at_ms <= ?`); values.push(filters.toMs); }
-  if (filters.toolId !== undefined) { clauses.push('i.tool_id = ?'); values.push(requiredString(filters.toolId, 'toolId')); }
+  if (includeToolId && filters.toolId !== undefined) { clauses.push('i.tool_id = ?'); values.push(requiredString(filters.toolId, 'toolId')); }
 }
 
 function summarizeRows(rows) {
@@ -325,6 +341,27 @@ function groupSummary(rows, keyOf) {
     grouped.get(key).push(row);
   }
   return Object.fromEntries([...grouped.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, values]) => [key, summarizeRows(values)]));
+}
+
+function toolGroupSummary(rows, filteredToolId) {
+  const observations = new Map();
+  for (const row of rows) {
+    if (!observations.has(row.observation_id)) observations.set(row.observation_id, []);
+    observations.get(row.observation_id).push(row);
+  }
+  const toolIds = filteredToolId === undefined
+    ? unique(rows.flatMap((row) => row.tool_id === null ? [] : [row.tool_id])).sort()
+    : [requiredString(filteredToolId, 'toolId')];
+  const result = {};
+  for (const toolId of toolIds) {
+    const toolRows = [];
+    for (const observationRows of observations.values()) {
+      const matching = observationRows.find((row) => row.tool_id === toolId);
+      toolRows.push(matching ?? { ...observationRows[0], tool_id: null, outcome: null });
+    }
+    result[toolId] = summarizeRows(toolRows);
+  }
+  return result;
 }
 
 function turnCase(turn, items) {
@@ -413,4 +450,8 @@ function assertTimestamp(value, name) {
 
 function assertPositiveInteger(value, name) {
   if (!Number.isSafeInteger(value) || value < 1 || value > 60_000) throw new TypeError(`${name} must be an integer between 1 and 60000`);
+}
+
+function assertPositiveDuration(value, name) {
+  if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`${name} must be a positive safe integer`);
 }
