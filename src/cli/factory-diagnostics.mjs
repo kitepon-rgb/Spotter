@@ -45,7 +45,7 @@ export async function runFactoryDiagnostics({
   if (contextMode === null) {
     checks.push(check('throughline_context', 'fail', 'invalid_context_configuration'));
   } else if (contextMode === 'disabled') {
-    checks.push(check('throughline_context', 'skipped', 'context_disabled'));
+    checks.push(check('throughline_context', 'skipped', 'evaluation_evidence_disabled'));
   } else {
     const context = await inspectAuditorContextFn({ projectRoot });
     checks.push(context?.ok === true && context?.mode === 'throughline'

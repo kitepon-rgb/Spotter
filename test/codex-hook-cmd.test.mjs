@@ -53,17 +53,6 @@ async function makeProject() {
   return dir;
 }
 
-const THROUGHLINE_CONFIG = { mode: 'throughline', command: '/opt/throughline/bin/throughline', args: [] };
-const FRESH_CONTEXT = Object.freeze({
-  schema: 'throughline.auditor_context.v1', status: 'fresh', reason: 'fresh',
-  turns: Object.freeze([{ originSessionId: 'prior', turnNumber: 1, user: '前の依頼', assistant: '前の回答', createdAt: 1 }]),
-  stats: Object.freeze({ requestedTurns: 2, returnedTurns: 1, chars: 8, truncated: false }),
-});
-const freshContextDeps = {
-  readAuditorContextConfigFn: async () => THROUGHLINE_CONFIG,
-  loadAuditorContextFn: async () => FRESH_CONTEXT,
-};
-
 test('installCodexHooks: fresh install generates only canonical Codex hook fields', async () => {
   const codexHome = await mkdtemp(join(tmpdir(), 'spotter-codex-home-'));
   try {
@@ -540,7 +529,6 @@ test('runCodexUserPromptSubmitHook: invokes Codex CLI auditor and emits Codex ad
         transcript_path: '/tmp/codex-session-1.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
-      ...freshContextDeps,
       readLocalFn: async ({ projectRoot, hostAgent }) => {
         assert.equal(projectRoot, project);
         assert.equal(hostAgent, 'codex');
@@ -573,7 +561,6 @@ test('runCodexUserPromptSubmitHook: invokes Codex CLI auditor and emits Codex ad
     assert.match(parsed.hookSpecificOutput.additionalContext, /mcp__caveat__caveat_search/);
     assert.deepEqual(judgeInput, {
       stage: 'user_input', userInput: 'GeForce 5000 番台について既知の罠を調べて',
-      recentContext: FRESH_CONTEXT.turns, contextStatus: 'fresh',
     });
   } finally {
     await rm(project, { recursive: true, force: true });
@@ -594,7 +581,6 @@ test('Codex evaluation lifecycle: records projected proposal and closes the late
       readInput: async () => ({
         cwd: project, session_id: 'evaluation-session', transcript_path: '/tmp/evaluation.jsonl', prompt: '既知の罠を確認して',
       }),
-      ...freshContextDeps,
       ...evaluationDeps,
       randomUUIDFn: () => '11111111-1111-4111-8111-111111111111',
       now: (() => { let calls = 0; return () => (calls += 1) === 1 ? 1000 : 1500; })(),
@@ -608,8 +594,9 @@ test('Codex evaluation lifecycle: records projected proposal and closes the late
           meta: { backend: 'codex-cli', modelSelection: { effectiveModel: 'gpt-test' } },
         }),
       }),
-      loadEvaluationObserverContextFn: async ({ config, recordedAtMs, host, sessionId }) => {
-        assert.equal(config, THROUGHLINE_CONFIG);
+      loadEvaluationObserverContextFn: async (args) => {
+        const { recordedAtMs, host, sessionId } = args;
+        assert.equal(Object.hasOwn(args, 'config'), false);
         assert.equal(recordedAtMs, 1500);
         assert.equal(host, 'codex');
         assert.equal(sessionId, 'evaluation-session');
@@ -651,6 +638,47 @@ test('Codex evaluation lifecycle: records projected proposal and closes the late
     } finally {
       store.close();
     }
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runCodexUserPromptSubmitHook: evaluation observer-read failure does not affect audit or projected advice', async () => {
+  const project = await makeProject();
+  const out = [];
+  const errOut = [];
+  const events = [];
+  let observerReads = 0;
+  try {
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({ cwd: project, session_id: 'observer-read-error', prompt: '既知の罠を確認して' }),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search traps.' }],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async () => ({
+          pass: false,
+          findings: [{ toolName: 'mcp__caveat__caveat_search', reason: 'unused' }],
+          anomalies: [],
+          meta: { backend: 'codex-cli' },
+        }),
+      }),
+      loadEvaluationObserverContextFn: async (args) => {
+        observerReads += 1;
+        assert.equal(Object.hasOwn(args, 'config'), false);
+        throw new Error('observer-read unavailable');
+      },
+      createEvaluationStoreFn: () => { throw new Error('store must not open after observer-read failure'); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeOutput: (text) => out.push(text),
+      writeError: (text) => errOut.push(text),
+    });
+
+    const output = JSON.parse(out.join(''));
+    assert.match(output.hookSpecificOutput.additionalContext, /mcp__caveat__caveat_search/);
+    assert.equal(observerReads, 1);
+    assert.equal(events[0].status, 'success');
+    assert.match(errOut.join(''), /評価記録に失敗/);
+    assert.doesNotMatch(out.join('') + errOut.join(''), /observer-read unavailable/);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -720,7 +748,6 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
         transcript_path: '/tmp/codex-backend-error.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
-      ...freshContextDeps,
       readLocalFn: async ({ hostAgent }) => {
         assert.equal(hostAgent, 'codex');
         return [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }];
@@ -762,7 +789,6 @@ test('runCodexUserPromptSubmitHook: model policy creation error maps to fixed ge
         transcript_path: '/tmp/codex-model-error.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
-      ...freshContextDeps,
       readLocalFn: async () => [],
       createAuditorBackendFn: () => {
         throw new CodexAuditorModelPolicyError('SPOTTER_CODEX_CLI_MODEL is invalid');
@@ -792,7 +818,6 @@ test('runCodexUserPromptSubmitHook: catalog read failure cannot escape or reflec
   try {
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({ cwd: project, session_id: 'codex-catalog-error', transcript_path: '/tmp/codex-catalog-error.jsonl', prompt: '十分に長いユーザー入力' }),
-      ...freshContextDeps,
       readLocalFn: async () => { throw new Error('AI_SENTINEL:catalog-secret'); },
       recordHookEventFn: async ({ event }) => { events.push(event); },
       writeOutput: (text) => out.push(text),
@@ -819,7 +844,6 @@ test('runCodexUserPromptSubmitHook: Codex hook auditor timeout defaults short an
         transcript_path: '/tmp/codex-timeout-default.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
-      ...freshContextDeps,
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
       createAuditorBackendFn: ({ timeoutMs }) => {
         seen.push(timeoutMs);
@@ -835,7 +859,6 @@ test('runCodexUserPromptSubmitHook: Codex hook auditor timeout defaults short an
         transcript_path: '/tmp/codex-timeout-override.jsonl',
         prompt: 'GeForce 5000 番台について既知の罠を調べて',
       }),
-      ...freshContextDeps,
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
       createAuditorBackendFn: ({ timeoutMs }) => {
         seen.push(timeoutMs);
@@ -871,25 +894,47 @@ test('runCodexUserPromptSubmitHook: exits outside installed Spotter project', as
   }
 });
 
-test('runCodexUserPromptSubmitHook: disabled and non-fresh context quietly skip without creating a backend', async () => {
+test('runCodexUserPromptSubmitHook: auditor context mode, freshness, and acquisition failures never gate current-prompt audit', async () => {
   const project = await makeProject();
   try {
-    for (const [config, contextStatus] of [
-      [{ mode: 'disabled' }, 'disabled'],
-      [THROUGHLINE_CONFIG, 'stale'],
+    for (const [name, legacyContextDeps] of [
+      ['disabled', {
+        readAuditorContextConfigFn: async () => ({ mode: 'disabled' }),
+      }],
+      ['stale', {
+        readAuditorContextConfigFn: async () => ({ mode: 'throughline' }),
+        loadAuditorContextFn: async () => ({ status: 'stale' }),
+      }],
+      ['config-error', {
+        readAuditorContextConfigFn: async () => { throw new Error('legacy config failure'); },
+      }],
+      ['load-error', {
+        readAuditorContextConfigFn: async () => ({ mode: 'throughline' }),
+        loadAuditorContextFn: async () => { throw new Error('legacy load failure'); },
+      }],
     ]) {
-      const out = []; const events = [];
+      const out = []; const events = []; const judgeInputs = [];
       await runCodexUserPromptSubmitHook({
-        readInput: async () => ({ cwd: project, session_id: `codex-${contextStatus}`, transcript_path: `/tmp/${contextStatus}.jsonl`, prompt: '短文' }),
-        readAuditorContextConfigFn: async () => config,
-        loadAuditorContextFn: async () => ({ ...FRESH_CONTEXT, status: contextStatus, turns: [], stats: { requestedTurns: 2, returnedTurns: 0, chars: 0, truncated: false } }),
-        createAuditorBackendFn: () => { throw new Error('backend must not be created'); },
+        readInput: async () => ({ cwd: project, session_id: `codex-${name}`, prompt: `現在の依頼 ${name}` }),
+        ...legacyContextDeps,
+        readLocalFn: async ({ hostAgent }) => {
+          assert.equal(hostAgent, 'codex');
+          return [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }];
+        },
+        createAuditorBackendFn: () => ({
+          name: 'codex-cli',
+          judge: async (input) => {
+            judgeInputs.push(input);
+            return { pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } };
+          },
+        }),
         recordHookEventFn: async ({ event }) => { events.push(event); },
         writeOutput: (text) => out.push(text),
       });
       assert.deepEqual(out, []);
-      assert.equal(events[0].status, 'skipped');
-      assert.equal(events[0].contextStatus, contextStatus);
+      assert.deepEqual(judgeInputs, [{ stage: 'user_input', userInput: `現在の依頼 ${name}` }]);
+      assert.equal(events[0].status, 'success');
+      assert.equal(Object.hasOwn(events[0], 'contextStatus'), false);
     }
   } finally {
     await rm(project, { recursive: true, force: true });
@@ -942,9 +987,11 @@ test('runCodexStopHook: records a finding without delivering it to the next prom
         session_id: 'sess-spotter-stop',
         prompt: 'ok',
       }),
-      createAuditorBackendFn: () => {
-        throw new Error('short prompt with pending context should not invoke backend');
-      },
+      readLocalFn: async () => [],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async () => ({ pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } }),
+      }),
       writeOutput: (text) => userOut.push(text),
     });
 
@@ -994,9 +1041,11 @@ test('runCodexStopHook: backend error is fixed diagnostics and is not delivered 
         session_id: 'sess-spotter-stop-error',
         prompt: 'ok',
       }),
-      createAuditorBackendFn: () => {
-        throw new Error('short prompt with pending context should not invoke backend');
-      },
+      readLocalFn: async () => [],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async () => ({ pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } }),
+      }),
       writeOutput: (text) => userOut.push(text),
     });
 
@@ -1093,7 +1142,11 @@ test('runCodexStopHook: model policy creation error is fixed generic diagnostics
         session_id: 'sess-model-policy-error',
         prompt: 'ok',
       }),
-      createAuditorBackendFn: () => { throw new Error('short prompt must not create a backend'); },
+      readLocalFn: async () => [],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async () => ({ pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } }),
+      }),
       writeOutput: (text) => userOut.push(text),
     });
     assert.deepEqual(userOut, []);

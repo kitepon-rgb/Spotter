@@ -28,8 +28,8 @@ Usage:
                                         [--throughline-command ABS] [--throughline-arg VALUE]
                                         register hooks in <cwd>/.claude/settings.json
                                         and create <cwd>/.spotter/marker.json
-                                        (Throughline on PATH enables context by default;
-                                         pass disabled for a persistent project opt-out)
+                                        (Throughline on PATH enables proposal-time
+                                         evaluation evidence by default; it never gates auditing)
                                         (run inside each project you want audited)
   spotter install --user [-y]           legacy: register globally in ~/.claude/settings.json
                                         (NOT RECOMMENDED — fires for every Claude Code session

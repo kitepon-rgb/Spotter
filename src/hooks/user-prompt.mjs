@@ -25,10 +25,6 @@ import { sendRequest, TransportError } from '../daemon/transport.mjs';
 import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
 import { discardLegacyPending } from './pending-context.mjs';
 import { projectBackendFailure, projectParentAdvice, projectToolIds } from './parent-output-projector.mjs';
-import {
-  loadAuditorContext,
-  readProjectAuditorContextConfig,
-} from '../core/auditor-context.mjs';
 import { randomUUID } from 'node:crypto';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
 import { loadEvaluationObserverContext } from '../core/evaluation-context.mjs';
@@ -41,8 +37,6 @@ export async function runUserPrompt({
   sendRequestFn = sendRequest,
   spawnDaemonAndWaitReadyFn = spawnDaemonAndWaitReady,
   discardLegacyPendingFn = discardLegacyPending,
-  readAuditorContextConfigFn = readProjectAuditorContextConfig,
-  loadAuditorContextFn = loadAuditorContext,
   recordHookEventFn = recordClaudeHookEvent,
   createEvaluationStoreFn = createEvaluationStore,
   loadEvaluationObserverContextFn = loadEvaluationObserverContext,
@@ -62,10 +56,9 @@ export async function runUserPrompt({
   const observationId = randomUUIDFn();
   const projectRoot = findSpotterMarker(input.cwd);
   const startedAt = Date.now();
-  let contextDurationMs = null;
   let evaluationWriteFailed = false;
 
-  const safelyRecordEvaluation = async ({ auditStatus, result = null, auditContext = null }) => {
+  const safelyRecordEvaluation = async ({ auditStatus, result = null }) => {
     if (!projectRoot) return;
     try {
       const proposedToolIds = auditStatus === 'success' && result?.pass !== true
@@ -77,7 +70,6 @@ export async function runUserPrompt({
           projectRoot,
           host: 'claude',
           sessionId,
-          config: auditContext?.config,
           recordedAtMs: proposalRecordedAtMs,
         })
         : { status: 'not_requested', snapshot: null };
@@ -94,7 +86,7 @@ export async function runUserPrompt({
           sessionId,
           auditStatus,
           requestText: prompt,
-          auditorSeenContext: auditContext?.turns ? JSON.stringify(auditContext.turns) : null,
+          auditorSeenContext: null,
           observerContextStatus: observer.status,
           observerSnapshot: observer.snapshot,
           proposedToolIds,
@@ -128,7 +120,6 @@ export async function runUserPrompt({
         status: 'degraded',
         code: failure.code,
         reason,
-        contextDurationMs,
         legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
       },
@@ -151,108 +142,12 @@ export async function runUserPrompt({
     }
   };
 
-  const syncUserInputWithoutAudit = async (contextStatus) => {
-    try {
-      const response = await sendDaemonPayload({
-        user_input: prompt,
-        observation_id: observationId,
-        audit: false,
-        context_status: contextStatus,
-      });
-      if (response.ok !== true) {
-        await degrade({ code: response.error?.code ?? 'E_INTERNAL', reason: 'daemon_state_sync' });
-        return false;
-      }
-      return true;
-    } catch (err) {
-      await degrade({ code: err?.code, reason: 'daemon_state_sync' });
-      return false;
-    }
-  };
-
-  let context;
-  let auditorContextConfig;
-  const contextStartedAt = Date.now();
-  try {
-    const config = await readAuditorContextConfigFn(projectRoot);
-    auditorContextConfig = config;
-    contextDurationMs = Date.now() - contextStartedAt;
-    if (config.mode === 'disabled') {
-      if (!await syncUserInputWithoutAudit('disabled')) {
-        await safelyRecordEvaluation({ auditStatus: 'error' });
-        return;
-      }
-      await safelyRecordEvaluation({ auditStatus: 'skipped' });
-      await recordHookEventFn({
-        projectRoot,
-        event: {
-          hook: 'UserPromptSubmit',
-          status: 'skipped',
-          reason: 'context_disabled',
-          contextStatus: 'disabled',
-          contextDurationMs,
-          legacyPendingDiagnostic: legacyPending.diagnostic,
-          durationMs: Date.now() - startedAt,
-        },
-      });
-      return;
-    }
-    context = await loadAuditorContextFn({
-      config,
-      host: 'claude',
-      sessionId,
-      projectRoot,
-      transcriptPath: requireString(input, 'transcript_path'),
-    });
-    contextDurationMs = Date.now() - contextStartedAt;
-  } catch (err) {
-    contextDurationMs = Date.now() - contextStartedAt;
-    await degrade({ code: err?.code, reason: 'auditor_context' });
-    await safelyRecordEvaluation({ auditStatus: 'error' });
-    return;
-  }
-
-  if (context.status === 'unavailable' || context.status === 'schema_mismatch') {
-    await degrade({
-      code: context.status === 'unavailable'
-        ? 'E_AUDITOR_CONTEXT_UNAVAILABLE'
-        : 'E_AUDITOR_CONTEXT_SCHEMA',
-      reason: 'auditor_context_status',
-    });
-    await safelyRecordEvaluation({ auditStatus: 'error' });
-    return;
-  }
-  if (context.status !== 'fresh') {
-    if (!await syncUserInputWithoutAudit(context.status)) {
-      await safelyRecordEvaluation({ auditStatus: 'error' });
-      return;
-    }
-    await safelyRecordEvaluation({ auditStatus: 'skipped' });
-    await recordHookEventFn({
-      projectRoot,
-      event: {
-        hook: 'UserPromptSubmit',
-        status: 'skipped',
-        reason: 'context_not_fresh',
-        contextStatus: context.status,
-        contextTurns: 0,
-        contextChars: 0,
-        contextDurationMs,
-        legacyPendingDiagnostic: legacyPending.diagnostic,
-        durationMs: Date.now() - startedAt,
-      },
-    });
-    return;
-  }
-
   let response;
   try {
     response = await sendDaemonPayload({
       user_input: prompt,
       observation_id: observationId,
       audit: true,
-      context_status: 'fresh',
-      recent_context: context.turns,
     });
   } catch (err) {
     await degrade({ code: err?.code ?? 'E_RESURRECT_FAILED', reason: 'transport_or_resurrect' });
@@ -278,7 +173,6 @@ export async function runUserPrompt({
   await safelyRecordEvaluation({
     auditStatus: 'success',
     result,
-    auditContext: { config: auditorContextConfig, turns: context.turns },
   });
   if (advice) emitAdditionalContext(writeOutput, advice);
 
@@ -289,10 +183,6 @@ export async function runUserPrompt({
       status: 'success',
       pass: result.pass === true,
       missingTools: toolIds,
-      contextStatus: 'fresh',
-      contextTurns: context.stats.returnedTurns,
-      contextChars: context.stats.chars,
-      contextDurationMs,
       legacyPendingDiagnostic: legacyPending.diagnostic,
       durationMs: Date.now() - startedAt,
     },

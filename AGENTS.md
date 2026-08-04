@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.4（2026-08-05公開）**: ThroughlineをUserPromptSubmit監査の実行条件と
+> auditor入力から撤去する。Claude / Codexは現在のuser promptとhost-local catalogだけで監査し、
+> Throughline `observer-read`は提案時の評価証拠を独立取得する任意経路だけに使う。
+
 > **v1.5.3（2026-08-04公開）**: dashboardから`S/P/I/C/A/M`略号を外し、
 > 6指標と提案率・採用率の分子/分母を日本語で表示する。
 > 内部集計schemaとCLI出力の互換性は維持する。
@@ -108,6 +112,12 @@ guarantee, document the failure path covered, and add regression coverage.
 
 ## Repository Status
 
+**v1.5.4 (published 2026-08-05)**: Claude / CodexのUserPromptSubmit監査は、
+Throughlineの導入・設定・freshness・取得成否から独立して必ず実行する。auditor入力は現在の
+user promptとhost-local catalogだけで、旧`audit:false` / recent context payloadも監査を停止・変更しない。
+提案が出た時のThroughline `observer-read`は評価用の別文脈を一度だけ取得し、失敗しても監査結果・
+親出力・success eventを変えない。
+
 **v1.5.3 (published 2026-08-04)**: dashboardの概要cardとproject/tool別内訳は
 `S/P/I/C/A/M`を表示せず、対象ターン、ツール提案あり、提案ツール数、
 利用判定済み、実際に使用、判定不能と表示する。提案率は「ツール提案あり ÷
@@ -158,15 +168,19 @@ canaryを完了した。
 patch。7日 / fresh 30件の測定は精度改善にだけ使い、ON/OFFを再審査しない。公開commitは`3c7c820`。
 npm `latest`、tag / GitHub Release、このMacのregistry由来global installを1.4.22へ同期した。
 
-### Throughline auditor context default-on 契約
+### Throughline評価証拠の独立契約
 
-- `spotter install`はPATH上のThroughlineをabsolute executableへ解決できる場合、project-owned markerで既定ONにする。旧既定disabledは再install時に移行し、明示disabledは`origin:explicit`として永続保持する。
-- 自動解決できない場合は固定理由付きdisabledとし、current-onlyへfallbackしない。手動設定は`spotter install --auditor-context throughline --throughline-command <absolute>`とrepeatable `--throughline-arg <value>`。Windowsのnpm `.cmd` / `.bat`は直接実行せず、absolute `node.exe` + absolute `throughline.mjs`へ変換する。
-- Throughline connector は fresh な completed L2 user/assistant pair だけを N=2、body 600 chars、total 4000 chars で読み、Codex CLI に stdin で渡す（argv に本文を置かない）。Haiku context path は未対応で AI を呼ばない。fresh 以外も AI を呼ばない。
-- enabled connector の障害は固定 warning。親への出力は safe catalog tool ID からの固定・非命令助言だけで、reason / raw / L2 を反射しない。`spotter doctor` は mode と固定 availability detail だけを示す。
-- `spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600` が v2 fixture の context choice 評価入口。現時点の結論は N=2 / 600 で、昇格承認ではない。
+- UserPromptSubmit監査はThroughlineの導入・設定・freshness・取得成否から独立して実行する。
+  `auditorContext.mode`やprovider statusを監査のskip / error条件にしてはならない。
+- auditorへ渡すのは現在のuser promptとhost-local catalogだけ。Throughline L2を監査入力へ混ぜず、
+  legacy `audit:false` / `recent_context` / `context_status` payloadも監査を停止・変更しない。
+- 提案確定後の評価記録だけがThroughline `observer-read`を一度呼べる。失敗時は
+  `context_unavailable`として保存し、監査結果、親向けtool ID、Hook successを変えない。
+- markerの既存`auditorContext`と`--auditor-context` optionは、評価証拠provider設定の互換名として
+  当面維持する。disabledは評価文脈取得だけを止め、監査は止めない。
+- network送信、retry、background回収、常時validatorは追加しない。
 
-**v1.4.21 (published 2026-07-13)**: Throughline監査文脈をdefault-onへ変更する。marker v2へ
+**v1.4.21 (published 2026-07-13, superseded by v1.5.4)**: Throughline監査文脈をdefault-onへ変更する。marker v2へ
 `origin:default|explicit`を追加し、旧既定disabledだけを移行、明示OFFは維持する。POSIXはPATH上の実体を
 absolute realpathへ固定し、Windows npm shimは`node.exe + throughline.mjs`へ変換する。不在時は固定理由付き
 disabledでcurrent-onlyへfallbackしない。公開commit `5026ace`のCIは6/6 green、npm `latest`、tag /
@@ -174,7 +188,7 @@ GitHub Release、このMacのregistry由来global installを1.4.21へ同期し�
 marker v2 / `origin:default` / connector availableを実測済み。default-onはowner確定済みで、7日 /
 fresh 30件の測定は精度改善点の抽出にだけ使い、ON/OFFを再審査しない。
 
-**v1.4.20 (published 2026-07-13)**: Throughline所有のread-only projectionからexact sessionの
+**v1.4.20 (published 2026-07-13, superseded by v1.5.4)**: Throughline所有のread-only projectionからexact sessionの
 freshな直近完了L2だけを取得し、Codex CLIへstdinで渡すproject opt-inを追加する。fresh以外では監査AIを
 呼ばず、Haiku context modeもstateless・非永続transport未実証のため拒否する。親へは従来どおり検証済み
 tool ID由来の固定助言だけを返す。`N=2 / body 600 / total 4,000`はcontext fixture 27/27 exactを独立2回、

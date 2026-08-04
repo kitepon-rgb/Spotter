@@ -102,12 +102,12 @@ export async function runInstall({
     };
     await writeFile(markerPath, JSON.stringify(marker, null, 2) + '\n', 'utf8');
     console.log(`  wrote ${markerPath}`);
-    console.log(`  auditor context: ${preservedAuditorContext.mode} (${preservedAuditorContext.origin})`);
+    console.log(`  evaluation context provider: ${preservedAuditorContext.mode} (${preservedAuditorContext.origin})`);
     if (preservedAuditorContext.mode === 'throughline') {
-      console.log('  sends bounded completed user/assistant text to the selected Codex auditor; disable with:');
+      console.log('  captures bounded proposal-time observer evidence; this never gates auditing; disable evidence capture with:');
       console.log('    spotter install -y --auditor-context disabled');
     } else if (preservedAuditorContext.reason === 'throughline_unavailable') {
-      console.log('  Throughline was not found; context auditing remains disabled (no current-only fallback)');
+      console.log('  Throughline was not found; proposal-time observer evidence is unavailable, but auditing remains active');
     }
   }
 

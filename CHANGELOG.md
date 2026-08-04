@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.4 — 2026-08-05
+
+- **Throughlineを提案監査の実行条件から撤去。** Claude / CodexのUserPromptSubmitは、
+  `auditorContext`のmode、Throughlineのfreshness、取得成否に関係なく、現在のuser promptと
+  host-local tool catalogで監査する。daemonも旧`audit:false`やcontext payloadで監査を止めず、
+  Throughline本文を監査AIへ渡さない。
+- **評価文脈だけを独立取得。** 提案が出た時のThroughline `observer-read`は改善用証拠として
+  一度だけ取得し、失敗時は評価文脈だけをunavailableにする。監査結果、親へのtool提案、
+  成功Hook eventには影響させず、retryやbackground回収も追加しない。
+- **停止を正常passへ偽装しない。** 旧版で`context_disabled` / `context_not_fresh` /
+  `auditor_context`となっていた経路を削除し、以後の監査成功turnは提案なしの場合も評価母数へ入る。
+  install / doctor / READMEもThroughlineを`evaluation context`として表示する。
+- **検証。** disabled / stale / provider error / legacy payload / observer-read failureを含む
+  Claude・Codex回帰テストとfull suite 588件（586 pass / 2 platform skip）を通過した。
+
 ## 1.5.3 — 2026-08-04
 
 - **dashboardの難解な集計略号を廃止。** 概要cardとproject/tool別内訳の

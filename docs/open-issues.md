@@ -10,9 +10,10 @@ Spotter v1.4.29（2026-08-04公開）以後の未完事項だけを記録する�
 - 解決した項目は本文へ残さず、CHANGELOGまたは完了計画へ移す。
 - P0は現在のrollout判断、P1は次の運用窓、P2は既知だが未発生のplatform固有リスク。
 
-## P1 — v1.4.21以降のPrimary auditor SLO判定
+## P1 — v1.5.4以降のPrimary auditor SLO判定
 
-旧version・認証失効・usage limitを含む累積値ではなく、v1.4.21以降の7日移動窓かつ各Hook 50 call以上で
+旧version・認証失効・usage limitを含む累積値ではなく、Throughline hard gate撤去後のv1.5.4以降を
+7日移動窓かつ各Hook 50 call以上で
 判定する。基準は[`04_operational-slo.md`](04_operational-slo.md)。
 
 ### 次の行動

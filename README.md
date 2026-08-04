@@ -156,12 +156,18 @@ The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`
 
 Both share the principle of **"don't rely on the primary agent to do it itself."** They compose well — you can run them together.
 
-### Throughline auditor context (default-on)
+### Optional Throughline evidence for proposal evaluation
 
-When `spotter install` can resolve Throughline on PATH to an absolute executable,
-auditor context is enabled by default. A normal reinstall migrates legacy markers
-whose disabled state came from the old default. An explicit project opt-out is
-stored with `origin: explicit` and is never silently re-enabled. Disable it with:
+Spotter's proposal auditor does not use Throughline. Every UserPromptSubmit
+audit runs independently of Throughline installation, configuration, freshness, or read
+failures. When Spotter emits a proposal, the evaluation recorder may call
+Throughline `observer-read` once to save separate improvement evidence. A failed
+read is recorded as `context_unavailable` and never changes auditing or parent advice.
+
+When `spotter install` resolves Throughline on PATH to an absolute executable, it
+configures this evaluation-evidence path by default. The legacy option name
+`--auditor-context` remains for marker compatibility but no longer controls whether
+auditing runs. Disable only the evidence capture with:
 
 ```bash
 spotter install -y --auditor-context disabled
@@ -185,28 +191,9 @@ spotter install -y --auditor-context throughline `
   --throughline-arg 'C:\absolute\path\to\throughline\bin\throughline.mjs'
 ```
 
-The connector is Codex CLI-only. It sends no context in argv: the bounded
-projection is supplied to that AI over stdin. Haiku does not support this
-context path and is never called for it. Only a `fresh` Throughline result is
-eligible for an AI call; every other status skips AI. An enabled connector
-failure becomes a fixed warning, not a hidden fallback.
-
-Throughline contributes only fresh, completed L2 user/assistant pairs: two
-recent pairs (N=2), each body capped at 600 characters and 4,000 characters in
-total. Spotter never reflects Throughline L2, `reason`, or `raw` to the parent.
-The parent receives only fixed non-imperative advice built from safe catalog tool
-IDs. `spotter doctor` displays the auditor-context mode and a fixed availability
-detail without printing its command or arguments.
-
-The v2 model-matrix can make the context choice explicit:
-
-```bash
-spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json \
-  --recent-turns 2 --body-cap 600
-```
-
-The evaluated setting is N=2 / 600. Default-on is final; the 7-day,
-30-fresh-result sample is used only to identify precision improvements.
+`spotter doctor` reports this as `evaluation context` without printing commands,
+arguments, or conversation text. Observer snapshots stay in the terminal-local
+evaluation SQLite. Spotter adds no network upload, retry, or background recovery.
 
 ## Common commands
 

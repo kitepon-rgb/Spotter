@@ -72,12 +72,14 @@ test('startDaemon: user_input event dispatches to Haiku stub', async () => {
   }
 });
 
-test('startDaemon: non-fresh user input updates turn state without invoking auditor', async () => {
+test('startDaemon: legacy audit/context fields cannot suppress or alter the current-prompt audit', async () => {
   const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;
   let haikuCalls = 0;
-  const haikuCaller = async () => {
+  const haikuPrompts = [];
+  const haikuCaller = async (prompt) => {
     haikuCalls += 1;
+    haikuPrompts.push(prompt);
     return JSON.stringify({ pass: true, missing_tools: [] });
   };
   const running = await startDaemon({
@@ -91,12 +93,18 @@ test('startDaemon: non-fresh user input updates turn state without invoking audi
     const observed = await sendRequest({
       sessionId,
       event: 'user_input',
-      payload: { user_input: '続けて', audit: false, context_status: 'stale' },
+      payload: {
+        user_input: '続けて',
+        audit: false,
+        context_status: 'fresh',
+        recent_context: [{ user: '過去文脈', assistant: '監査へ渡してはならない' }],
+      },
       timeoutMs: 2_000,
     });
     assert.equal(observed.ok, true);
-    assert.equal(observed.result.reason, 'auditor_context_not_fresh');
-    assert.equal(haikuCalls, 0);
+    assert.equal(observed.result.pass, true);
+    assert.equal(haikuCalls, 1);
+    assert.doesNotMatch(haikuPrompts[0], /過去文脈|監査へ渡してはならない/);
 
     const stopped = await sendRequest({
       sessionId,
@@ -105,7 +113,7 @@ test('startDaemon: non-fresh user input updates turn state without invoking audi
       timeoutMs: 2_000,
     });
     assert.equal(stopped.ok, true);
-    assert.equal(haikuCalls, 1, 'existing Stop auditor must retain the observed turn state');
+    assert.equal(haikuCalls, 2, 'existing Stop auditor must retain the observed turn state');
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });

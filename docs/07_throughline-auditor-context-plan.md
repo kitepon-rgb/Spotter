@@ -1,13 +1,18 @@
 # 07 — Throughline L2を使った監査文脈・精度向上計画
 
-状態: v1.4.21 default-on配布・global適用済み / 実運用効果測定中
+状態: v1.5.4で監査実行条件として撤回。以下はv1.4.20〜v1.4.21の歴史記録
 作成日: 2026-07-12
 対象: Spotter `UserPromptSubmit`監査 / Throughline L2 read-only connector / Claude・Codex両host
 
-## 現在のToDo
+> **撤回（2026-08-05）**: Throughlineのfresh文脈を監査AI呼出しの必須条件にした設計は、
+> 独立監査を停止させる重大回帰だった。v1.5.4以降、UserPromptSubmit監査はThroughlineから完全に
+> 独立して実行する。Throughlineは提案時の改善用observer evidenceを記録する任意経路だけに使い、
+> disabled / stale / unavailable / errorのいずれも監査をskipまたはerrorにしない。
 
-- [ ] v1.4.21以降を7日以上かつfresh 30件以上（期待finding/pass各10件以上）観測し、stale率・latency・過検出・見逃しを人手ラベル付きで集計する
-- [ ] 集計結果から精度改善が必要なら修正ToDoを起票し、不要なら測定完了としてこの計画をarchiveする
+## 撤回時に廃止したToDo
+
+- v1.4.21以降のfresh監査30件測定は、Throughline hard gate自体を撤回したため中止した。
+- 現行の提案率・採用率・非採用case分析はLattice plan `proposal-adoption-eval`を正本とする。
 
 ## 目的
 

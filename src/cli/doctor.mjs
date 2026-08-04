@@ -78,7 +78,7 @@ export async function runDoctor() {
     if (!sidecar.ok) warnings += 1;
 
     const auditorContext = await inspectAuditorContextConfiguration({ projectRoot });
-    mark(auditorContext.ok, `auditor context: ${auditorContext.mode}`, auditorContext.detail);
+    mark(auditorContext.ok, `evaluation context: ${auditorContext.mode}`, auditorContext.detail);
     if (!auditorContext.ok) warnings += 1;
   }
 

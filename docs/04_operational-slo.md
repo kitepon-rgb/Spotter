@@ -54,12 +54,12 @@ p50 4.024秒 / p95 4.361秒だった。事後的なtimeout感度は3秒で23/24�
 
 tool使用ログは補助証拠に限る。月次または30 findingごとに妥当率、過検出率、見逃し件数を集計する。
 
-## Throughline文脈default-on rollout
+## Throughline評価文脈
 
-2026-07-13以降は、default-onのまま7日以上かつfresh監査30件以上を測る。期待findingと期待passを
-各10件以上含め、`妥当 / 過検出 / 見逃し / context不足`で人手ラベルする。`contextStatus / turns /
-chars / latency`だけを集計し、L2本文は保存しない。default-onは確定済みで、測定結果はON/OFFの
-再審査ではなく、prompt・fixture・connectorの精度改善へ使う。
+UserPromptSubmit監査はThroughlineの導入・設定・freshness・取得成否から独立して実行する。
+Throughline `observer-read`は提案が出た時の改善用証拠を一度だけ取得する任意経路であり、失敗時は
+`context_unavailable`として記録するだけで監査結果や親への助言を変更しない。監査coverageのSLOへ
+Throughline statusを混ぜない。
 
 ## 2026-07-12 初期スナップショット
 

@@ -21,16 +21,6 @@ import {
 const formatTransparentContext = (entries) => projectParentAdvice(entries.map((entry) => entry?.name));
 const formatTransparentBlockReason = formatTransparentContext;
 const formatSpotterWarning = ({ code }) => projectBackendFailure(code).systemMessage;
-const THROUGHLINE_CONFIG = { mode: 'throughline', command: '/opt/throughline/bin/throughline', args: [] };
-const FRESH_CONTEXT = Object.freeze({
-  schema: 'throughline.auditor_context.v1', status: 'fresh', reason: 'fresh',
-  turns: Object.freeze([{ originSessionId: 'prior', turnNumber: 1, user: '前の依頼', assistant: '前の回答', createdAt: 1 }]),
-  stats: Object.freeze({ requestedTurns: 2, returnedTurns: 1, chars: 8, truncated: false }),
-});
-const freshContextDeps = {
-  readAuditorContextConfigFn: async () => THROUGHLINE_CONFIG,
-  loadAuditorContextFn: async () => FRESH_CONTEXT,
-};
 const TEST_EVALUATION_STORE = { recordTurn() {}, close() {} };
 async function runUserPrompt(options = {}) {
   return runUserPromptImpl({
@@ -348,7 +338,6 @@ test('runUserPrompt: E_UNREACHABLE auto-resurrects daemon and retries once', asy
         prompt: 'この外部仕様の罠を確認して記録してください',
         transcript_path: '/tmp/s-user.jsonl',
       }),
-      ...freshContextDeps,
       sendRequestFn: async (request) => {
         sendCount++;
         assert.equal(request.sessionId, 's-user');
@@ -357,7 +346,7 @@ test('runUserPrompt: E_UNREACHABLE auto-resurrects daemon and retries once', asy
         assert.match(observationId, /^[a-f0-9-]{36}$/);
         assert.deepEqual(payload, {
           user_input: 'この外部仕様の罠を確認して記録してください',
-          audit: true, context_status: 'fresh', recent_context: FRESH_CONTEXT.turns,
+          audit: true,
         });
         if (sendCount === 1) {
           throw new TransportError('E_UNREACHABLE', 'daemon missing');
@@ -393,7 +382,7 @@ test('runUserPrompt: E_UNREACHABLE auto-resurrects daemon and retries once', asy
   }
 });
 
-test('runUserPrompt: disabled context skips a short prompt without daemon traffic', async () => {
+test('runUserPrompt: audits the current prompt without reading auditor-context mode', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-user-prompt-short-'));
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
@@ -405,16 +394,16 @@ test('runUserPrompt: disabled context skips a short prompt without daemon traffi
         cwd: project,
         prompt: 'ありがとう',
       }),
-      readAuditorContextConfigFn: async () => ({ mode: 'disabled' }),
+      readAuditorContextConfigFn: async () => { throw new Error('auditor-context config must not be read'); },
       sendRequestFn: async () => {
         sendCount++;
         return { ok: true, result: { pass: true, missing_tools: [] } };
       },
       spawnDaemonAndWaitReadyFn: async () => {
-        throw new Error('spawn should not be called for disabled context');
+        throw new Error('spawn should not be called while daemon is reachable');
       },
       writeOutput: () => {
-        throw new Error('output should not be written for disabled context');
+        throw new Error('output should not be written for a passing audit');
       },
     });
     assert.equal(sendCount, 1);
@@ -423,15 +412,15 @@ test('runUserPrompt: disabled context skips a short prompt without daemon traffi
   }
 });
 
-test('runUserPrompt: fresh context audits even a ten-character prompt and sends only bounded context', async () => {
+test('runUserPrompt: audits even a ten-character prompt without loading or sending recent context', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-user-prompt-fresh-short-'));
   const requests = [];
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
     await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
     await runUserPrompt({
-      readInput: async () => ({ session_id: 's-fresh-short', cwd: project, prompt: '続けて確認して', transcript_path: '/tmp/s-fresh-short.jsonl' }),
-      ...freshContextDeps,
+      readInput: async () => ({ session_id: 's-fresh-short', cwd: project, prompt: '続けて確認して' }),
+      loadAuditorContextFn: async () => { throw new Error('auditor context must not be loaded'); },
       sendRequestFn: async (request) => {
         requests.push(request);
         return { ok: true, result: { pass: true, missing_tools: [] } };
@@ -441,14 +430,14 @@ test('runUserPrompt: fresh context audits even a ten-character prompt and sends 
     const { observation_id: observationId, ...payload } = requests[0].payload;
     assert.match(observationId, /^[a-f0-9-]{36}$/);
     assert.deepEqual(payload, {
-      user_input: '続けて確認して', audit: true, context_status: 'fresh', recent_context: FRESH_CONTEXT.turns,
+      user_input: '続けて確認して', audit: true,
     });
   } finally {
     await rm(project, { recursive: true, force: true });
   }
 });
 
-test('runUserPrompt: empty, stale, and session_mismatch quietly skip without daemon or output', async () => {
+test('runUserPrompt: auditor-context freshness cannot suppress the current prompt audit', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-user-prompt-not-fresh-'));
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
@@ -458,43 +447,43 @@ test('runUserPrompt: empty, stale, and session_mismatch quietly skip without dae
       let output = '';
       const events = [];
       await runUserPrompt({
-        readInput: async () => ({ session_id: `s-${status}`, cwd: project, prompt: '短文', transcript_path: `/tmp/${status}.jsonl` }),
-        readAuditorContextConfigFn: async () => THROUGHLINE_CONFIG,
-        loadAuditorContextFn: async () => ({ ...FRESH_CONTEXT, status, turns: [], stats: { requestedTurns: 2, returnedTurns: 0, chars: 0, truncated: false } }),
+        readInput: async () => ({ session_id: `s-${status}`, cwd: project, prompt: '短文' }),
+        loadAuditorContextFn: async () => { throw new Error(`${status} context must not be loaded`); },
         sendRequestFn: async (request) => { requests.push(request); return { ok: true, result: { pass: true, missing_tools: [] } }; },
         recordHookEventFn: async ({ event }) => { events.push(event); },
         writeOutput: (text) => { output += text; },
       });
-      assert.equal(requests.length, 1, `${status} must sync daemon state without calling the auditor`);
+      assert.equal(requests.length, 1, `${status} must still audit the current prompt`);
       const { observation_id: observationId, ...payload } = requests[0].payload;
       assert.match(observationId, /^[a-f0-9-]{36}$/);
-      assert.deepEqual(payload, { user_input: '短文', audit: false, context_status: status });
+      assert.deepEqual(payload, { user_input: '短文', audit: true });
       assert.equal(output, '');
-      assert.equal(events[0].contextStatus, status);
+      assert.equal(events[0].status, 'success');
     }
   } finally {
     await rm(project, { recursive: true, force: true });
   }
 });
 
-test('runUserPrompt: provider error is loud but never reflects a raw sentinel to output, stderr, or event', async () => {
+test('runUserPrompt: auditor-context provider failure cannot suppress the current prompt audit', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-user-prompt-context-error-'));
   const sentinel = 'AUDITOR_CONTEXT_PROVIDER_RAW_SENTINEL';
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
     await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
-    let output = ''; let stderr = ''; const events = [];
+    let output = ''; let stderr = ''; const events = []; let sendCount = 0;
     await runUserPrompt({
       readInput: async () => ({ session_id: 's-context-error', cwd: project, prompt: '短文', transcript_path: '/tmp/context-error.jsonl' }),
-      readAuditorContextConfigFn: async () => THROUGHLINE_CONFIG,
       loadAuditorContextFn: async () => { const err = new Error(sentinel); err.code = 'E_AUDITOR_CONTEXT_UNAVAILABLE'; throw err; },
-      sendRequestFn: async () => { throw new Error('must not contact daemon'); },
+      sendRequestFn: async () => { sendCount += 1; return { ok: true, result: { pass: true, missing_tools: [] } }; },
       recordHookEventFn: async ({ event }) => { events.push(event); },
       writeOutput: (text) => { output += text; }, writeError: (text) => { stderr += text; },
     });
-    assert.match(JSON.parse(output).systemMessage, /一時的な問題/);
+    assert.equal(sendCount, 1);
+    assert.equal(output, '');
+    assert.equal(stderr, '');
     assert.doesNotMatch(output + stderr + JSON.stringify(events), new RegExp(sentinel));
-    assert.equal(events[0].status, 'degraded');
+    assert.equal(events[0].status, 'success');
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -755,7 +744,7 @@ test('runStop: failure is not delivered on a later short prompt', async () => {
       sendRequestFn: async () => { sendCalls += 1; return { ok: true, result: { pass: true } }; },
       writeOutput: (text) => { output += text; },
     });
-    assert.equal(sendCalls, 1, 'disabled context syncs daemon turn state without auditing');
+    assert.equal(sendCalls, 1, 'the later prompt is audited without retained failure context');
     assert.equal(output, '');
   } finally {
     await rm(project, { recursive: true, force: true });
@@ -775,7 +764,6 @@ test('runStop: previous failure is not merged with a later prompt recommendation
     let output = '';
     await runUserPrompt({
       readInput: async () => ({ session_id: 's-warning-merge', cwd: project, prompt: '次のターンの長いユーザー入力', transcript_path: '/tmp/s-warning-merge.jsonl' }),
-      ...freshContextDeps,
       sendRequestFn: async () => ({
         ok: true,
         result: { pass: false, missing_tools: [{ name: 'mcp__caveat__caveat_search', reason: '今ターンの推奨' }] },
@@ -988,7 +976,6 @@ test('runUserPrompt: discards legacy pending and emits only current fixed advice
         prompt: '次のターンの長いユーザー入力',
         transcript_path: '/tmp/s-merge.jsonl',
       }),
-      ...freshContextDeps,
       sendRequestFn: async () => ({
         ok: true,
         result: {
@@ -1031,7 +1018,7 @@ test('runUserPrompt: short prompt deletes legacy pending without emitting it', a
       sendRequestFn: async () => { sendCalls += 1; return { ok: true, result: { pass: true } }; },
       writeOutput: (text) => { output += text; },
     });
-    assert.equal(sendCalls, 1, 'disabled context syncs daemon turn state without auditing');
+    assert.equal(sendCalls, 1, 'short prompts are audited without retained pending context');
     assert.equal(output, '');
     await assert.rejects(stat(legacyPath), (err) => err.code === 'ENOENT');
   } finally {
@@ -1131,7 +1118,6 @@ test('runUserPrompt: codex auth failure emits fixed systemMessage and does not e
         prompt: '長めのユーザー入力をここに置く',
         transcript_path: '/tmp/s-auth.jsonl',
       }),
-      ...freshContextDeps,
       sendRequestFn: async () => ({
         ok: false,
         error: { code: 'E_CODEX_CLI_AUTH', message: 'codex login required' },
@@ -1167,7 +1153,6 @@ test('runUserPrompt: generic daemon error emits fixed generic systemMessage', as
         prompt: '長めのユーザー入力をここに置く',
         transcript_path: '/tmp/s-generic.jsonl',
       }),
-      ...freshContextDeps,
       sendRequestFn: async () => ({ ok: false, error: { code: 'E_INTERNAL', message: 'boom' } }),
       writeOutput: (text) => { output += text; },
     });
@@ -1198,7 +1183,6 @@ test('runUserPrompt: daemon error discards legacy pending and never merges it in
         prompt: '次のターンの長いユーザー入力',
         transcript_path: '/tmp/s-degrade-merge.jsonl',
       }),
-      ...freshContextDeps,
       sendRequestFn: async () => ({
         ok: false,
         error: { code: 'E_CODEX_CLI_AUTH', message: 'codex login required' },
@@ -1228,7 +1212,6 @@ test('runUserPrompt: resurrect failure degrades loudly instead of erasing the pr
         prompt: '長めのユーザー入力をここに置く',
         transcript_path: '/tmp/s-resurrect-fail.jsonl',
       }),
-      ...freshContextDeps,
       sendRequestFn: async () => { throw new TransportError('E_UNREACHABLE', 'daemon missing'); },
       spawnDaemonAndWaitReadyFn: async () => { throw new Error('spawn failed'); },
       writeOutput: (text) => { output += text; },
@@ -1258,7 +1241,6 @@ test('runUserPrompt: resurrect throwing a non-Error value still degrades (no Typ
         prompt: '長めのユーザー入力をここに置く',
         transcript_path: '/tmp/s-nonerror.jsonl',
       }),
-      ...freshContextDeps,
       sendRequestFn: async () => { throw new TransportError('E_UNREACHABLE', 'daemon missing'); },
       spawnDaemonAndWaitReadyFn: async () => { throw null; }, // non-Error rejection
       writeOutput: (text) => { output += text; },
@@ -1302,7 +1284,6 @@ test('runUserPrompt: records only safe projected proposal IDs with one proposal-
     await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
     await runUserPrompt({
       readInput: async () => ({ session_id: 's-evaluation', cwd: project, prompt: '確認して', transcript_path: '/tmp/evaluation.jsonl' }),
-      ...freshContextDeps,
       randomUUIDFn: () => '00000000-0000-4000-8000-000000000001',
       now: () => 123456789,
       sendRequestFn: async () => ({ ok: true, result: {
@@ -1320,14 +1301,51 @@ test('runUserPrompt: records only safe projected proposal IDs with one proposal-
     assert.equal(observerCalls[0].recordedAtMs, 123456789);
     assert.equal(observerCalls[0].host, 'claude');
     assert.equal(observerCalls[0].sessionId, 's-evaluation');
+    assert.equal('config' in observerCalls[0], false, 'observer-read resolves its own config independently');
     assert.equal(turns.length, 1);
     assert.deepEqual(turns[0].proposedToolIds, ['mcp__caveat__caveat_search']);
     assert.equal(turns[0].auditStatus, 'success');
     assert.equal(turns[0].backend, 'codex-cli');
     assert.equal(turns[0].model, 'gpt-test');
+    assert.equal(turns[0].auditorSeenContext, null);
     assert.equal(turns[0].recordedAtMs, 123456789);
     assert.equal(turns[0].proposedAtMs, 123456789);
     assert.doesNotMatch(JSON.stringify(turns[0]), /raw-reason-must-not-persist/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: observer-read failure never suppresses the completed audit or projected advice', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-evaluation-observer-failure-'));
+  const sentinel = 'OBSERVER_READ_RAW_SENTINEL';
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let output = '';
+    let stderr = '';
+    const events = [];
+    await runUserPrompt({
+      readInput: async () => ({ session_id: 's-observer-failure', cwd: project, prompt: '過去の罠を確認して' }),
+      sendRequestFn: async () => ({
+        ok: true,
+        result: {
+          pass: false,
+          missing_tools: [{ name: 'mcp__caveat__caveat_search', reason: 'raw-auditor-reason' }],
+        },
+      }),
+      loadEvaluationObserverContextFn: async () => { throw new Error(sentinel); },
+      recordHookEventFn: async ({ event }) => { events.push(event); },
+      writeOutput: (text) => { output += text; },
+      writeError: (text) => { stderr += text; },
+    });
+
+    const advice = JSON.parse(output).hookSpecificOutput.additionalContext;
+    assert.match(advice, /mcp__caveat__caveat_search/);
+    assert.match(stderr, /評価記録に失敗/);
+    assert.doesNotMatch(output + stderr + JSON.stringify(events), new RegExp(sentinel));
+    assert.equal(events.length, 1);
+    assert.equal(events[0].status, 'success');
   } finally {
     await rm(project, { recursive: true, force: true });
   }

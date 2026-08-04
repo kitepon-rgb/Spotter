@@ -156,11 +156,16 @@ flowchart LR
 
 両者に共通するのは **「主体に頼らない仕組み」**。併用できます。
 
-### Throughline auditor context（既定ON）
+### Throughlineの提案時評価文脈（任意）
 
-`spotter install`はPATH上のThroughlineを絶対パスへ解決できる場合、auditor contextを既定で有効化します。
-旧版の既定`disabled` markerも通常の再installで有効化されます。過去に明示的に無効化したprojectは
-`origin: explicit`として保持され、勝手に再有効化されません。無効化するには次を実行します。
+Spotterの提案AIはThroughlineを使わず、Throughlineの導入・設定・freshness・取得成否に関係なく
+UserPromptSubmitごとに監査します。Throughlineは、提案が出た時に改善分析用の別文脈を
+`observer-read`で一度だけ記録する任意経路です。取得できなくても`context_unavailable`として記録するだけで、
+監査や親への助言には影響しません。
+
+`spotter install`がPATH上のThroughlineを絶対パスへ解決できる場合、この評価証拠の取得経路を既定で設定します。
+既存互換の`--auditor-context`名はmarker設定に残っていますが、監査のON/OFFは制御しません。
+評価文脈の取得だけを無効化するには次を実行します。
 
 ```bash
 spotter install -y --auditor-context disabled
@@ -183,24 +188,8 @@ spotter install -y --auditor-context throughline `
   --throughline-arg 'C:\absolute\path\to\throughline\bin\throughline.mjs'
 ```
 
-この connector の AI 呼出しは Codex CLI のみです。コンテキストを argv には載せず、AI へは stdin 経由で
-渡します。Haiku はこの context path に未対応であり、呼び出しません。Throughline 結果が `fresh` の時だけ
-AI 呼出し候補になり、それ以外の status では AI を呼びません。enabled connector の障害は hidden fallback
-ではなく固定 warning として出します。
-
-Throughline から渡すのは fresh な完了済み L2 user/assistant pair だけです。直近 2 pair (N=2)、各 body は
-600 文字、合計は 4,000 文字に制限します。Spotter は Throughline の L2、`reason`、`raw` を親へ反射せず、
-親には安全な catalog tool ID から作る固定・非命令形の助言だけを渡します。`spotter doctor` は command / args
-を表示せず、auditor-context mode と固定の availability detail だけを表示します。
-
-v2 model-matrix では context choice を明示できます。
-
-```bash
-spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json \
-  --recent-turns 2 --body-cap 600
-```
-
-評価結論はN=2 / 600です。既定ONは確定済みで、7日・30 fresh resultの実運用測定は精度改善に使います。
+`spotter doctor`はこの経路を`evaluation context`として表示し、command / argsや会話本文は表示しません。
+observer snapshotは端末内の評価SQLiteにだけ保存され、network送信、retry、background回収は行いません。
 
 ## よく使うコマンド
 

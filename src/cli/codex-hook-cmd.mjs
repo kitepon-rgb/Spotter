@@ -30,10 +30,6 @@ import {
   hookEventsPath,
   summarizeHookEvents,
 } from '../core/hook-event-log.mjs';
-import {
-  loadAuditorContext,
-  readProjectAuditorContextConfig,
-} from '../core/auditor-context.mjs';
 import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
 import { loadEvaluationObserverContext } from '../core/evaluation-context.mjs';
@@ -130,8 +126,6 @@ export async function runCodexUserPromptSubmitHook({
   createAuditorBackendFn = createAuditorBackend,
   recordHookEventFn = appendCodexHookEvent,
   discardLegacyPendingFn = discardLegacyPending,
-  readAuditorContextConfigFn = readProjectAuditorContextConfig,
-  loadAuditorContextFn = loadAuditorContext,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
   runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
@@ -147,12 +141,10 @@ export async function runCodexUserPromptSubmitHook({
   const projectRoot = findSpotterMarker(input.cwd);
   if (!projectRoot) return;
   const startedAt = Date.now();
-  let contextDurationMs = null;
-  let auditorContextConfig;
 
   const prompt = requireString(input, 'prompt');
   const sessionId = codexSessionId(input);
-  const recordEvaluation = async ({ auditStatus, proposedToolIds = [], backend = null, model = null, auditorSeenContext = null, config = undefined }) => {
+  const recordEvaluation = async ({ auditStatus, proposedToolIds = [], backend = null, model = null }) => {
     if (!sessionId) {
       reportEvaluationFailure(writeError);
       return;
@@ -167,7 +159,6 @@ export async function runCodexUserPromptSubmitHook({
           projectRoot,
           host: 'codex',
           sessionId,
-          config,
           recordedAtMs: proposedAtMs,
         });
       }
@@ -182,7 +173,7 @@ export async function runCodexUserPromptSubmitHook({
           sessionId,
           auditStatus,
           requestText: prompt,
-          auditorSeenContext,
+          auditorSeenContext: null,
           observerContextStatus: observerContext.status,
           observerSnapshot: observerContext.snapshot,
           proposedToolIds: proposals.resolvedToolIds,
@@ -198,97 +189,6 @@ export async function runCodexUserPromptSubmitHook({
     }
   };
   const legacyPending = await discardLegacyPendingFn({ projectRoot, sessionId: codexSessionId(input) });
-  let context;
-  const contextStartedAt = Date.now();
-  try {
-    const config = await readAuditorContextConfigFn(projectRoot);
-    auditorContextConfig = config;
-    contextDurationMs = Date.now() - contextStartedAt;
-    if (config.mode === 'disabled') {
-      await recordEvaluation({ auditStatus: 'skipped' });
-      await recordCodexHookEventSafe(recordHookEventFn, {
-        projectRoot,
-        event: {
-          hook: 'UserPromptSubmit',
-          status: 'skipped',
-          reason: 'context_disabled',
-          contextStatus: 'disabled',
-          contextDurationMs,
-          legacyPendingDiagnostic: legacyPending.diagnostic,
-          durationMs: Date.now() - startedAt,
-        },
-      }, writeError);
-      return;
-    }
-    context = await loadAuditorContextFn({
-      config,
-      host: 'codex',
-      sessionId: requireCodexSessionId(input),
-      projectRoot,
-      transcriptPath: requireString(input, 'transcript_path'),
-    });
-    contextDurationMs = Date.now() - contextStartedAt;
-  } catch (err) {
-    await recordEvaluation({ auditStatus: 'error' });
-    await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
-    contextDurationMs = Date.now() - contextStartedAt;
-    const failure = projectBackendFailure(err?.code);
-    safeWriteError(writeError, failure.stderr);
-    await recordCodexHookEventSafe(recordHookEventFn, {
-      projectRoot,
-      event: {
-        hook: 'UserPromptSubmit',
-        status: 'error',
-        code: failure.code,
-        reason: 'auditor_context',
-        contextDurationMs,
-        legacyPendingDiagnostic: legacyPending.diagnostic,
-        durationMs: Date.now() - startedAt,
-      },
-    }, writeError);
-    writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
-    return;
-  }
-  if (context.status === 'unavailable' || context.status === 'schema_mismatch') {
-    await recordEvaluation({ auditStatus: 'error' });
-    await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
-    const failure = projectBackendFailure(context.status === 'unavailable'
-      ? 'E_AUDITOR_CONTEXT_UNAVAILABLE'
-      : 'E_AUDITOR_CONTEXT_SCHEMA');
-    safeWriteError(writeError, failure.stderr);
-    await recordCodexHookEventSafe(recordHookEventFn, {
-      projectRoot,
-      event: {
-        hook: 'UserPromptSubmit',
-        status: 'error',
-        code: failure.code,
-        reason: 'auditor_context_status',
-        contextDurationMs,
-        legacyPendingDiagnostic: legacyPending.diagnostic,
-        durationMs: Date.now() - startedAt,
-      },
-    }, writeError);
-    writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
-    return;
-  }
-  if (context.status !== 'fresh') {
-    await recordEvaluation({ auditStatus: 'skipped' });
-    await recordCodexHookEventSafe(recordHookEventFn, {
-      projectRoot,
-      event: {
-        hook: 'UserPromptSubmit',
-        status: 'skipped',
-        reason: 'context_not_fresh',
-        contextStatus: context.status,
-        contextTurns: 0,
-        contextChars: 0,
-        contextDurationMs,
-        legacyPendingDiagnostic: legacyPending.diagnostic,
-        durationMs: Date.now() - startedAt,
-      },
-    }, writeError);
-    return;
-  }
 
   let catalog;
   let backend;
@@ -301,8 +201,6 @@ export async function runCodexUserPromptSubmitHook({
     judgment = await backend.judge({
       stage: 'user_input',
       userInput: prompt,
-      recentContext: context.turns,
-      contextStatus: 'fresh',
     });
   } catch (err) {
     await recordEvaluation({ auditStatus: 'error', backend: err?.backend ?? null, model: err?.diagnostics?.modelSelection?.effectiveModel ?? null });
@@ -332,10 +230,6 @@ export async function runCodexUserPromptSubmitHook({
       backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
       pass: judgment.pass,
       missingTools: projectToolIds(judgment.findings.map((finding) => finding.toolName)),
-      contextStatus: 'fresh',
-      contextTurns: context.stats.returnedTurns,
-      contextChars: context.stats.chars,
-      contextDurationMs,
       ...compactCodexModelSelectionForEvent(judgment.meta?.modelSelection),
       legacyPendingDiagnostic: legacyPending.diagnostic,
       backendDurationMs: judgment.meta?.durationMs ?? null,
@@ -357,8 +251,6 @@ export async function runCodexUserPromptSubmitHook({
     proposedToolIds: toolIds,
     backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
     model: judgment.meta?.modelSelection?.effectiveModel ?? null,
-    auditorSeenContext: JSON.stringify(context.turns),
-    config: auditorContextConfig,
   });
   const advice = projectParentAdvice(toolIds);
   if (advice) writeCodexUserPromptContexts({ contexts: [advice], writeOutput });
@@ -846,14 +738,6 @@ function compactCodexModelSelectionForEvent(selection) {
 function codexSessionId(payload) {
   const value = payload?.session_id ?? payload?.sessionId;
   return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-function requireCodexSessionId(payload) {
-  const value = codexSessionId(payload);
-  if (value) return value;
-  const err = new Error('session_id is required');
-  err.code = 'E_AUDITOR_CONTEXT_INPUT';
-  throw err;
 }
 
 // v1.4.19: legacy pending migration is handled only by `discardLegacyPending` on

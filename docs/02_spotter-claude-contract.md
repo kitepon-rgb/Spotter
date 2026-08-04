@@ -115,7 +115,8 @@ Windows nativeではNode起動とproject discoveryが5秒を超える実測が�
   - deletes a same-session legacy `<projectRoot>/.spotter/pending/<sessionId>.json` without reading or
     parsing its contents. `ENOENT` is success; another unlink failure emits only fixed diagnostics and
     does not block the prompt.
-  - on short prompt (≤10 chars trimmed), returns without model-facing output.
+  - for every prompt, runs the auditor independently of Throughline installation,
+    marker mode, freshness, and read status. Throughline is not auditor input and never gates this call.
   - sends `event:"user_input"` to the daemon for non-short prompts.
   - on `E_UNREACHABLE`, respawns daemon once and retries.
   - on daemon `pass:false`, passes only catalog-matched tool IDs to the common host-advice projector.
@@ -129,6 +130,9 @@ Windows nativeではNode起動とproject discoveryが5秒を超える実測が�
     stdout / stderr are not reflected. Model-facing `additionalContext` is not a warning fallback.
     This contract guarantees emitted Hook output, not UI visibility on every Codex App/background surface.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
+  - after a proposal is fixed, the evaluation recorder may call Throughline `observer-read` once to
+    save separate improvement evidence. Failure records unavailable evidence only and cannot alter
+    the audit result or parent output.
 - `PreToolUse`
   - records `tool_name` as `event:"tool_used"`.
   - never calls Haiku.
