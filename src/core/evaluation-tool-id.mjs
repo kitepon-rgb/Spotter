@@ -114,6 +114,14 @@ function parseJavaScriptStringAt(source, start) {
       continue;
     }
     if (char !== quote) continue;
+    const body = raw.slice(1, -1);
+    // Windows rollouts may contain an absolute path in a generated command literal without
+    // doubling its separators (for example `cmd:"cat D:\work\...\SKILL.md"`).  Treat that
+    // command as transport text. Decoding `\b` / `\t` as JavaScript escapes would corrupt
+    // ordinary directory names such as `browser` or `tools`.
+    if (/(?:^|\s)[A-Za-z]:\\(?!\\)/u.test(body)) {
+      return { value: body, end: index + 1 };
+    }
     if (quote === '"') {
       try {
         return { value: JSON.parse(raw), end: index + 1 };
@@ -123,7 +131,6 @@ function parseJavaScriptStringAt(source, start) {
     }
     // Shell commands in Codex wrappers use ordinary single-quoted JS literals. Decode only
     // the escape forms needed by those literals; template/expression evaluation is excluded.
-    const body = raw.slice(1, -1);
     const value = body.replace(/\\(?:([\\'"bnrtfv0])|x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4}))/gu,
       (match, simple, hex, unicode) => {
         if (hex) return String.fromCodePoint(Number.parseInt(hex, 16));

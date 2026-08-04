@@ -22,7 +22,7 @@ test('evaluation report fixes proposal and adoption denominators across saved ob
     assert.match(output.join(''), /proposal rate: 4\/10 = 40%/);
     assert.match(output.join(''), /tool adoption rate: 2\/5 = 40%/);
     assert.match(output.join(''), /S=10 P=4 I=6 C=5 A=2 M=1/);
-    assert.equal(report.byProject['/projects/alpha'].S, 5);
+    assert.equal(report.byProject[fixture.alphaProjectPath].S, 5);
     assert.equal(report.byHost.claude.A, 2);
     assert.equal(report.byTool['mcp__tools__alpha'].A, 1);
   } finally { await fixture.cleanup(); }
@@ -33,7 +33,7 @@ test('evaluation cases filter saved items and case keeps both contexts in separa
   try {
     const output = [];
     const cases = await runEvaluationCommand({
-      argv: ['cases', '--outcome', 'not-adopted', '--project', '/projects/alpha', '--tool-id', 'mcp__tools__delta', '--backend', 'codex-cli', '--model', 'gpt-5.6-terra', '--spotter-version', '1.5.0', '--json'],
+      argv: ['cases', '--outcome', 'not-adopted', '--project', fixture.alphaProjectPath, '--tool-id', 'mcp__tools__delta', '--backend', 'codex-cli', '--model', 'gpt-5.6-terra', '--spotter-version', '1.5.0', '--json'],
       createStoreFn: () => fixture.store,
       writeOutput: (text) => output.push(text),
     });
@@ -84,6 +84,8 @@ test('evaluation report does not count an active turn as missing outcome', async
 
 async function createFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'spotter-evaluation-cli-'));
+  const alphaProjectPath = join(directory, 'projects', 'alpha');
+  const betaProjectPath = join(directory, 'projects', 'beta');
   const store = createEvaluationStore({ databasePath: join(directory, 'evaluation.db') });
   const close = store.close.bind(store);
   store.close = () => {};
@@ -97,20 +99,20 @@ async function createFixture() {
     auditorSeenContext: id === 'turn-1' ? 'spotter-only context' : undefined,
     observerSnapshot: id === 'turn-1' ? { turns: [{ user: 'older user', assistant: 'older assistant' }] } : undefined,
   });
-  record('turn-1', '/projects/alpha', ['mcp__tools__alpha', 'mcp__tools__beta'], 1_000);
+  record('turn-1', alphaProjectPath, ['mcp__tools__alpha', 'mcp__tools__beta'], 1_000);
   store.closeTurn({ observationId: 'turn-1', usedToolIds: ['mcp__tools__alpha', 'mcp__tools__alpha'], completedAtMs: 1_010 });
-  record('turn-2', '/projects/alpha', ['mcp__tools__gamma', 'mcp__tools__delta'], 2_000);
+  record('turn-2', alphaProjectPath, ['mcp__tools__gamma', 'mcp__tools__delta'], 2_000);
   store.closeTurn({ observationId: 'turn-2', usedToolIds: ['mcp__tools__gamma'], completedAtMs: 2_010 });
-  record('turn-3', '/projects/beta', ['mcp__tools__epsilon'], 3_000);
+  record('turn-3', betaProjectPath, ['mcp__tools__epsilon'], 3_000);
   store.closeTurn({ observationId: 'turn-3', usedToolIds: [], completedAtMs: 3_010 });
-  record('turn-4', '/projects/beta', ['mcp__tools__zeta'], 4_000);
+  record('turn-4', betaProjectPath, ['mcp__tools__zeta'], 4_000);
   store.closeTurn({ observationId: 'turn-4', usageStatus: 'incomplete', completedAtMs: 4_010 });
   for (let index = 5; index <= 10; index += 1) {
-    record(`turn-${index}`, index % 2 ? '/projects/alpha' : '/projects/beta', [], index * 1_000);
+    record(`turn-${index}`, index % 2 ? alphaProjectPath : betaProjectPath, [], index * 1_000);
     store.closeTurn({ observationId: `turn-${index}`, usedToolIds: [], completedAtMs: index * 1_000 + 10 });
   }
   return {
-    store,
+    store, alphaProjectPath,
     cleanup: async () => { close(); await rm(directory, { recursive: true, force: true }); },
   };
 }

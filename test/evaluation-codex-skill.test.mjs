@@ -49,6 +49,28 @@ test('Codex skill adoption recognizes only an exact proposed SKILL.md read', asy
   }
 });
 
+test('Codex skill adoption preserves an undoubled Windows path in an outer exec wrapper', async () => {
+  const codexHome = 'D:\\Users\\kite\\.codex';
+  const projectRoot = 'D:\\work\\project';
+  const skillPath = `${codexHome}\\plugins\\cache\\market\\browser\\1.0.0\\skills\\control\\SKILL.md`;
+  const reads = [];
+  const adopted = await canonicalizeCodexSkillReadToolIds([{
+    toolName: 'exec',
+    toolInput: `const r = await tools.exec_command({cmd:"cat ${skillPath}"});`,
+  }], {
+    proposedToolIds: ['browser:control-in-app-browser'],
+    projectRoot,
+    codexHome,
+    readFrontmatterFn: async (path) => {
+      reads.push(path);
+      return { name: 'control-in-app-browser' };
+    },
+  });
+
+  assert.deepEqual(reads, [skillPath]);
+  assert.deepEqual(adopted, ['browser:control-in-app-browser']);
+});
+
 test('Codex Stop records a proposed skill read through exec_command as adopted', async () => {
   const root = await mkdtemp(join(tmpdir(), 'spotter-codex-skill-stop-'));
   const projectRoot = join(root, 'project');
