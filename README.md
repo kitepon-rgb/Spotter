@@ -160,9 +160,11 @@ Both share the principle of **"don't rely on the primary agent to do it itself."
 
 Spotter's proposal auditor does not use Throughline. Every UserPromptSubmit
 audit runs independently of Throughline installation, configuration, freshness, or read
-failures. When Spotter emits a proposal, the evaluation recorder may call
-Throughline `observer-read` once to save separate improvement evidence. A failed
-read is recorded as `context_unavailable` and never changes auditing or parent advice.
+failures. When Spotter emits a proposal, the evaluation recorder calls Throughline
+`auditor-context` once with the proposing host's exact session ID and transcript path.
+The bounded, fresh completed turns are saved as separate improvement evidence; they are
+never auditor input. A failed read is recorded as `context_unavailable` and never changes
+auditing or parent advice.
 
 When `spotter install` resolves Throughline on PATH to an absolute executable, it
 configures this evaluation-evidence path by default. The legacy option name

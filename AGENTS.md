@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.5（2026-08-05公開）**: 提案時の評価文脈取得をproject-wide `observer-read`から
+> 提案元sessionとtranscriptへ束縛する既存`auditor-context`へ戻す。Throughline本文をauditor入力へ
+> 戻さず、評価証拠だけをexact sessionから取得する。
+
 > **v1.5.4（2026-08-05公開）**: ThroughlineをUserPromptSubmit監査の実行条件と
 > auditor入力から撤去する。Claude / Codexは現在のuser promptとhost-local catalogだけで監査し、
 > Throughline `observer-read`は提案時の評価証拠を独立取得する任意経路だけに使う。
@@ -112,6 +116,10 @@ guarantee, document the failure path covered, and add regression coverage.
 
 ## Repository Status
 
+**v1.5.5 (published 2026-08-05)**: Claude / Codexの提案時評価文脈は、UserPromptSubmit payloadの
+exact `session_id` / `host` / `transcript_path`を既存Throughline `auditor-context`へ渡して取得する。
+project全体の最新threadを返す`observer-read`は使わない。評価文脈は引き続きauditor入力へ渡さない。
+
 **v1.5.4 (published 2026-08-05)**: Claude / CodexのUserPromptSubmit監査は、
 Throughlineの導入・設定・freshness・取得成否から独立して必ず実行する。auditor入力は現在の
 user promptとhost-local catalogだけで、旧`audit:false` / recent context payloadも監査を停止・変更しない。
@@ -174,7 +182,8 @@ npm `latest`、tag / GitHub Release、このMacのregistry由来global install�
   `auditorContext.mode`やprovider statusを監査のskip / error条件にしてはならない。
 - auditorへ渡すのは現在のuser promptとhost-local catalogだけ。Throughline L2を監査入力へ混ぜず、
   legacy `audit:false` / `recent_context` / `context_status` payloadも監査を停止・変更しない。
-- 提案確定後の評価記録だけがThroughline `observer-read`を一度呼べる。失敗時は
+- 提案確定後の評価記録だけがThroughline `auditor-context`をexact `session_id` / `host` /
+  `transcript_path`で一度呼べる。失敗時は
   `context_unavailable`として保存し、監査結果、親向けtool ID、Hook successを変えない。
 - markerの既存`auditorContext`と`--auditor-context` optionは、評価証拠provider設定の互換名として
   当面維持する。disabledは評価文脈取得だけを止め、監査は止めない。

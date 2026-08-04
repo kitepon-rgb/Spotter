@@ -141,9 +141,10 @@ Windows nativeではNode起動とproject discoveryが5秒を超える実測が�
     stdout / stderr are not reflected. Model-facing `additionalContext` is not a warning fallback.
     This contract guarantees emitted Hook output, not UI visibility on every Codex App/background surface.
   - appends a `spotter.hook_event.v1` record to `.spotter/hook-events.jsonl`.
-  - after a proposal is fixed, the evaluation recorder may call Throughline `observer-read` once to
-    save separate improvement evidence. Failure records unavailable evidence only and cannot alter
-    the audit result or parent output.
+  - after a proposal is fixed, the evaluation recorder calls Throughline `auditor-context` once with
+    the exact proposing `session_id`, `host`, and `transcript_path`. It saves only the returned fresh,
+    bounded completed turns as separate improvement evidence. The context is never auditor input;
+    acquisition failure cannot alter the audit result or parent output.
 - `PreToolUse`
   - records `tool_name` as `event:"tool_used"`.
   - never calls Haiku.

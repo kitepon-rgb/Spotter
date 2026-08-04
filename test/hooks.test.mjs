@@ -25,7 +25,7 @@ const TEST_EVALUATION_STORE = { recordTurn() {}, close() {} };
 async function runUserPrompt(options = {}) {
   return runUserPromptImpl({
     createEvaluationStoreFn: () => TEST_EVALUATION_STORE,
-    loadEvaluationObserverContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
+    loadEvaluationContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
     ...options,
   });
 }
@@ -1275,10 +1275,10 @@ test('runPreToolUse: daemon error records degraded and allows the tool (no exit-
   }
 });
 
-test('runUserPrompt: records only safe projected proposal IDs with one proposal-time observer snapshot', async () => {
+test('runUserPrompt: records only safe projected proposal IDs with one proposal-time exact-session context', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-evaluation-proposal-'));
   const turns = [];
-  const observerCalls = [];
+  const contextCalls = [];
   try {
     await mkdir(join(project, '.spotter'), { recursive: true });
     await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
@@ -1292,16 +1292,17 @@ test('runUserPrompt: records only safe projected proposal IDs with one proposal-
         evaluation_meta: { backend: 'codex-cli', model: 'gpt-test' },
       } }),
       createEvaluationStoreFn: () => ({ recordTurn: (turn) => turns.push(turn), close() {} }),
-      loadEvaluationObserverContextFn: async (args) => {
-        observerCalls.push(args);
-        return { status: 'context_available', snapshot: { schema: 'throughline.observer_read.v1', status: 'snapshot' } };
+      loadEvaluationContextFn: async (args) => {
+        contextCalls.push(args);
+        return { status: 'context_available', snapshot: { schema: 'throughline.auditor_context.v1', status: 'fresh' } };
       },
     });
-    assert.equal(observerCalls.length, 1);
-    assert.equal(observerCalls[0].recordedAtMs, 123456789);
-    assert.equal(observerCalls[0].host, 'claude');
-    assert.equal(observerCalls[0].sessionId, 's-evaluation');
-    assert.equal('config' in observerCalls[0], false, 'observer-read resolves its own config independently');
+    assert.equal(contextCalls.length, 1);
+    assert.equal(contextCalls[0].recordedAtMs, 123456789);
+    assert.equal(contextCalls[0].host, 'claude');
+    assert.equal(contextCalls[0].sessionId, 's-evaluation');
+    assert.equal(contextCalls[0].transcriptPath, '/tmp/evaluation.jsonl');
+    assert.equal('config' in contextCalls[0], false, 'auditor-context resolves its own config independently');
     assert.equal(turns.length, 1);
     assert.deepEqual(turns[0].proposedToolIds, ['mcp__caveat__caveat_search']);
     assert.equal(turns[0].auditStatus, 'success');
@@ -1316,7 +1317,7 @@ test('runUserPrompt: records only safe projected proposal IDs with one proposal-
   }
 });
 
-test('runUserPrompt: observer-read failure never suppresses the completed audit or projected advice', async () => {
+test('runUserPrompt: evaluation auditor-context failure never suppresses the completed audit or projected advice', async () => {
   const project = await mkdtemp(join(tmpdir(), 'spotter-evaluation-observer-failure-'));
   const sentinel = 'OBSERVER_READ_RAW_SENTINEL';
   try {
@@ -1326,7 +1327,7 @@ test('runUserPrompt: observer-read failure never suppresses the completed audit 
     let stderr = '';
     const events = [];
     await runUserPrompt({
-      readInput: async () => ({ session_id: 's-observer-failure', cwd: project, prompt: '過去の罠を確認して' }),
+      readInput: async () => ({ session_id: 's-observer-failure', cwd: project, prompt: '過去の罠を確認して', transcript_path: '/tmp/observer-failure.jsonl' }),
       sendRequestFn: async () => ({
         ok: true,
         result: {
@@ -1334,7 +1335,7 @@ test('runUserPrompt: observer-read failure never suppresses the completed audit 
           missing_tools: [{ name: 'mcp__caveat__caveat_search', reason: 'raw-auditor-reason' }],
         },
       }),
-      loadEvaluationObserverContextFn: async () => { throw new Error(sentinel); },
+      loadEvaluationContextFn: async () => { throw new Error(sentinel); },
       recordHookEventFn: async ({ event }) => { events.push(event); },
       writeOutput: (text) => { output += text; },
       writeError: (text) => { stderr += text; },

@@ -3,10 +3,11 @@
 ## 0. 状態
 
 - 状態: **実装・受入完了**
-- 現行補正: v1.5.4でThroughlineを監査条件・監査入力から撤去。評価snapshot経路だけを維持した。
+- 現行補正: v1.5.4でThroughlineを監査条件・監査入力から撤去。v1.5.5で評価文脈を
+  exact-session `auditor-context`へ戻した。
 - 工程正本: Lattice plan `proposal-adoption-eval`。本文書は目的、設計判断、非目標、受入条件を持つ。
 - 実装対象repo: `/Users/kite/Developer/Spotter`
-- 外部依存: Throughlineの既存read-only I/F `throughline observer-read`。Throughline側は変更しない。
+- 外部依存: Throughlineの既存read-only I/F `throughline auditor-context`。Throughline側は変更しない。
 - 対象範囲: 各端末内にあるproject横断の観測と集計。評価store自体はnetwork送信しない。
   後続のread-only dashboardは[`10_spotter-dashboard-plan.md`](10_spotter-dashboard-plan.md)で別に実装した。
 - 実装開始裁定: 2026-08-04。Latticeのready frontierとPhase gateに従って実装・検証した。
@@ -44,16 +45,22 @@
 新しいThroughline API、turn ID、DB schemaは作らない。proposalが確定した時点で、既存I/Fを1回使う。
 
 ```text
-throughline observer-read \
+throughline auditor-context \
+  --session <exact-session-id> \
   --project <canonical-absolute-project> \
-  --limit 10 \
+  --host <claude|codex> \
+  --transcript <host-transcript-or-rollout> \
+  --recent-turns 2 \
+  --max-body-chars 600 \
+  --max-total-chars 4000 \
   --json
 ```
 
-`observer-read`のsnapshotは、呼出時点で完了済みのThroughlineログを返す。主に次を保存する。
+`auditor-context`はhost transcriptから提案元sessionの直前完了pairを特定し、Throughline側の同じ
+session / pairへ照合したfreshなbounded contextだけを返す。主に次を保存する。
 
-- `status`, `host`, `thread_sha256`, `throughCursor`, `historyTruncated`。
-- `turns[].completed_at`, `user`, `assistant`, `truncated`。
+- `schema`, `status`, `reason`, `stats`。
+- `turns[].originSessionId`, `turnNumber`, `user`, `assistant`, `createdAt`。
 
 呼出位置は、auditor結果をsafe projectorへ通してproposal tool IDsが確定した後、親へhook結果を返す前。
 この時点では親AIの当該turnはまだ始まっていないため、返る`turns[]`は提案時点の独立した前文脈になる。
@@ -63,13 +70,10 @@ throughline observer-read \
 履歴文脈は渡さない。互換列`auditor_seen_context`は`null`を保存する。これにより非採用caseでは、
 「現在のrequestだけで出した提案」と「同時点でThroughlineログI/Fから得られた前文脈」を比較できる。
 
-`observer-read`が`projection_pending`、`ambiguous_parent`、`resync_required`またはerrorなら、proposalと
-採用結果の記録は続け、評価文脈だけ`context_unavailable`とする。retry、定期回収、別経路fallbackは
-行わない。snapshotの`truncated`と`historyTruncated`もそのままcaseへ表示する。
-
-`observer-read`はproject内のthreadを直接指定できないため、返却された`host`と`thread_sha256`を
-提案元sessionの期待値へ照合する。別host / sessionならsnapshotを破棄して`context_unavailable`とし、
-別threadの文脈を提案時文脈として保存しない。目的threadの再問い合わせは行わない。
+`auditor-context`がfresh以外またはerrorなら、proposalと採用結果の記録は続け、評価文脈だけ
+`context_unavailable`とする。retry、定期回収、別経路fallbackは行わない。project-wide latest threadを
+読む`observer-read`は使わない。exact sessionとhost transcriptを入口で指定し、別threadの文脈を
+提案時文脈として保存しない。
 
 この計画では、cursorを使った後続delta回収やfinal assistant responseの取得は行わない。「結果」は
 Spotterが既に観測できる、提案toolが同じturnで使われたかどうかである。
@@ -81,8 +85,8 @@ UserPromptSubmit
   -> observation IDと記録時刻を生成
   -> 既存auditorを実行
   -> safe projector後の実提示tool IDを確定
-  -> proposalがある時だけThroughline observer-read snapshotを1回取得
-  -> local DBへdecision / proposal / request / 任意のobserver snapshotを記録
+  -> proposalがある時だけThroughline auditor-contextをexact sessionで1回取得
+  -> local DBへdecision / proposal / request / 任意の評価文脈を記録
 
 同じturnのtool invocation
   -> 既存usedToolsへcanonical tool IDを蓄積
@@ -222,7 +226,8 @@ Phase境界であり、進捗台帳ではない。
 - 新規`src/core/evaluation-context.mjs`
 - 既存`src/core/auditor-context.mjs`のThroughline command設定を再利用
 
-SQLite 2 tableと、既存`observer-read` JSONを読むadapterを実装する。Throughline repoは変更しない。
+SQLite 2 tableと、既存`loadAuditorContext`を評価証拠専用に再利用するadapterを実装する。
+Throughline repoは変更しない。
 
 ### Phase 2 — Claude / Codex lifecycle
 
@@ -252,7 +257,7 @@ reportとcaseは保存済みDBだけを読み、Throughlineへ再問い合わせ
 
 - focused testを通す。
 - 別projectでClaudeとCodexを各1turnずつ実行する。
-- 実際の非採用caseを各hostで1件開き、request、任意のobserver snapshot、proposal、usedToolsを確認する。
+- 実際の非採用caseを各hostで1件開き、request、任意のexact-session評価文脈、proposal、usedToolsを確認する。
 - 2projectのfixtureで横断reportを確認する。
 - 既存hook出力とauditor挙動が変わっていないことを確認する。
 - install後にbaseline収集を開始する。
@@ -273,7 +278,7 @@ live確認で作る。
 - Stop早期returnと二重Stopでも同じrowを正しく1回だけ閉じる。
 - Codex sessionの最新open rowだけをStopで閉じる。
 - MCP / Skill / Agentのcanonical ID変換。
-- `observer-read`のsnapshot、truncated、context unavailable各responseの保存。
+- `auditor-context`のfresh bounded contextとcontext unavailable responseの保存。
 - case表示でSpotter入力とThroughline snapshotを混ぜない。
 - 2つのprojectから同じSQLiteへ並行writeできる。
 
@@ -299,7 +304,7 @@ live確認で作る。
 
 - 全project、project別、tool別で提案率とtool採用率を再計算できる。
 - 非採用caseから、Spotterが見た文脈、既存Throughline I/Fの別文脈、提案tool、実使用toolを読める。
-- Throughlineは既存`observer-read`だけを使い、新規I/F、turn ID、background収集へ依存しない。
+- Throughlineは既存`auditor-context`だけを使い、新規I/F、turn ID、background収集へ依存しない。
 - measurement追加が既存の提案内容、親向け文面、model、prompt、runtime contextを変えない。
 
 ## 10. 受入結果

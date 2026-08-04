@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.5 — 2026-08-05
+
+- **提案時文脈をexact sessionへ戻した。** 評価記録がproject全体の最新threadを読む
+  `observer-read`を誤って使っていた経路を撤去し、既存のThroughline `auditor-context`へ一本化した。
+  Claude / CodexのUserPromptSubmit hookから提案元の`session_id`、`host`、`transcript_path`を渡し、
+  提案直前の完了turnを非採用caseへ保存できる。
+- **重複adapterを廃止。** 評価専用readerは、すでにfreshness・本文上限・exact-session照合を持つ
+  `loadAuditorContext`を再利用する。Throughline本文をauditor入力へ戻さず、監査と評価証拠の分離は維持する。
+- **検証。** 既存adapterへの引数接続とClaude / Codex hookのfocused testを通過した。
+
 ## 1.5.4 — 2026-08-05
 
 - **Throughlineを提案監査の実行条件から撤去。** Claude / CodexのUserPromptSubmitは、

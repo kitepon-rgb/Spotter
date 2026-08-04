@@ -32,7 +32,7 @@ import {
 } from '../core/hook-event-log.mjs';
 import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
-import { loadEvaluationObserverContext } from '../core/evaluation-context.mjs';
+import { loadEvaluationContext } from '../core/evaluation-context.mjs';
 import {
   canonicalizeCodexNestedMcpToolIds,
   canonicalizeCodexSkillReadToolIds,
@@ -130,7 +130,7 @@ export async function runCodexUserPromptSubmitHook({
   writeError = (text) => process.stderr.write(text),
   runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
   createEvaluationStoreFn = createEvaluationStore,
-  loadEvaluationObserverContextFn = loadEvaluationObserverContext,
+  loadEvaluationContextFn = loadEvaluationContext,
   randomUUIDFn = randomUUID,
   now = () => Date.now(),
 } = {}) {
@@ -150,15 +150,16 @@ export async function runCodexUserPromptSubmitHook({
       return;
     }
     const proposals = canonicalizeProposedToolIds(proposedToolIds);
-    let observerContext = { status: 'not_requested', snapshot: null };
+    let evaluationContext = { status: 'not_requested', snapshot: null };
     let proposedAtMs = recordedAtMs;
     try {
       if (auditStatus === 'success' && proposals.resolvedToolIds.length > 0) {
         proposedAtMs = now();
-        observerContext = await loadEvaluationObserverContextFn({
+        evaluationContext = await loadEvaluationContextFn({
           projectRoot,
           host: 'codex',
           sessionId,
+          transcriptPath: input.transcript_path,
           recordedAtMs: proposedAtMs,
         });
       }
@@ -174,8 +175,8 @@ export async function runCodexUserPromptSubmitHook({
           auditStatus,
           requestText: prompt,
           auditorSeenContext: null,
-          observerContextStatus: observerContext.status,
-          observerSnapshot: observerContext.snapshot,
+          observerContextStatus: evaluationContext.status,
+          observerSnapshot: evaluationContext.snapshot,
           proposedToolIds: proposals.resolvedToolIds,
           backend,
           model,

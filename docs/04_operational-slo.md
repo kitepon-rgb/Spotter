@@ -54,15 +54,15 @@ p50 4.024秒 / p95 4.361秒だった。事後的なtimeout感度は3秒で23/24�
 - Stop欠落や利用記録不全は`outcome_missing`として率の母数から分離する。
 - 呼び出されなかったitemは`not_adopted`と呼び、「不適切」「役に立たなかった」とは解釈しない。
 
-非採用caseではrequest、提案tool、利用tool、提案時の任意Throughline snapshotを改善材料として表示する。
+非採用caseではrequest、提案tool、利用tool、提案元exact sessionの任意Throughline評価文脈を改善材料として表示する。
 その情報から追加すべき監査文脈を検討できるが、現行の率自体へ人手ラベルは混ぜない。
 
 ## Throughline評価文脈
 
 UserPromptSubmit監査はThroughlineの導入・設定・freshness・取得成否から独立して実行する。
-Throughline `observer-read`は提案が出た時の改善用証拠を一度だけ取得する任意経路であり、失敗時は
-`context_unavailable`として記録するだけで監査結果や親への助言を変更しない。監査coverageのSLOへ
-Throughline statusを混ぜない。
+Throughline `auditor-context`は提案が出た時、提案元のexact `session_id` / `host` / `transcript_path`から
+直前の完了turnを一度だけ取得する評価証拠経路である。失敗時は`context_unavailable`として記録するだけで
+監査結果や親への助言を変更しない。監査coverageのSLOへThroughline statusを混ぜない。
 
 ## 2026-07-12 初期スナップショット
 

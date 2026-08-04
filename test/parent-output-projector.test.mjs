@@ -108,7 +108,7 @@ test('Claude and Codex UserPromptSubmit project identical advice and exclude aud
       loadAuditorContextFn: async () => freshContext,
       sendRequestFn: async () => ({ ok: true, result }),
       createEvaluationStoreFn: () => NOOP_EVALUATION_STORE,
-      loadEvaluationObserverContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
+      loadEvaluationContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
       writeOutput: (text) => { claudeOutput += text; },
     });
     let codexOutput = '';
@@ -126,7 +126,7 @@ test('Claude and Codex UserPromptSubmit project identical advice and exclude aud
         }),
       }),
       createEvaluationStoreFn: () => NOOP_EVALUATION_STORE,
-      loadEvaluationObserverContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
+      loadEvaluationContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
       writeOutput: (text) => { codexOutput += text; },
     });
     const claudeAdvice = JSON.parse(claudeOutput).hookSpecificOutput.additionalContext;

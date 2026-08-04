@@ -571,10 +571,10 @@ test('Codex evaluation lifecycle: records projected proposal and closes the late
   const project = await makeProject();
   const databasePath = join(project, 'evaluation.db');
   const evaluationDeps = { createEvaluationStoreFn: () => createEvaluationStore({ databasePath }) };
-  const observerSnapshot = {
-    schema: 'throughline.observer_read.v1', status: 'snapshot', host: 'codex',
-    thread_sha256: 'a'.repeat(64), turns: [], historyTruncated: false,
-    afterCursor: null, throughCursor: null, page: { complete: true, nextToken: null },
+  const evaluationSnapshot = {
+    schema: 'throughline.auditor_context.v1', status: 'fresh',
+    turns: [{ originSessionId: 'codex:evaluation-session', turnNumber: 1, user: '依頼', assistant: '応答', createdAt: 1 }],
+    stats: { requestedTurns: 2, returnedTurns: 1, chars: 4, truncated: false },
   };
   try {
     await runCodexUserPromptSubmitHook({
@@ -594,13 +594,14 @@ test('Codex evaluation lifecycle: records projected proposal and closes the late
           meta: { backend: 'codex-cli', modelSelection: { effectiveModel: 'gpt-test' } },
         }),
       }),
-      loadEvaluationObserverContextFn: async (args) => {
-        const { recordedAtMs, host, sessionId } = args;
+      loadEvaluationContextFn: async (args) => {
+        const { recordedAtMs, host, sessionId, transcriptPath } = args;
         assert.equal(Object.hasOwn(args, 'config'), false);
         assert.equal(recordedAtMs, 1500);
         assert.equal(host, 'codex');
         assert.equal(sessionId, 'evaluation-session');
-        return { status: 'context_available', recordedAtMs, snapshot: observerSnapshot };
+        assert.equal(transcriptPath, '/tmp/evaluation.jsonl');
+        return { status: 'context_available', recordedAtMs, snapshot: evaluationSnapshot };
       },
     });
 
@@ -643,15 +644,15 @@ test('Codex evaluation lifecycle: records projected proposal and closes the late
   }
 });
 
-test('runCodexUserPromptSubmitHook: evaluation observer-read failure does not affect audit or projected advice', async () => {
+test('runCodexUserPromptSubmitHook: evaluation auditor-context failure does not affect audit or projected advice', async () => {
   const project = await makeProject();
   const out = [];
   const errOut = [];
   const events = [];
-  let observerReads = 0;
+  let contextReads = 0;
   try {
     await runCodexUserPromptSubmitHook({
-      readInput: async () => ({ cwd: project, session_id: 'observer-read-error', prompt: '既知の罠を確認して' }),
+      readInput: async () => ({ cwd: project, session_id: 'auditor-context-error', transcript_path: '/tmp/auditor-context-error.jsonl', prompt: '既知の罠を確認して' }),
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search traps.' }],
       createAuditorBackendFn: () => ({
         name: 'codex-cli',
@@ -662,12 +663,13 @@ test('runCodexUserPromptSubmitHook: evaluation observer-read failure does not af
           meta: { backend: 'codex-cli' },
         }),
       }),
-      loadEvaluationObserverContextFn: async (args) => {
-        observerReads += 1;
+      loadEvaluationContextFn: async (args) => {
+        contextReads += 1;
         assert.equal(Object.hasOwn(args, 'config'), false);
-        throw new Error('observer-read unavailable');
+        assert.equal(args.transcriptPath, '/tmp/auditor-context-error.jsonl');
+        throw new Error('auditor-context unavailable');
       },
-      createEvaluationStoreFn: () => { throw new Error('store must not open after observer-read failure'); },
+      createEvaluationStoreFn: () => { throw new Error('store must not open after auditor-context failure'); },
       recordHookEventFn: async ({ event }) => { events.push(event); },
       writeOutput: (text) => out.push(text),
       writeError: (text) => errOut.push(text),
@@ -675,10 +677,10 @@ test('runCodexUserPromptSubmitHook: evaluation observer-read failure does not af
 
     const output = JSON.parse(out.join(''));
     assert.match(output.hookSpecificOutput.additionalContext, /mcp__caveat__caveat_search/);
-    assert.equal(observerReads, 1);
+    assert.equal(contextReads, 1);
     assert.equal(events[0].status, 'success');
     assert.match(errOut.join(''), /評価記録に失敗/);
-    assert.doesNotMatch(out.join('') + errOut.join(''), /observer-read unavailable/);
+    assert.doesNotMatch(out.join('') + errOut.join(''), /auditor-context unavailable/);
   } finally {
     await rm(project, { recursive: true, force: true });
   }

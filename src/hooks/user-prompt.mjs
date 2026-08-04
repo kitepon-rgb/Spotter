@@ -27,7 +27,7 @@ import { discardLegacyPending } from './pending-context.mjs';
 import { projectBackendFailure, projectParentAdvice, projectToolIds } from './parent-output-projector.mjs';
 import { randomUUID } from 'node:crypto';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
-import { loadEvaluationObserverContext } from '../core/evaluation-context.mjs';
+import { loadEvaluationContext } from '../core/evaluation-context.mjs';
 import { version } from '../version.mjs';
 
 const TIMEOUT_MS = 50_000;
@@ -39,7 +39,7 @@ export async function runUserPrompt({
   discardLegacyPendingFn = discardLegacyPending,
   recordHookEventFn = recordClaudeHookEvent,
   createEvaluationStoreFn = createEvaluationStore,
-  loadEvaluationObserverContextFn = loadEvaluationObserverContext,
+  loadEvaluationContextFn = loadEvaluationContext,
   randomUUIDFn = randomUUID,
   spotterVersion = version,
   now = Date.now,
@@ -65,11 +65,12 @@ export async function runUserPrompt({
         ? projectToolIds(Array.isArray(result?.missing_tools) ? result.missing_tools.map((entry) => entry?.name) : [])
         : [];
       const proposalRecordedAtMs = proposedToolIds.length > 0 ? now() : null;
-      const observer = proposedToolIds.length > 0
-        ? await loadEvaluationObserverContextFn({
+      const evaluationContext = proposedToolIds.length > 0
+        ? await loadEvaluationContextFn({
           projectRoot,
           host: 'claude',
           sessionId,
+          transcriptPath: input.transcript_path,
           recordedAtMs: proposalRecordedAtMs,
         })
         : { status: 'not_requested', snapshot: null };
@@ -87,8 +88,8 @@ export async function runUserPrompt({
           auditStatus,
           requestText: prompt,
           auditorSeenContext: null,
-          observerContextStatus: observer.status,
-          observerSnapshot: observer.snapshot,
+          observerContextStatus: evaluationContext.status,
+          observerSnapshot: evaluationContext.snapshot,
           proposedToolIds,
           backend: result?.evaluation_meta?.backend ?? null,
           model: result?.evaluation_meta?.model ?? null,
