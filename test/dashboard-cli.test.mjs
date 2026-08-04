@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import { runDashboardCommand } from '../src/cli/dashboard-cmd.mjs';
 
@@ -23,7 +24,7 @@ test('device command binds a local server with explicit identity and database', 
     writeOutput(text) { output += text; },
   });
 
-  assert.deepEqual(factoryOptions, { deviceId: 'mac', deviceName: 'Mac', databasePath: '/work/fixture.db' });
+  assert.deepEqual(factoryOptions, { deviceId: 'mac', deviceName: 'Mac', databasePath: resolve('/work', 'fixture.db') });
   assert.deepEqual(server.address(), { address: '127.0.0.1', family: 'IPv4', port: 54000 });
   assert.match(output, /dashboard device listening/);
 });
@@ -43,7 +44,7 @@ test('hub command reads the static device map once and starts the hub server', a
     writeOutput() {},
   });
 
-  assert.equal(readPath, '/work/hub.json');
+  assert.equal(readPath, resolve('/work', 'hub.json'));
   assert.deepEqual(factoryOptions, config);
 });
 
