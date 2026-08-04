@@ -1,0 +1,30 @@
+{
+  "schema": "lattice.todo_witness_set.v3",
+  "project_id": "spotter",
+  "plan_key": "spotter-device-dashboard",
+  "capacity": {"executors": 3},
+  "sensor_query_set": {
+    "queries": [
+      {"id":"q-d1","operation":"affected","target":"src/dashboard/model.mjs"},
+      {"id":"q-d2","operation":"affected","target":"src/dashboard/render.mjs"},
+      {"id":"q-d3","operation":"affected","target":"src/dashboard/device-server.mjs"},
+      {"id":"q-d4","operation":"affected","target":"src/dashboard/hub-server.mjs"},
+      {"id":"q-d5","operation":"affected","target":"src/cli/dashboard-cmd.mjs"},
+      {"id":"q-d6","operation":"affected","target":"ops/dashboard"},
+      {"id":"q-d7","operation":"affected","target":"package.json"},
+      {"id":"q-d8","operation":"affected","target":"docs/11_dashboard-operations.md"},
+      {"id":"q-status","operation":"status"}
+    ]
+  },
+  "manual_witness": {
+    "D1-model": {"reads":["src/core/evaluation-store.mjs"],"writes":["src/dashboard/model.mjs","test/dashboard-model.test.mjs"],"owns":[{"kind":"path","target":"src/dashboard/model.mjs","creates":true},{"kind":"path","target":"test/dashboard-model.test.mjs","creates":true}],"resources":[],"state_effects":[],"unknowns":[],"affected_tests":["test/dashboard-model.test.mjs"],"sensor_provenance":{"queries":[{"query_id":"q-d1","expect":{"kind":"affected","path":"src/dashboard/model.mjs"}}]}},
+    "D2-render": {"reads":["docs/10_spotter-dashboard-plan.md"],"writes":["src/dashboard/render.mjs","test/dashboard-render.test.mjs"],"owns":[{"kind":"path","target":"src/dashboard/render.mjs","creates":true},{"kind":"path","target":"test/dashboard-render.test.mjs","creates":true}],"resources":[],"state_effects":[],"unknowns":[],"affected_tests":["test/dashboard-render.test.mjs"],"sensor_provenance":{"queries":[{"query_id":"q-d2","expect":{"kind":"affected","path":"src/dashboard/render.mjs"}}]}},
+    "D3-device": {"reads":["src/dashboard/model.mjs","src/dashboard/render.mjs"],"writes":["src/dashboard/device-server.mjs","test/dashboard-device-server.test.mjs"],"owns":[{"kind":"path","target":"src/dashboard/device-server.mjs","creates":true},{"kind":"path","target":"test/dashboard-device-server.test.mjs","creates":true}],"resources":[],"state_effects":[],"unknowns":[],"affected_tests":["test/dashboard-device-server.test.mjs"],"sensor_provenance":{"queries":[{"query_id":"q-d3","expect":{"kind":"affected","path":"src/dashboard/device-server.mjs"}}]}},
+    "D4-hub": {"reads":["src/dashboard/render.mjs"],"writes":["src/dashboard/hub-server.mjs","test/dashboard-hub-server.test.mjs"],"owns":[{"kind":"path","target":"src/dashboard/hub-server.mjs","creates":true},{"kind":"path","target":"test/dashboard-hub-server.test.mjs","creates":true}],"resources":[],"state_effects":[],"unknowns":[],"affected_tests":["test/dashboard-hub-server.test.mjs"],"sensor_provenance":{"queries":[{"query_id":"q-d4","expect":{"kind":"affected","path":"src/dashboard/hub-server.mjs"}}]}},
+    "D5-cli": {"reads":["src/dashboard/device-server.mjs","src/dashboard/hub-server.mjs"],"writes":["src/cli/dashboard-cmd.mjs","bin/spotter.mjs","test/dashboard-cli.test.mjs"],"owns":[{"kind":"path","target":"bin/spotter.mjs"},{"kind":"path","target":"src/cli/dashboard-cmd.mjs","creates":true},{"kind":"path","target":"test/dashboard-cli.test.mjs","creates":true}],"resources":[],"state_effects":[],"unknowns":[],"affected_tests":["test/dashboard-cli.test.mjs"],"sensor_provenance":{"queries":[{"query_id":"q-d5","expect":{"kind":"affected","path":"src/cli/dashboard-cmd.mjs"}}]}},
+    "D6-ops": {"reads":["docs/10_spotter-dashboard-plan.md"],"writes":["ops/dashboard","docs/11_dashboard-operations.md"],"owns":[{"kind":"path","target":"docs/11_dashboard-operations.md","creates":true},{"kind":"path","target":"ops/dashboard","creates":true}],"resources":[],"state_effects":[],"unknowns":[],"affected_tests":[],"sensor_provenance":{"queries":[{"query_id":"q-d6","expect":{"kind":"affected","path":"ops/dashboard"}}]}},
+    "D7-release": {"reads":["src/dashboard","ops/dashboard"],"writes":["package.json","package-lock.json","README.md","CHANGELOG.md","AGENTS.md"],"owns":[{"kind":"path","target":"AGENTS.md"},{"kind":"path","target":"CHANGELOG.md"},{"kind":"path","target":"README.md"},{"kind":"path","target":"package-lock.json"},{"kind":"path","target":"package.json"}],"resources":["git-origin-main","github-release","npm-claude-spotter"],"state_effects":[],"unknowns":[],"affected_tests":[],"sensor_provenance":{"queries":[{"query_id":"q-d7","expect":{"kind":"affected","path":"package.json"}}]}},
+    "D8-public": {"reads":["docs/11_dashboard-operations.md"],"writes":[],"owns":[],"resources":["cloudflare-spotter","four-host-services","main-server-caddy"],"state_effects":[],"unknowns":[],"affected_tests":[],"sensor_provenance":{"queries":[{"query_id":"q-d8","expect":{"kind":"affected","path":"docs/11_dashboard-operations.md"}}]}}
+  },
+  "witness_set_digest": "660aa3bbc90d0e6c94621da85e232e01fadb9ba95764950d79382b11091ef2b1"
+}
