@@ -6,7 +6,8 @@
 
 > **撤回（2026-08-05）**: Throughlineのfresh文脈を監査AI呼出しの必須条件にした設計は、
 > 独立監査を停止させる重大回帰だった。v1.5.4以降、UserPromptSubmit監査はThroughlineから完全に
-> 独立して実行する。Throughlineは提案時の改善用observer evidenceを記録する任意経路だけに使い、
+> 独立して実行する。v1.5.5以降、Throughlineは提案元exact sessionの評価文脈を既存
+> `auditor-context`から記録する任意経路だけに使い、
 > disabled / stale / unavailable / errorのいずれも監査をskipまたはerrorにしない。
 
 > 以下はv1.4.20〜v1.4.21当時の設計・検証記録である。「fresh以外では監査AIを呼ばない」などの

@@ -1,5 +1,9 @@
 # ADR 0001 — 提案採用観測をLattice工程で実装する
 
+> **v1.5.5補正**: 本ADRの`observer-read`採用は撤回した。評価文脈は既存Throughline
+> `auditor-context`へ提案元のexact sessionとtranscriptを渡して取得する。SQLite schemaと
+> 監査入力からの分離は維持する。
+
 - Status: Accepted
 - Date: 2026-08-04
 

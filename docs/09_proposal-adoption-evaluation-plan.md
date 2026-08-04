@@ -126,7 +126,8 @@ WAL、bounded busy timeoutを使う。retry worker、reconciliation daemon、常
 - `outcome`: `open | adopted | not_adopted | outcome_missing`。
 
 passも`evaluation_turns`へ1行記録するがitemは0件とする。これが提案率の分母`S`になる。
-`request_text`、`auditor_seen_context`、observer snapshotは、改善分析に必要なproposal turnだけ保存する。
+`request_text`、`auditor_seen_context`、Throughline評価文脈（互換列`observer_snapshot_json`）は、
+改善分析に必要なproposal turnだけ保存する。
 
 監査失敗は`audit_status=error`として件数を確認できるようにするが`S`へは入れない。DB記録失敗は
 既存の監査結果を書き換えず、stderrへ1回明示して終える。後追い修復はしない。

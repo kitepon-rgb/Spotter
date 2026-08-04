@@ -159,9 +159,9 @@ flowchart LR
 ### Throughlineの提案時評価文脈（任意）
 
 Spotterの提案AIはThroughlineを使わず、Throughlineの導入・設定・freshness・取得成否に関係なく
-UserPromptSubmitごとに監査します。Throughlineは、提案が出た時に改善分析用の別文脈を
-`observer-read`で一度だけ記録する任意経路です。取得できなくても`context_unavailable`として記録するだけで、
-監査や親への助言には影響しません。
+UserPromptSubmitごとに監査します。提案が出た時だけ、改善分析用の別文脈としてThroughline
+`auditor-context`を提案元のexact sessionとtranscriptで一度だけ呼びます。返されたfreshな直前完了turnは
+監査入力と混ぜずに保存します。取得できなくても`context_unavailable`として記録するだけで、監査や親への助言には影響しません。
 
 `spotter install`がPATH上のThroughlineを絶対パスへ解決できる場合、この評価証拠の取得経路を既定で設定します。
 既存互換の`--auditor-context`名はmarker設定に残っていますが、監査のON/OFFは制御しません。
@@ -189,7 +189,7 @@ spotter install -y --auditor-context throughline `
 ```
 
 `spotter doctor`はこの経路を`evaluation context`として表示し、command / argsや会話本文は表示しません。
-observer snapshotは端末内の評価SQLiteにだけ保存され、network送信、retry、background回収は行いません。
+評価文脈は端末内の評価SQLiteにだけ保存され、network送信、retry、background回収は行いません。
 
 ## よく使うコマンド
 

@@ -1,5 +1,8 @@
 # Throughline監査ゲート撤去 — v1.5.4
 
+> v1.5.5で評価証拠readerだけを`observer-read`からexact-session `auditor-context`へ変更した。
+> Throughlineを監査条件・監査入力にしない本evidenceの結論は維持する。
+
 - 修正commit: `047cac34780738b794d59d6aae9cb77925a41e63`
 - 公開: npm `claude-spotter@1.5.4`、git tag / GitHub Release `v1.5.4`
 - 監査入力: Claude / Codexとも現在のユーザー入力とhost-local tool catalogだけを使用する
