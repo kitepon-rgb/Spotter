@@ -3,7 +3,8 @@
 この文書は Phase 1a の contract capture。Codex adapter を足す前に、Claude-first の
 既存動作を変えないための実装契約を短く固定する。
 
-正本は `CLAUDE.md`。ここは実装時に参照する checklist と test 対応表。
+正本は `AGENTS.md`。`CLAUDE.md`は`@AGENTS.md`だけを読むimport入口。ここは実装時に参照する
+checklist と test 対応表。
 
 現役文書:
 

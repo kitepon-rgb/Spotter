@@ -10,27 +10,30 @@ Spotter v1.4.28（公開済み、2026-07-21）以後の未完事項だけを記�
 - 解決した項目は本文へ残さず、CHANGELOGまたは完了計画へ移す。
 - P0は現在のrollout判断、P1は次の運用窓、P2は既知だが未発生のplatform固有リスク。
 
-## P0 — Throughline文脈default-onの効果測定
+## P0 — 提案採用のproject横断観測
 
-v1.4.21で、Throughlineを解決できるproject installは監査文脈が既定ONになった。旧既定disabledは
-再install時に移行し、明示OFFは`origin:explicit`として維持する。fresh以外では監査AIを呼ばず、
-親へは検証済みtool ID由来の固定助言だけを返す。
+現行`spotter.hook_event.v1`は提案tool IDを記録できるが、session/turn、実配送、同一turnの
+利用tool一覧を持たない。このため、提案toolの採用確率も、非採用caseの提案時文脈も正確に復元できない。
 
 ### 完了条件
 
-- 7日以上かつfresh監査30件以上
-- 期待finding 10件以上、期待pass 10件以上
-- 人手ラベル: `妥当 / 過検出 / 見逃し / context不足`
-- `stale率 / connector latency / 過検出 / 見逃し`を集計
-- L2本文は評価ログへ保存しない
+- 提案率 = 1件以上emitした成功UserPromptSubmit数 / 成功UserPromptSubmit数
+- tool採用率 = 同一turnで呼び出されたemit済みtool item数 / outcome確定済みemit item数
+- outcome未確定itemを非採用へ混ぜず、実数を併記
+- project、tool、host別に集計
+- `not_adopted` caseを、Spotterが見た文脈と既存`observer-read` snapshotを分けてdrilldown可能
+- Throughlineに新しいI/F、turn ID、background collectorを追加しない
+- instrumentation中は現行runtime context、model、prompt、projectorを変更しない
 
 ### 次の行動
 
-default-onは確定済みで、母数到達後にON/OFFを再審査しない。過検出・見逃しがあれば精度改善ToDoを
-起票し、なければ測定完了として閉じる。`spotter install -y --auditor-context disabled`はproject所有者の
-明示opt-out機能として維持する。
+Lattice plan `proposal-adoption-eval`を工程正本として実装中。
+[`09_proposal-adoption-evaluation-plan.md`](09_proposal-adoption-evaluation-plan.md)の設計に従い、
+proposal時刻と、その時点の既存Throughline `observer-read` snapshotをSpotterへ記録する。
+非採用caseを確認するまで、runtimeへ追加する文脈を決めない。
 
-正本: [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md)
+`07_throughline-auditor-context-plan.md`は現行default-on connectorの設計正本として維持するが、
+効果測定の基準は本P0と新計画へ置き換える。
 
 ## P1 — v1.4.21以降のPrimary auditor SLO判定
 
