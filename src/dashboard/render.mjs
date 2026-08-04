@@ -50,7 +50,7 @@ export function renderDashboard({
   <header class="page-header">
     <p class="eyebrow">Spotter</p>
     <h1>${escapeHtml(title)}</h1>
-    ${selectedDevice ? `<p class="subtitle">端末: ${escapeHtml(selectedDevice.name ?? selectedDevice.id)}</p>` : '<p class="subtitle">端末を選択してください。</p>'}
+    ${selectedDevice ? `<p class="subtitle">端末: ${escapeHtml(selectedDevice.name ?? selectedDevice.id)} · <a class="device-picker-link" href="/">端末を選び直す</a></p>` : '<p class="subtitle">端末を選択してください。</p>'}
   </header>
   ${renderDevices(devices, selectedId)}
   ${selectedDevice ? renderDeviceContent({ overview: dashboardModel, cases: renderedCases, caseDetail, filters, action }) : ''}
@@ -212,6 +212,7 @@ body { margin: 0; }
 .eyebrow { color: #3565a0; font-weight: 700; letter-spacing: .08em; margin: 0; text-transform: uppercase; }
 h1 { margin: .25rem 0; font-size: clamp(1.75rem, 4vw, 2.5rem); } h2 { margin-top: 2rem; } h3 { margin-bottom: .5rem; }
 .subtitle, .empty { color: #52606d; }
+.device-picker-link { color: inherit; }
 .device-nav ul { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; margin: .5rem 0; padding: 0; }
 .device { align-items: center; border: 1px solid #ccd4dd; border-radius: 999px; color: inherit; display: inline-flex; gap: .45rem; padding: .45rem .7rem; text-decoration: none; }
 .device[aria-current="page"] { border-color: #1c63b8; box-shadow: 0 0 0 2px #b8d6fa; }.device small { color: #52606d; }.status-dot { background: #a03333; border-radius: 50%; height: .55rem; width: .55rem; }.online .status-dot { background: #16803c; }

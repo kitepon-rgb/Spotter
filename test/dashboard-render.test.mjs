@@ -19,6 +19,7 @@ test('renders device list, overview metrics, rates, and responsive dependency-fr
   });
 
   assert.match(html, /<title>Mac — Spotter evaluation dashboard<\/title>/);
+  assert.match(html, /href="\/">端末を選び直す<\/a>/);
   assert.match(html, /aria-label="端末一覧"/);
   assert.match(html, /Mac<small>online<\/small>/);
   assert.match(html, /FOX Windows native<small>offline<\/small>/);
