@@ -33,6 +33,9 @@ test('evaluation store cold-starts one new SQLite database from two workers', as
       Atomics.store(gate, 0, 1);
       Atomics.notify(gate, 0, 2);
       await Promise.all([alpha.completed, beta.completed]);
+      // Windows/Node 22.13 can deliver the final message before the worker thread has released
+      // its SQLite file handle. Wait for actual worker exit before this fixture is removed.
+      await Promise.all([alpha.exited, beta.exited]);
 
       const store = createEvaluationStore({ databasePath });
       try {
@@ -64,8 +67,11 @@ function startColdWriter(workerData) {
   let rejectReady;
   let resolveCompleted;
   let rejectCompleted;
+  let resolveExited;
+  let rejectExited;
   const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   const completed = new Promise((resolve, reject) => { resolveCompleted = resolve; rejectCompleted = reject; });
+  const exited = new Promise((resolve, reject) => { resolveExited = resolve; rejectExited = reject; });
   worker.on('message', (message) => {
     if (message?.ready) resolveReady();
     else if (message?.ok) resolveCompleted();
@@ -78,15 +84,19 @@ function startColdWriter(workerData) {
   worker.once('error', (error) => {
     rejectReady(error);
     rejectCompleted(error);
+    rejectExited(error);
   });
   worker.once('exit', (code) => {
     if (code !== 0) {
       const error = new Error(`cold evaluation writer exited with code ${code}`);
       rejectReady(error);
       rejectCompleted(error);
+      rejectExited(error);
+    } else {
+      resolveExited();
     }
   });
-  return { ready, completed };
+  return { ready, completed, exited };
 }
 
 async function writeOneColdTurn() {
