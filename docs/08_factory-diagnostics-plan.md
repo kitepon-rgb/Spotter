@@ -1,5 +1,8 @@
 # Factory diagnostics plan
 
+Status: **complete**。`spotter diagnostics factory`とopt-in local runtime error storeは
+v1.4.23で公開済み。
+
 ## 契約
 
 - `spotter diagnostics factory` はread-onlyの単一行JSON snapshotを返す。

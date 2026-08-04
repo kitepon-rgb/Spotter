@@ -1,5 +1,9 @@
 # Throughline auditor context 評価（2026-07-12）
 
+> **Superseded 2026-08-05**: この評価はv1.4.20〜v1.4.21の監査文脈案に対する歴史記録。
+> v1.5.4でThroughlineは監査条件・監査入力から撤去され、`observer-read`は提案評価用証拠にだけ使う。
+> 以下のproduction既定化gateとfresh監査30件gateは現行判断に使用しない。
+
 - 出典: 同ディレクトリの `2026-07-12-context-*.json`
 - 取得日: 2026-07-12
 - 確度: 高（Codex CLI 0.144.1 / `gpt-5.6-terra × medium` の実測）

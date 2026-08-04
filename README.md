@@ -218,7 +218,7 @@ spotter evaluation report
 spotter evaluation cases --outcome not-adopted
                          # list proposed tools that were not used in the same turn
 spotter evaluation case <observation-id>
-                         # inspect request, Spotter context, Throughline snapshot, proposal, usage, and outcome
+                         # inspect request, optional Throughline snapshot, proposal, usage, and outcome
 spotter dashboard device --id mac --name Mac
                          # serve this terminal's local evaluation DB on 127.0.0.1:53940
 spotter dashboard hub --config dashboard-hub.json --host 172.18.0.1
@@ -244,8 +244,8 @@ spotter uninstall        # remove hooks from this project (leaves ~/.spotter int
 The dashboard is local-first. Every terminal reads its own `~/.spotter/evaluation.db`; the hub
 keeps only a static device-to-upstream map and does not copy evaluation data into a cloud database.
 The device view shows Japanese labels for every evaluation metric, proposal and adoption rates
-with their numerator and denominator, project/tool breakdowns, non-adopted cases, and the two
-separately captured context sources. The hub checks health only
+with their numerator and denominator, project/tool breakdowns, non-adopted cases, the request
+audited by Spotter, and optional proposal-time Throughline evidence. The hub checks health only
 when the device list is requested, so an offline terminal is isolated without a background monitor
 or retry queue.
 

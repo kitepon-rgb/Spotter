@@ -1,5 +1,7 @@
 # Spotter端末横断Web dashboard実装計画
 
+状態: **実装・公開・4端末配布完了**。現行配布版は`claude-spotter@1.5.4`。
+
 ## 目的
 
 `https://spotter.kitepon.dev/`でSpotterを利用している端末を選び、選択端末の
@@ -39,7 +41,7 @@ hubのonline表示は端末一覧request時のhealth取得だけで決め、back
 - 提案率は「ツール提案あり ÷ 対象ターン」、採用率は「実際に使用 ÷ 利用判定済み」と表示する
 - project別内訳とtool別内訳
 - 非採用case一覧
-- case詳細: request、auditorへ渡したcontext、Throughline observer snapshot、提案ID、利用ID、item結果
+- case詳細: request、監査履歴なしを示す互換欄、任意のThroughline observer snapshot、提案ID、利用ID、item結果
 
 ## 役割分解
 
@@ -64,7 +66,7 @@ hubのonline表示は端末一覧request時のhealth取得だけで決め、back
 
 ## 受入条件
 
-1. fixture DBで率、project内訳、非採用case、二種類のcontextがHTMLに正しく表示される。
+1. fixture DBで率、project内訳、非採用case、requestと任意observer snapshotがHTMLに正しく表示される。
 2. hubで4端末を選択でき、offline端末は一覧で到達不能と分かる。
 3. Macとmain-serverの実DBを公開URLから端末別に閲覧できる。
 4. FOX WSL2とFOX Windows nativeは導入・tunnel設定後、online時は実DBを表示し、offline時はhub全体を壊さない。

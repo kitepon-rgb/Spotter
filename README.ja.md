@@ -206,12 +206,16 @@ spotter db rebuild       # Claude local + Claude global DB を両方消してか
 spotter status           # 稼働中の daemon 一覧
 spotter doctor           # 環境診断 (Node / claude CLI / Codex readiness / tool-db 整合性)
 spotter diagnostics logs # daemon log から pass=false / backend latency / anomaly signal を集計
+spotter diagnostics factory
+                         # factory向けread-only診断snapshotをJSONで出力
+spotter diagnostics runtime-errors
+                         # opt-in端末内runtime error集計をread-only表示（network送信なし）
 spotter evaluation report
                          # 端末内DBからproject横断の提案率・tool採用率を集計
 spotter evaluation cases --outcome not-adopted
                          # 提案されたが同じturnで使われなかったtool itemを一覧
 spotter evaluation case <observation-id>
-                         # request、2種類の文脈、提案、利用、outcomeを確認
+                         # request、任意のThroughline snapshot、提案、利用、outcomeを確認
 spotter dashboard device --id mac --name Mac
                          # この端末の評価DBを127.0.0.1:53940で配信
 spotter dashboard hub --config dashboard-hub.json --host 172.18.0.1
@@ -236,8 +240,9 @@ spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 
 dashboardはlocal-firstで動く。各端末が自身の`~/.spotter/evaluation.db`を読み、hubは固定の
 端末・upstream対応だけを持つ。評価データをcloud DBへ複製しない。端末画面では
-`S/P/I/C/A/M`、提案率、採用率、project/tool内訳、非採用case、別々に取得した2種類の文脈を
-確認できる。health確認は端末一覧request時だけなので、端末がofflineでもbackground監視や
+対象ターン、ツール提案あり、提案ツール数、利用判定済み、実際に使用、判定不能、提案率、採用率、
+project/tool内訳、非採用case、監査対象request、任意の提案時Throughline証拠を確認できる。
+health確認は端末一覧request時だけなので、端末がofflineでもbackground監視や
 retry queueを作らず、その端末だけを切り離せる。
 
 4端末のservice、reverse tunnel、Caddy/Cloudflare構成は

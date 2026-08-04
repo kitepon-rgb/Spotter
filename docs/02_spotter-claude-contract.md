@@ -1,7 +1,7 @@
 # Spotter Claude Contract
 
-この文書は Phase 1a の contract capture。Codex adapter を足す前に、Claude-first の
-既存動作を変えないための実装契約を短く固定する。
+この文書はPhase 1aのcontract captureを起点に更新している、Claude-first / Codex adapter共通の
+現行実装checklistである。
 
 正本は `AGENTS.md`。`CLAUDE.md`は`@AGENTS.md`だけを読むimport入口。ここは実装時に参照する
 checklist と test 対応表。
@@ -27,7 +27,8 @@ checklist と test 対応表。
 
 Public CLI:
 
-- `spotter install [-y|--yes] [--user]`
+- `spotter install [-y|--yes] [--user] [--auditor-context disabled|throughline]
+  [--throughline-command <absolute>] [--throughline-arg <value>]`
 - `spotter uninstall [-y|--yes] [--user]`
 - `spotter db list [--host-agent claude|codex|automation]`
 - `spotter db refresh [--host-agent claude|codex|automation]`
@@ -35,6 +36,14 @@ Public CLI:
 - `spotter status`
 - `spotter doctor`
 - `spotter diagnostics logs [--log-dir <dir>] [--json]`
+- `spotter diagnostics factory`
+- `spotter diagnostics runtime-errors [snapshot [--after-cursor <n>] [--limit <n>]
+  | ack <cursor> | resolve <fingerprint> | reopen <fingerprint> | compact]`
+- `spotter evaluation report [--project <path>] [--from <ISO>] [--to <ISO>] [--json]`
+- `spotter evaluation cases [--outcome <outcome>] [filters] [--json]`
+- `spotter evaluation case <observation-id> [--json]`
+- `spotter dashboard device --id <id> [--name <name>] [--host <host>] [--port <port>] [--db <path>]`
+- `spotter dashboard hub --config <file> [--host <host>] [--port <port>]`
 - `spotter codex risk-check --findings <file> [--project <dir>] [--host-agent <agent>]`
 - `spotter codex review --findings <file> [--project <dir>] [--host-agent <agent>]`
 - `spotter codex explore --findings <file> [--project <dir>] [--host-agent <agent>]`
@@ -117,6 +126,8 @@ Windows nativeではNode起動とproject discoveryが5秒を超える実測が�
     does not block the prompt.
   - for every prompt, runs the auditor independently of Throughline installation,
     marker mode, freshness, and read status. Throughline is not auditor input and never gates this call.
+  - auditor text input is the current user prompt only. No Throughline turn, prior conversation,
+    observer snapshot, `context_status`, or legacy `recent_context` is included.
   - sends `event:"user_input"` to the daemon for non-short prompts.
   - on `E_UNREACHABLE`, respawns daemon once and retries.
   - on daemon `pass:false`, passes only catalog-matched tool IDs to the common host-advice projector.

@@ -9,6 +9,10 @@
 > 独立して実行する。Throughlineは提案時の改善用observer evidenceを記録する任意経路だけに使い、
 > disabled / stale / unavailable / errorのいずれも監査をskipまたはerrorにしない。
 
+> 以下はv1.4.20〜v1.4.21当時の設計・検証記録である。「fresh以外では監査AIを呼ばない」などの
+> 規範文はすべて撤回済みで、現行実装や運用判断には使用しない。現行契約は`AGENTS.md`、
+> `02_spotter-claude-contract.md`、`04_operational-slo.md`を正とする。
+
 ## 撤回時に廃止したToDo
 
 - v1.4.21以降のfresh監査30件測定は、Throughline hard gate自体を撤回したため中止した。

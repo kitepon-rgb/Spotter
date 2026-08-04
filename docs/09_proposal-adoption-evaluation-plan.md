@@ -3,10 +3,12 @@
 ## 0. 状態
 
 - 状態: **実装・受入完了**
+- 現行補正: v1.5.4でThroughlineを監査条件・監査入力から撤去。評価snapshot経路だけを維持した。
 - 工程正本: Lattice plan `proposal-adoption-eval`。本文書は目的、設計判断、非目標、受入条件を持つ。
 - 実装対象repo: `/Users/kite/Developer/Spotter`
 - 外部依存: Throughlineの既存read-only I/F `throughline observer-read`。Throughline側は変更しない。
-- 対象範囲: この1台の端末内にあるproject横断の観測と集計。network送信、共有server、dashboardは作らない。
+- 対象範囲: 各端末内にあるproject横断の観測と集計。評価store自体はnetwork送信しない。
+  後続のread-only dashboardは[`10_spotter-dashboard-plan.md`](10_spotter-dashboard-plan.md)で別に実装した。
 - 実装開始裁定: 2026-08-04。Latticeのready frontierとPhase gateに従って実装・検証した。
 
 ## 1. 測るもの
@@ -57,8 +59,9 @@ throughline observer-read \
 この時点では親AIの当該turnはまだ始まっていないため、返る`turns[]`は提案時点の独立した前文脈になる。
 同時に`recorded_at_ms = Date.now()`を記録する。Throughlineとの対応に新しいturn IDは使わない。
 
-このsnapshotは、Spotterがauditorへ渡した`auditor_seen_context`とは別に保存する。これにより非採用caseで、
-「Spotterが見た範囲」と「同時点でThroughlineログI/Fから得られた範囲」を比較できる。
+このsnapshotは、auditor入力と別に保存する。v1.5.4以降、auditorへ渡す本文は`request_text`だけで、
+履歴文脈は渡さない。互換列`auditor_seen_context`は`null`を保存する。これにより非採用caseでは、
+「現在のrequestだけで出した提案」と「同時点でThroughlineログI/Fから得られた前文脈」を比較できる。
 
 `observer-read`が`projection_pending`、`ambiguous_parent`、`resync_required`またはerrorなら、proposalと
 採用結果の記録は続け、評価文脈だけ`context_unavailable`とする。retry、定期回収、別経路fallbackは
@@ -79,7 +82,7 @@ UserPromptSubmit
   -> 既存auditorを実行
   -> safe projector後の実提示tool IDを確定
   -> proposalがある時だけThroughline observer-read snapshotを1回取得
-  -> local DBへdecision / proposal / 2種類の文脈を記録
+  -> local DBへdecision / proposal / request / 任意のobserver snapshotを記録
 
 同じturnのtool invocation
   -> 既存usedToolsへcanonical tool IDを蓄積
@@ -107,7 +110,7 @@ WAL、bounded busy timeoutを使う。retry worker、reconciliation daemon、常
 - `project_path`, `host`, `session_id`。
 - `audit_status`: `success | error | skipped`。
 - `request_text`。
-- `auditor_seen_context`: Spotterが実際にauditorへ渡した履歴。
+- `auditor_seen_context`: 互換列。v1.5.4以降は履歴を渡さないため`null`。
 - `observer_context_status`, `observer_snapshot_json`。
 - `used_tool_ids`。
 - `usage_status`: `open | complete | incomplete`。
@@ -119,7 +122,7 @@ WAL、bounded busy timeoutを使う。retry worker、reconciliation daemon、常
 - `outcome`: `open | adopted | not_adopted | outcome_missing`。
 
 passも`evaluation_turns`へ1行記録するがitemは0件とする。これが提案率の分母`S`になる。
-`request_text`、2種類の文脈、observer snapshotは、改善分析に必要なproposal turnだけ保存する。
+`request_text`、`auditor_seen_context`、observer snapshotは、改善分析に必要なproposal turnだけ保存する。
 
 監査失敗は`audit_status=error`として件数を確認できるようにするが`S`へは入れない。DB記録失敗は
 既存の監査結果を書き換えず、stderrへ1回明示して終える。後追い修復はしない。
@@ -198,12 +201,12 @@ case表示は次の順で分ける。
 
 1. 記録時刻、project、host、backend/model。
 2. `request_text`。
-3. `auditor_seen_context`: Spotterが実際に見た範囲。
-4. `observer_snapshot_json.turns`: 同時点に既存Throughline I/Fから得た別文脈。
+3. `auditor_seen_context`: v1.5.4以降は`null`。履歴文脈を監査へ渡していないことを示す。
+4. `observer_snapshot_json.turns`: 同時点に既存Throughline I/Fから得た任意の前文脈。
 5. 実際に親へ提示したtool IDs。
 6. `used_tool_ids`とitemごとの`adopted / not_adopted`。
 
-改善候補は、非採用caseでThroughline snapshotにありSpotter入力になかった情報を見てから考える。
+改善候補は、非採用caseでThroughline snapshotにありrequest単体では分からなかった情報を見てから考える。
 比較用に同じtoolの採用caseもfilterで開けるようにする。
 
 ## 8. 実装構成
@@ -249,7 +252,7 @@ reportとcaseは保存済みDBだけを読み、Throughlineへ再問い合わせ
 
 - focused testを通す。
 - 別projectでClaudeとCodexを各1turnずつ実行する。
-- 実際の非採用caseを各hostで1件開き、request、2種類の文脈、proposal、usedToolsを確認する。
+- 実際の非採用caseを各hostで1件開き、request、任意のobserver snapshot、proposal、usedToolsを確認する。
 - 2projectのfixtureで横断reportを確認する。
 - 既存hook出力とauditor挙動が変わっていないことを確認する。
 - install後にbaseline収集を開始する。

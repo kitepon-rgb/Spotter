@@ -1,6 +1,6 @@
-# カタログ設計思想 — ユーザー追加ツールだけを Haiku に渡す
+# カタログ設計思想 — ユーザー追加ツールだけをauditorへ渡す
 
-この文書は現行 Claude-backed Haiku auditor path と Codex native hook path のカタログ設計を説明する。
+この文書は現行のClaude / Codex auditor pathが共有するカタログ設計を説明する。
 `UserPromptSubmit` / `Stop` の primary auditor backend を Codex CLI / `codex-sidecar` に
 移す計画は v1.4.3 で Codex host 側が完了済み。現行 backend policy は
 [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md) を参照し、完了済みの移行ログは
@@ -35,11 +35,13 @@ Bell は Claude Code 本体が提供するツールを**使いこなしている
 
 したがって **Spotter の監査範囲はユーザー追加分 (MCP / スキル / サブエージェント) に集中させる**。Claude Code 本体側は完全に視野外とする。
 
-## Haiku に渡す情報の最小モデル
+## auditorへ渡す情報の最小モデル
 
-Haiku は「Bell が呼び忘れているツールがあれば、その名前と理由を返す」役。**schema までは要らない**。呼び方を知るのは Bell の責任 (Bell が `ToolSearch` などで schema を取りに行く)。
+auditorは「主役AIが呼び忘れているツールがあれば、その名前を返す」役。**schema までは要らない**。
+呼び方を知るのは主役AIの責任（必要なら`ToolSearch`などでschemaを取得する）。
 
-したがって Haiku に渡すべきは **`{ツール名, 説明}` のペアだけ**。これを DB として preamble に投入する。
+したがってauditorへ渡すべきは **`{ツール名, 説明}` のペアだけ**。Claude / Codexそれぞれの
+host-local DBから、そのturnのauditor入力へ投入する。
 
 ```
 mcp__caveat__caveat_record: 過去の解決済みナレッジを記録する
@@ -50,9 +52,10 @@ code-reviewer:              書いたコードのレビュー専門家
 
 これが**一つの思想**:
 
-> **Haiku には「あるよ」を教える。「どう呼ぶか」は Bell が解決する。**
+> **auditorには「あるよ」を教える。「どう呼ぶか」は主役AIが解決する。**
 
-役割分業。Haiku は気づきの装置、Bell は実行の装置。schema を Haiku に渡すのは責任の越境であり、preamble サイズも無駄に膨らむ。
+役割分業。auditorは気づきの装置、主役AIは実行の装置。schemaをauditorへ渡すのは責任の越境であり、
+promptも無駄に膨らむ。
 
 ## DB の最小スキーマ
 
@@ -73,7 +76,8 @@ code-reviewer:              書いたコードのレビュー専門家
   - スキル (プラグイン由来): `<plugin>:<skill>` (例: `ecc:council`)
   - スキル (ユーザー / プロジェクト由来): 素の名前
   - サブエージェント: 素の名前 (例: `code-reviewer`、project > user > plugin の優先順で衝突解決)
-- `description`: **ツールが何をするものかを自然言語で説明した文章**。API schema ではない。Haiku は「呼ぶか呼ばないか」だけを判断するので、人間が読んで意味が分かる説明があれば足りる
+- `description`: **ツールが何をするものかを自然言語で説明した文章**。API schemaではない。auditorは
+  「提案するか」だけを判断するので、人間が読んで意味が分かる説明があれば足りる
 
 `when_to_use` / `usage` / `examples` / `keywords` のような追加フィールドは DB の対象外。**name + description のペアだけ**で動かす。
 

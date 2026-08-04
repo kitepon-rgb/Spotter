@@ -1,16 +1,22 @@
 # Spotter Documentation Overview
 
 Spotter is a Claude-first, hook-driven audit agent that runs alongside Claude Code
-and Codex hosts to surface missed tool-use opportunities. `CLAUDE.md` remains the
-canonical agent entry point for product philosophy, invariants, commands, hook
-contracts, error handling, and release workflow.
+and Codex hosts to surface missed tool-use opportunities. `AGENTS.md` is the
+canonical agent source for product philosophy, invariants, commands, hook contracts,
+error handling, and release workflow. `CLAUDE.md` is only the `@AGENTS.md` import entry.
+
+Current production release: **v1.5.4**. UserPromptSubmit auditing uses only the current
+request and the host-local tool catalog. Throughline is optional proposal-evaluation
+evidence and never gates or changes auditing.
 
 ## Naming Convention
 
 - `00_` is the documentation entry point.
-- Numbered files are ordered canonical designs, operational contracts, or the single active execution plan.
+- Numbered files are ordered canonical designs, operational contracts, or completed
+  implementation records that explicitly state their status.
 - Stable operational ledgers such as `open-issues.md` keep semantic names without numbers.
-- Completed plans move to `archive/`; they do not remain beside active documents.
+- Superseded plans move to `archive/`. A completed plan may remain numbered only while
+  it is also the clearest current design or operations reference.
 
 ## Canonical Documents
 
@@ -18,17 +24,27 @@ contracts, error handling, and release workflow.
 - [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md): Claude hook,
   daemon, backend, and Codex adapter contract.
 - [`04_operational-slo.md`](04_operational-slo.md): latency, failure-rate, quality,
-  and recommendation-acceptance objectives.
+  and observed proposal/adoption objectives.
+- [`09_proposal-adoption-evaluation-plan.md`](09_proposal-adoption-evaluation-plan.md):
+  completed local proposal/adoption evaluation design and v1.5.4 correction.
+- [`10_spotter-dashboard-plan.md`](10_spotter-dashboard-plan.md): completed
+  device-routed dashboard design.
+- [`11_dashboard-operations.md`](11_dashboard-operations.md): current four-terminal
+  dashboard operations.
 - [`adr/0001-hook-driven-parallel-auditor.md`](adr/0001-hook-driven-parallel-auditor.md):
   root architectural decision.
 
 ## Operational Documents
 
 - [`open-issues.md`](open-issues.md): current unresolved issues and observation tasks.
-- [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md): v1.4.20〜v1.4.21の撤回済み歴史記録
-  Throughline L2 context integration and precision-evaluation plan.
+- [`08_factory-diagnostics-plan.md`](08_factory-diagnostics-plan.md): completed
+  factory diagnostics and opt-in local runtime-error store design.
 
-## Archive
+## Historical and Archive
+
+- [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md):
+  revoked v1.4.20–v1.4.21 Throughline auditor-context design. Its body is historical,
+  not a current contract.
 
 - [`archive/`](archive/): completed plans, historical design snapshots, rollout logs,
   and smoke notes. These are reference material rather than current contract.
