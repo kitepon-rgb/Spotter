@@ -1,0 +1,12 @@
+[Unit]
+Description=Spotter evaluation dashboard hub
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env spotter dashboard hub --config %h/.config/spotter/dashboard-hub.json --host 172.18.0.1 --port 53940
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Spotter evaluation dashboard reverse tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/spotter/dashboard-tunnel.env
+ExecStart=/usr/bin/ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -R ${SPOTTER_REMOTE_FORWARD} ${SPOTTER_TUNNEL_TARGET}
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Spotter evaluation dashboard device server
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/spotter/dashboard-device.env
+ExecStart=/usr/bin/env spotter dashboard device --id ${SPOTTER_DEVICE_ID} --name ${SPOTTER_DEVICE_NAME} --host 127.0.0.1 --port 53940
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

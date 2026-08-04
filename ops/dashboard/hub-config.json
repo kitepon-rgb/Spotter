@@ -1,0 +1,1 @@
+{"devices":[{"id":"main-server","name":"main-server","upstream":"http://127.0.0.1:53940"},{"id":"mac","name":"Mac","upstream":"http://127.0.0.1:53941"},{"id":"fox-wsl","name":"FOX WSL2","upstream":"http://127.0.0.1:53942"},{"id":"fox-windows","name":"FOX Windows native","upstream":"http://127.0.0.1:53943"}]}
