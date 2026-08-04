@@ -29,6 +29,10 @@ import {
   loadAuditorContext,
   readProjectAuditorContextConfig,
 } from '../core/auditor-context.mjs';
+import { randomUUID } from 'node:crypto';
+import { createEvaluationStore } from '../core/evaluation-store.mjs';
+import { loadEvaluationObserverContext } from '../core/evaluation-context.mjs';
+import { version } from '../version.mjs';
 
 const TIMEOUT_MS = 50_000;
 
@@ -40,6 +44,11 @@ export async function runUserPrompt({
   readAuditorContextConfigFn = readProjectAuditorContextConfig,
   loadAuditorContextFn = loadAuditorContext,
   recordHookEventFn = recordClaudeHookEvent,
+  createEvaluationStoreFn = createEvaluationStore,
+  loadEvaluationObserverContextFn = loadEvaluationObserverContext,
+  randomUUIDFn = randomUUID,
+  spotterVersion = version,
+  now = Date.now,
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
 } = {}) {
@@ -50,9 +59,53 @@ export async function runUserPrompt({
 
   const sessionId = requireString(input, 'session_id');
   const prompt = requireString(input, 'prompt');
+  const observationId = randomUUIDFn();
   const projectRoot = findSpotterMarker(input.cwd);
   const startedAt = Date.now();
   let contextDurationMs = null;
+  let evaluationWriteFailed = false;
+
+  const safelyRecordEvaluation = async ({ auditStatus, result = null, auditContext = null }) => {
+    if (!projectRoot) return;
+    try {
+      const proposedToolIds = auditStatus === 'success' && result?.pass !== true
+        ? projectToolIds(Array.isArray(result?.missing_tools) ? result.missing_tools.map((entry) => entry?.name) : [])
+        : [];
+      const proposalRecordedAtMs = proposedToolIds.length > 0 ? now() : null;
+      const observer = proposedToolIds.length > 0
+        ? await loadEvaluationObserverContextFn({ projectRoot, config: auditContext?.config, recordedAtMs: proposalRecordedAtMs })
+        : { status: 'not_requested', snapshot: null };
+      const store = createEvaluationStoreFn();
+      try {
+        store.recordTurn({
+          observationId,
+          ...(proposalRecordedAtMs === null ? {} : {
+            recordedAtMs: proposalRecordedAtMs,
+            proposedAtMs: proposalRecordedAtMs,
+          }),
+          projectPath: projectRoot,
+          host: 'claude',
+          sessionId,
+          auditStatus,
+          requestText: prompt,
+          auditorSeenContext: auditContext?.turns ? JSON.stringify(auditContext.turns) : null,
+          observerContextStatus: observer.status,
+          observerSnapshot: observer.snapshot,
+          proposedToolIds,
+          backend: result?.evaluation_meta?.backend ?? null,
+          model: result?.evaluation_meta?.model ?? null,
+          spotterVersion,
+        });
+      } finally {
+        store.close();
+      }
+    } catch {
+      if (!evaluationWriteFailed) {
+        evaluationWriteFailed = true;
+        safeWriteError(writeError, 'spotter-hook: Spotter の評価記録に失敗しました。\n');
+      }
+    }
+  };
 
   const legacyPending = projectRoot
     ? await discardLegacyPendingFn({ projectRoot, sessionId })
@@ -96,6 +149,7 @@ export async function runUserPrompt({
     try {
       const response = await sendDaemonPayload({
         user_input: prompt,
+        observation_id: observationId,
         audit: false,
         context_status: contextStatus,
       });
@@ -111,12 +165,18 @@ export async function runUserPrompt({
   };
 
   let context;
+  let auditorContextConfig;
   const contextStartedAt = Date.now();
   try {
     const config = await readAuditorContextConfigFn(projectRoot);
+    auditorContextConfig = config;
     contextDurationMs = Date.now() - contextStartedAt;
     if (config.mode === 'disabled') {
-      if (!await syncUserInputWithoutAudit('disabled')) return;
+      if (!await syncUserInputWithoutAudit('disabled')) {
+        await safelyRecordEvaluation({ auditStatus: 'error' });
+        return;
+      }
+      await safelyRecordEvaluation({ auditStatus: 'skipped' });
       await recordHookEventFn({
         projectRoot,
         event: {
@@ -142,6 +202,7 @@ export async function runUserPrompt({
   } catch (err) {
     contextDurationMs = Date.now() - contextStartedAt;
     await degrade({ code: err?.code, reason: 'auditor_context' });
+    await safelyRecordEvaluation({ auditStatus: 'error' });
     return;
   }
 
@@ -152,10 +213,15 @@ export async function runUserPrompt({
         : 'E_AUDITOR_CONTEXT_SCHEMA',
       reason: 'auditor_context_status',
     });
+    await safelyRecordEvaluation({ auditStatus: 'error' });
     return;
   }
   if (context.status !== 'fresh') {
-    if (!await syncUserInputWithoutAudit(context.status)) return;
+    if (!await syncUserInputWithoutAudit(context.status)) {
+      await safelyRecordEvaluation({ auditStatus: 'error' });
+      return;
+    }
+    await safelyRecordEvaluation({ auditStatus: 'skipped' });
     await recordHookEventFn({
       projectRoot,
       event: {
@@ -177,12 +243,14 @@ export async function runUserPrompt({
   try {
     response = await sendDaemonPayload({
       user_input: prompt,
+      observation_id: observationId,
       audit: true,
       context_status: 'fresh',
       recent_context: context.turns,
     });
   } catch (err) {
     await degrade({ code: err?.code ?? 'E_RESURRECT_FAILED', reason: 'transport_or_resurrect' });
+    await safelyRecordEvaluation({ auditStatus: 'error' });
     return;
   }
 
@@ -191,6 +259,7 @@ export async function runUserPrompt({
       code: response.error?.code ?? 'E_INTERNAL',
       reason: 'daemon_error',
     });
+    await safelyRecordEvaluation({ auditStatus: 'error' });
     return;
   }
 
@@ -199,6 +268,12 @@ export async function runUserPrompt({
   const advice = result.pass !== true
     ? projectParentAdvice(toolIds)
     : '';
+
+  await safelyRecordEvaluation({
+    auditStatus: 'success',
+    result,
+    auditContext: { config: auditorContextConfig, turns: context.turns },
+  });
   if (advice) emitAdditionalContext(writeOutput, advice);
 
   await recordHookEventFn({

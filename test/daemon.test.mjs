@@ -191,6 +191,98 @@ test('startDaemon: tool_used records without invoking Haiku', async () => {
   }
 });
 
+test('startDaemon: closes the active evaluation exactly once before Stop early returns', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `evaluation-close-${randomUUID()}`;
+  const calls = [];
+  const evaluationStore = {
+    recordUsage: (input) => calls.push(['usage', input]),
+    markUsageIncomplete: (input) => calls.push(['incomplete', input]),
+    closeTurn: (input) => calls.push(['close', input]),
+    closeOpenTurnsForSession: (input) => calls.push(['close-open', input]),
+    close: () => calls.push(['store-close']),
+  };
+  const running = await startDaemon({
+    sessionId, tools, evaluationStore,
+    haikuCaller: async () => JSON.stringify({ pass: true, missing_tools: [] }),
+  });
+  try {
+    await sendRequest({ sessionId, event: 'user_input', payload: { user_input: '質問', observation_id: 'obs-1' }, timeoutMs: 2_000 });
+    await sendRequest({ sessionId, event: 'tool_used', payload: { tool_name: 'current_time', evaluation_observed: true, evaluation_tool_id: 'current_time' }, timeoutMs: 2_000 });
+    await sendRequest({ sessionId, event: 'turn_end', payload: { final_response: '了解', stop_hook_active: true }, timeoutMs: 2_000 });
+    await sendRequest({ sessionId, event: 'turn_end', payload: { final_response: '了解', stop_hook_active: true }, timeoutMs: 2_000 });
+    assert.deepEqual(calls.filter(([kind]) => kind === 'usage'), [['usage', { observationId: 'obs-1', toolIds: ['current_time'] }]]);
+    assert.deepEqual(calls.filter(([kind]) => kind === 'close'), [['close', { observationId: 'obs-1' }]]);
+  } finally {
+    await running.stop();
+    assert.deepEqual(calls.filter(([kind]) => kind === 'close-open'), [['close-open', { sessionId }]]);
+    assert.equal(calls.filter(([kind]) => kind === 'store-close').length, 1);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: Bash remains in raw turn_end usedTools without evaluation-store usage', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `evaluation-raw-${randomUUID()}`;
+  const prompts = [];
+  let recordUsageCalls = 0;
+  const evaluationStore = {
+    recordUsage() { recordUsageCalls += 1; return { recorded: true }; },
+    markUsageIncomplete() { return { changed: true }; },
+    closeTurn() { return { closed: true }; },
+    closeOpenTurnsForSession() { return { closed: 0 }; },
+    close() {},
+  };
+  const running = await startDaemon({
+    sessionId, tools, evaluationStore, haikuCallWindowMs: 0, stopShortFinalMaxChars: 0,
+    haikuCaller: async (prompt) => {
+      prompts.push(prompt);
+      return JSON.stringify({ pass: true, missing_tools: [] });
+    },
+  });
+  try {
+    await sendRequest({ sessionId, event: 'user_input', payload: { user_input: '質問', observation_id: 'obs-raw' }, timeoutMs: 2_000 });
+    await sendRequest({ sessionId, event: 'tool_used', payload: { tool_name: 'Bash', evaluation_observed: false, usage_incomplete: false }, timeoutMs: 2_000 });
+    await sendRequest({ sessionId, event: 'turn_end', payload: { final_response: '十分に長い最終応答', stop_hook_active: false }, timeoutMs: 2_000 });
+    assert.equal(recordUsageCalls, 0);
+    assert.match(prompts[1], /Bash/);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: successful Skill records canonical evaluation ID while preserving raw turn_end usage', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `evaluation-skill-${randomUUID()}`;
+  const prompts = [];
+  const usage = [];
+  const evaluationStore = {
+    recordUsage(input) { usage.push(input); return { recorded: true }; },
+    closeTurn() { return { closed: true }; },
+    closeOpenTurnsForSession() { return { closed: 0 }; },
+    close() {},
+  };
+  const running = await startDaemon({
+    sessionId, tools, evaluationStore, haikuCallWindowMs: 0, stopShortFinalMaxChars: 0,
+    haikuCaller: async (prompt) => {
+      prompts.push(prompt);
+      return JSON.stringify({ pass: true, missing_tools: [] });
+    },
+  });
+  try {
+    await sendRequest({ sessionId, event: 'user_input', payload: { user_input: '質問', observation_id: 'obs-skill' }, timeoutMs: 2_000 });
+    await sendRequest({ sessionId, event: 'tool_used', payload: { tool_name: 'Skill', evaluation_observed: true, evaluation_tool_id: 'throughline' }, timeoutMs: 2_000 });
+    await sendRequest({ sessionId, event: 'turn_end', payload: { final_response: '十分に長い最終応答', stop_hook_active: false }, timeoutMs: 2_000 });
+    assert.deepEqual(usage, [{ observationId: 'obs-skill', toolIds: ['throughline'] }]);
+    assert.match(prompts[1], /Skill/);
+    assert.doesNotMatch(prompts[1], /throughline/);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('startDaemon: turn_end passes when stop_hook_active is true (§7.5)', async () => {
   const { dir, tools } = await setupCatalog();
   const sessionId = `d-${randomUUID()}`;

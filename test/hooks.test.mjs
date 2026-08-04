@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
 import { runSessionEnd } from '../src/hooks/session-end.mjs';
-import { runUserPrompt } from '../src/hooks/user-prompt.mjs';
+import { runUserPrompt as runUserPromptImpl } from '../src/hooks/user-prompt.mjs';
 import { runStop } from '../src/hooks/stop.mjs';
 import { runPreToolUse } from '../src/hooks/pre-tool-use.mjs';
 import { TransportError } from '../src/daemon/transport.mjs';
@@ -31,6 +31,14 @@ const freshContextDeps = {
   readAuditorContextConfigFn: async () => THROUGHLINE_CONFIG,
   loadAuditorContextFn: async () => FRESH_CONTEXT,
 };
+const TEST_EVALUATION_STORE = { recordTurn() {}, close() {} };
+async function runUserPrompt(options = {}) {
+  return runUserPromptImpl({
+    createEvaluationStoreFn: () => TEST_EVALUATION_STORE,
+    loadEvaluationObserverContextFn: async () => ({ status: 'context_unavailable', snapshot: null }),
+    ...options,
+  });
+}
 async function seedLegacyPending({ projectRoot, sessionId, content }) {
   const path = pendingPath({ projectRoot, sessionId });
   await mkdir(join(projectRoot, '.spotter', 'pending'), { recursive: true });
@@ -345,7 +353,9 @@ test('runUserPrompt: E_UNREACHABLE auto-resurrects daemon and retries once', asy
         sendCount++;
         assert.equal(request.sessionId, 's-user');
         assert.equal(request.event, 'user_input');
-        assert.deepEqual(request.payload, {
+        const { observation_id: observationId, ...payload } = request.payload;
+        assert.match(observationId, /^[a-f0-9-]{36}$/);
+        assert.deepEqual(payload, {
           user_input: 'この外部仕様の罠を確認して記録してください',
           audit: true, context_status: 'fresh', recent_context: FRESH_CONTEXT.turns,
         });
@@ -428,7 +438,9 @@ test('runUserPrompt: fresh context audits even a ten-character prompt and sends 
       },
     });
     assert.equal(requests.length, 1);
-    assert.deepEqual(requests[0].payload, {
+    const { observation_id: observationId, ...payload } = requests[0].payload;
+    assert.match(observationId, /^[a-f0-9-]{36}$/);
+    assert.deepEqual(payload, {
       user_input: '続けて確認して', audit: true, context_status: 'fresh', recent_context: FRESH_CONTEXT.turns,
     });
   } finally {
@@ -454,7 +466,9 @@ test('runUserPrompt: empty, stale, and session_mismatch quietly skip without dae
         writeOutput: (text) => { output += text; },
       });
       assert.equal(requests.length, 1, `${status} must sync daemon state without calling the auditor`);
-      assert.deepEqual(requests[0].payload, { user_input: '短文', audit: false, context_status: status });
+      const { observation_id: observationId, ...payload } = requests[0].payload;
+      assert.match(observationId, /^[a-f0-9-]{36}$/);
+      assert.deepEqual(payload, { user_input: '短文', audit: false, context_status: status });
       assert.equal(output, '');
       assert.equal(events[0].contextStatus, status);
     }
@@ -1274,6 +1288,94 @@ test('runPreToolUse: daemon error records degraded and allows the tool (no exit-
     assert.equal(events[0].status, 'degraded');
     assert.equal(events[0].toolName, 'Bash');
     assert.equal(events[0].reason, 'daemon_error');
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runUserPrompt: records only safe projected proposal IDs with one proposal-time observer snapshot', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-evaluation-proposal-'));
+  const turns = [];
+  const observerCalls = [];
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    await runUserPrompt({
+      readInput: async () => ({ session_id: 's-evaluation', cwd: project, prompt: '確認して', transcript_path: '/tmp/evaluation.jsonl' }),
+      ...freshContextDeps,
+      randomUUIDFn: () => '00000000-0000-4000-8000-000000000001',
+      now: () => 123456789,
+      sendRequestFn: async () => ({ ok: true, result: {
+        pass: false,
+        missing_tools: [{ name: 'mcp__caveat__caveat_search', reason: 'raw-reason-must-not-persist' }],
+        evaluation_meta: { backend: 'codex-cli', model: 'gpt-test' },
+      } }),
+      createEvaluationStoreFn: () => ({ recordTurn: (turn) => turns.push(turn), close() {} }),
+      loadEvaluationObserverContextFn: async (args) => {
+        observerCalls.push(args);
+        return { status: 'context_available', snapshot: { schema: 'throughline.observer_read.v1', status: 'snapshot' } };
+      },
+    });
+    assert.equal(observerCalls.length, 1);
+    assert.equal(observerCalls[0].recordedAtMs, 123456789);
+    assert.equal(turns.length, 1);
+    assert.deepEqual(turns[0].proposedToolIds, ['mcp__caveat__caveat_search']);
+    assert.equal(turns[0].auditStatus, 'success');
+    assert.equal(turns[0].backend, 'codex-cli');
+    assert.equal(turns[0].model, 'gpt-test');
+    assert.equal(turns[0].recordedAtMs, 123456789);
+    assert.equal(turns[0].proposedAtMs, 123456789);
+    assert.doesNotMatch(JSON.stringify(turns[0]), /raw-reason-must-not-persist/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runPreToolUse: unresolved usage marks the active observation incomplete without denying the tool', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-pretool-evaluation-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let request;
+    await runPreToolUse({
+      readInput: async () => ({ session_id: 's-pretool-evaluation', cwd: project, tool_name: 'Skill', tool_input: {} }),
+      sendRequestFn: async (next) => { request = next; return { ok: true, result: { recorded: true } }; },
+    });
+    assert.deepEqual(request.payload, { tool_name: 'Skill', evaluation_observed: true, evaluation_tool_id: null, usage_incomplete: true });
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runPreToolUse: ordinary built-in tools do not make evaluation usage incomplete', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-pretool-built-in-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let request;
+    await runPreToolUse({
+      readInput: async () => ({ session_id: 's-pretool-built-in', cwd: project, tool_name: 'Bash', tool_input: { command: 'pwd' } }),
+      sendRequestFn: async (next) => { request = next; return { ok: true, result: { recorded: true } }; },
+    });
+    assert.deepEqual(request.payload, { tool_name: 'Bash', evaluation_observed: false, evaluation_tool_id: null, usage_incomplete: false });
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('runPreToolUse: successful Skill keeps its raw tool name and carries the selector only for evaluation', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-pretool-skill-'));
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    let request;
+    await runPreToolUse({
+      readInput: async () => ({ session_id: 's-pretool-skill', cwd: project, tool_name: 'Skill', tool_input: { skill: 'throughline' } }),
+      sendRequestFn: async (next) => { request = next; return { ok: true, result: { recorded: true } }; },
+    });
+    assert.deepEqual(request.payload, {
+      tool_name: 'Skill', evaluation_observed: true, evaluation_tool_id: 'throughline', usage_incomplete: false,
+    });
   } finally {
     await rm(project, { recursive: true, force: true });
   }

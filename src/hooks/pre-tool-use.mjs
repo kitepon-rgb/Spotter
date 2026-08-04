@@ -15,6 +15,7 @@ import {
   recordClaudeHookEvent,
 } from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
+import { canonicalizeToolId } from '../core/evaluation-tool-id.mjs';
 
 const TIMEOUT_MS = 1_000;
 
@@ -22,6 +23,7 @@ export async function runPreToolUse({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
   recordHookEventFn = recordClaudeHookEvent,
+  writeError = (text) => process.stderr.write(text),
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
@@ -30,6 +32,9 @@ export async function runPreToolUse({
 
   const sessionId = requireString(input, 'session_id');
   const toolName = requireString(input, 'tool_name');
+  const canonical = canonicalizeToolId({ host: 'claude', toolName, toolInput: input.tool_input });
+  const evaluationObserved = canonical.status === 'resolved' || isEvaluationTarget(toolName);
+  const usageIncomplete = evaluationObserved && canonical.status !== 'resolved';
   const projectRoot = findSpotterMarker(input.cwd);
   const startedAt = Date.now();
 
@@ -37,7 +42,12 @@ export async function runPreToolUse({
     const response = await sendRequestFn({
       sessionId,
       event: 'tool_used',
-      payload: { tool_name: toolName },
+      payload: {
+        tool_name: toolName,
+        evaluation_observed: evaluationObserved,
+        evaluation_tool_id: canonical.status === 'resolved' ? canonical.toolId : null,
+        usage_incomplete: usageIncomplete,
+      },
       timeoutMs: TIMEOUT_MS,
     });
     if (response.ok !== true) {
@@ -57,6 +67,9 @@ export async function runPreToolUse({
         },
       });
       return;
+    }
+    if (response.result?.evaluation_record_error === true) {
+      safeWriteError(writeError, 'spotter-hook: Spotter の評価記録に失敗しました。\n');
     }
     await recordHookEventFn({
       projectRoot,
@@ -81,6 +94,14 @@ export async function runPreToolUse({
       },
     });
   }
+}
+
+function safeWriteError(writeError, text) {
+  try { writeError(text); } catch {}
+}
+
+function isEvaluationTarget(toolName) {
+  return toolName === 'Skill' || toolName === 'Agent' || toolName.startsWith('mcp__');
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {

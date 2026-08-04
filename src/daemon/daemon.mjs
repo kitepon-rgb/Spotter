@@ -47,6 +47,8 @@ import {
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
+import { createEvaluationStore } from '../core/evaluation-store.mjs';
+import { version } from '../version.mjs';
 const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
 // Phase A (hook parity, 2026-05-08): short-final + 0 used_tools のターンは Stop auditor を skip。
 // Codex 側 `shouldSkipShortCodexStop` と同じ閾値 (120 chars)。閾値 <= 0 で機能無効。
@@ -97,6 +99,9 @@ export async function startDaemon({
   removeStaleSocketFileFn = removeStaleSocketFile,
   secureSocketFileFn = secureSocketFile,
   writePidFileFn = writeFile,
+  evaluationStore = null,
+  createEvaluationStoreFn = createEvaluationStore,
+  spotterVersion = version,
 } = {}) {
   if (!sessionId) {
     throw new TypeError('sessionId is required');
@@ -166,7 +171,16 @@ export async function startDaemon({
   const state = {
     usedTools: [],
     lastUserInput: null,
+    activeObservationId: null,
   };
+  let ownedEvaluationStore = evaluationStore;
+  if (!ownedEvaluationStore && projectRoot) {
+    try {
+      ownedEvaluationStore = createEvaluationStoreFn();
+    } catch (error) {
+      logFn(`evaluation store unavailable: ${error.message}`);
+    }
+  }
 
   // 10-second recursion-guard bookkeeping. Every auditor spawn updates this; incoming
   // auditor-invoking events within the window are treated as recursive noise and passed.
@@ -192,7 +206,7 @@ export async function startDaemon({
     heartbeatHandle = setTimeout(() => {
       heartbeatHandle = null;
       logFn(`heartbeat timeout (${heartbeatTimeoutMs}ms), shutting down`);
-      shutdown(server, sessionId, logFn).catch((err) => {
+      shutdown(server, sessionId, logFn, ownedEvaluationStore).catch((err) => {
         logFn(`heartbeat shutdown error: ${err.message}`);
       });
     }, heartbeatTimeoutMs);
@@ -223,6 +237,7 @@ export async function startDaemon({
       lastAuditorCallAt > 0 &&
       sinceLast < haikuCallWindowMs
     ) {
+      if (envelope.event === 'turn_end') closeActiveEvaluationTurn();
       logFn(`${envelope.event} skipped: within ${sinceLast}ms of own haiku call`);
       return { pass: true, missing_tools: [], reason: 'within_haiku_call_window' };
     }
@@ -256,6 +271,9 @@ export async function startDaemon({
     }
     state.lastUserInput = userInput;
     state.usedTools = []; // reset tools for this turn
+    state.activeObservationId = typeof payload.observation_id === 'string' && payload.observation_id.length > 0
+      ? payload.observation_id
+      : null;
 
     if (payload.audit === false) {
       logFn('user_input: audit skipped because fresh context was unavailable');
@@ -289,7 +307,7 @@ export async function startDaemon({
       }`
     );
     maybeDispatchCodexRiskCheck('user_input', judgment);
-    return result;
+    return withEvaluationMeta(result, judgment.meta, auditorBackend.name, spotterVersion);
   }
 
   function handleToolUsed(payload) {
@@ -299,7 +317,30 @@ export async function startDaemon({
       err.code = 'E_INTERNAL';
       throw err;
     }
+    // Keep the existing raw transcript of tool usage for the turn_end auditor.
+    // Evaluation IDs are persisted independently through recordUsage below.
     state.usedTools.push(name);
+    if (payload.evaluation_observed === true && state.activeObservationId && ownedEvaluationStore) {
+      try {
+        if (payload.usage_incomplete === true) {
+          const marked = ownedEvaluationStore.markUsageIncomplete({ observationId: state.activeObservationId });
+          if (marked?.changed === false) return { recorded: true, evaluation_record_error: true };
+        } else {
+          const evaluationToolId = payload.evaluation_tool_id;
+          if (typeof evaluationToolId !== 'string' || evaluationToolId.length === 0) {
+            return { recorded: true, evaluation_record_error: true };
+          }
+          const recorded = ownedEvaluationStore.recordUsage({ observationId: state.activeObservationId, toolIds: [evaluationToolId] });
+          if (recorded?.recorded === false) {
+            ownedEvaluationStore.markUsageIncomplete({ observationId: state.activeObservationId });
+            return { recorded: true, evaluation_record_error: true };
+          }
+        }
+      } catch (error) {
+        logFn(`evaluation usage recording failed: ${error.message}`);
+        return { recorded: true, evaluation_record_error: true };
+      }
+    }
     logFn(`tool_used: ${name} (cumulative=${state.usedTools.length})`);
     return { recorded: true };
   }
@@ -311,6 +352,7 @@ export async function startDaemon({
       err.code = 'E_INTERNAL';
       throw err;
     }
+    closeActiveEvaluationTurn();
     if (payload.stop_hook_active === true) {
       logFn('turn_end: stop_hook_active=true, passing');
       state.usedTools = [];
@@ -363,6 +405,17 @@ export async function startDaemon({
     state.usedTools = [];
     state.lastUserInput = null;
     return result;
+  }
+
+  function closeActiveEvaluationTurn() {
+    const observationId = state.activeObservationId;
+    state.activeObservationId = null;
+    if (!observationId || !ownedEvaluationStore) return;
+    try {
+      ownedEvaluationStore.closeTurn({ observationId });
+    } catch (error) {
+      logFn(`evaluation turn closure failed: ${error.message}`);
+    }
   }
 
   function maybeDispatchCodexRiskCheck(stage, judgment) {
@@ -450,7 +503,7 @@ export async function startDaemon({
       clearTimeout(heartbeatHandle);
       heartbeatHandle = null;
     }
-    return shutdown(server, sessionId, logFn);
+    return shutdown(server, sessionId, logFn, ownedEvaluationStore);
   };
 
   return {
@@ -485,7 +538,7 @@ async function assertNoLiveDaemon(sessionId) {
   throw new DaemonAlreadyRunningError(sessionId, pid);
 }
 
-async function shutdown(server, sessionId, logFn) {
+async function shutdown(server, sessionId, logFn, evaluationStore = null) {
   try {
     await new Promise((resolve) => server.close(resolve));
   } catch (err) {
@@ -507,7 +560,26 @@ async function shutdown(server, sessionId, logFn) {
       logFn(`shutdown: unlink pid failed: ${err.message}`);
     }
   }
+  if (evaluationStore) {
+    try {
+      evaluationStore.closeOpenTurnsForSession({ sessionId });
+    } catch (err) {
+      logFn(`shutdown: evaluation open-turn closure failed: ${err.message}`);
+    }
+    try { evaluationStore.close(); } catch (err) { logFn(`shutdown: evaluation store close failed: ${err.message}`); }
+  }
   logFn('daemon stopped');
+}
+
+function withEvaluationMeta(result, meta, backend, spotterVersion) {
+  return {
+    ...result,
+    evaluation_meta: {
+      backend: meta?.backend ?? backend,
+      model: meta?.modelSelection?.effectiveModel ?? meta?.model ?? null,
+      spotterVersion,
+    },
+  };
 }
 
 export function pidFilePath(sessionId) {
