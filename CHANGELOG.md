@@ -21,6 +21,12 @@
   `S/P/I/C/A/M`、`P/S`、`A/C`を表示し、`cases` / `case`で非採用caseのrequest、2種類の文脈、
   提案ID、利用ID、outcomeを確認できる。reportは保存済みSQLiteだけを読み、JSONはWindows
   PowerShell 5.1でも壊れないASCII-safe形式で出力する。
+- **検証・公開。** 固定fixture、Claude / Codex hook、Throughline束縛、2 process同時writeを含む
+  568 tests（macOS / Linuxは566 pass / 2 skip、Windowsは556 pass / 12 platform skip）、
+  macOS / Linux / Windows × Node 22.13 / 22.xのCI run `30913375991`、75-file packを通過した。
+  別projectの実Codex turnではThroughline文脈付きproposalから
+  `S=1 P=1 I=1 C=1 A=1 M=0`を記録し、Claude実turnのpass観測と両hostのproposal fixtureも確認した。
+  Windowsではouter `exec`内の絶対pathを壊さずSkill採用へ変換する回帰も固定した。
 
 ## 1.4.28 — 2026-07-21
 

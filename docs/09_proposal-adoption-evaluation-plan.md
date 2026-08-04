@@ -2,7 +2,7 @@
 
 ## 0. 状態
 
-- 状態: **実装完了・baseline受入中**
+- 状態: **実装・受入完了**
 - 工程正本: Lattice plan `proposal-adoption-eval`。本文書は目的、設計判断、非目標、受入条件を持つ。
 - 実装対象repo: `/Users/kite/Developer/Spotter`
 - 外部依存: Throughlineの既存read-only I/F `throughline observer-read`。Throughline側は変更しない。
@@ -298,6 +298,17 @@ live確認で作る。
 - 非採用caseから、Spotterが見た文脈、既存Throughline I/Fの別文脈、提案tool、実使用toolを読める。
 - Throughlineは既存`observer-read`だけを使い、新規I/F、turn ID、background収集へ依存しない。
 - measurement追加が既存の提案内容、親向け文面、model、prompt、runtime contextを変えない。
+
+## 10. 受入結果
+
+- 固定集計fixtureは`S=10 P=4 I=6 C=5 A=2 M=1`、提案率40%、tool採用率40%で一致した。
+- 568 tests、macOS / Linux / Windows × Node 22.13 / 22.xのCI run `30913375991`は6/6 green。
+- 75-file npm packにevaluation store / context / report / CLIと関連testが含まれることを確認した。
+- 別projectの実Codex turnでThroughlineのfresh contextを保存し、提案した
+  `mcp__caveat__caveat_search`の利用を`S=1 P=1 I=1 C=1 A=1 M=0`として記録した。
+- Claudeは別projectの実turnで成功pass rowを記録し、proposal / PreToolUse / Stopの採用経路は
+  focused fixtureで確認した。既存hookの親向け文面とauditor判定は変更していない。
+- live受入で作った観測DBは確認後に削除し、利用開始時の端末DBへfixtureを混ぜていない。
 - baseline期間中はmodel、prompt、context量を固定する。
 
 baselineが十分に溜まった後、ownerがreportと非採用caseを見て次を決める。
