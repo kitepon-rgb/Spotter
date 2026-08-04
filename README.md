@@ -256,8 +256,9 @@ spotter uninstall        # remove hooks from this project (leaves ~/.spotter int
 
 The dashboard is local-first. Every terminal reads its own `~/.spotter/evaluation.db`; the hub
 keeps only a static device-to-upstream map and does not copy evaluation data into a cloud database.
-The device view shows `S/P/I/C/A/M`, proposal and adoption rates, project/tool breakdowns,
-non-adopted cases, and the two separately captured context sources. The hub checks health only
+The device view shows Japanese labels for every evaluation metric, proposal and adoption rates
+with their numerator and denominator, project/tool breakdowns, non-adopted cases, and the two
+separately captured context sources. The hub checks health only
 when the device list is requested, so an offline terminal is isolated without a background monitor
 or retry queue.
 

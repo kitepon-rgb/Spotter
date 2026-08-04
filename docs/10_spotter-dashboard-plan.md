@@ -35,7 +35,8 @@ hubのonline表示は端末一覧request時のhealth取得だけで決め、back
 ## 表示面
 
 - 端末一覧: Mac、main-server、FOX WSL2、FOX Windows nativeと到達状態
-- 端末概要: `S/P/I/C/A/M`、提案率`P/S`、採用率`A/C`
+- 端末概要: 対象ターン、ツール提案あり、提案ツール数、利用判定済み、実際に使用、判定不能
+- 提案率は「ツール提案あり ÷ 対象ターン」、採用率は「実際に使用 ÷ 利用判定済み」と表示する
 - project別内訳とtool別内訳
 - 非採用case一覧
 - case詳細: request、auditorへ渡したcontext、Throughline observer snapshot、提案ID、利用ID、item結果
@@ -70,4 +71,3 @@ hubのonline表示は端末一覧request時のhealth取得だけで決め、back
 5. `spotter.kitepon.dev`はCloudflare Access通過後にHTTPS 200、未認証requestはAccessへ送られる。
 6. focused test、関連test、OS CI、npm package smokeがgreenである。
 7. npm、GitHub tag/Release、4端末のglobal install、常駐service反映まで完了する。
-

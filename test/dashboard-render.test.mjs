@@ -23,9 +23,16 @@ test('renders device list, overview metrics, rates, and responsive dependency-fr
   assert.match(html, /aria-label="端末一覧"/);
   assert.match(html, /Mac<small>online<\/small>/);
   assert.match(html, /FOX Windows native<small>offline<\/small>/);
-  assert.match(html, /S<\/span><strong>10<\/strong>/);
-  assert.match(html, /提案率 P\/S<\/dt><dd>50% \(5\/10\)<\/dd>/);
-  assert.match(html, /採用率 A\/C<\/dt><dd>67% \(2\/3\)<\/dd>/);
+  assert.match(html, /対象ターン<\/span><strong>10<\/strong>/);
+  assert.match(html, /ツール提案あり<\/span><strong>5<\/strong>/);
+  assert.match(html, /提案ツール数<\/span><strong>4<\/strong>/);
+  assert.match(html, /利用判定済み<\/span><strong>3<\/strong>/);
+  assert.match(html, /実際に使用<\/span><strong>2<\/strong>/);
+  assert.match(html, /判定不能<\/span><strong>1<\/strong>/);
+  assert.match(html, /提案率<small>ツール提案あり ÷ 対象ターン<\/small><\/dt><dd>50% \(5\/10\)<\/dd>/);
+  assert.match(html, /採用率<small>実際に使用 ÷ 利用判定済み<\/small><\/dt><dd>67% \(2\/3\)<\/dd>/);
+  assert.doesNotMatch(html, />[SPICAM]<\/span>/);
+  assert.doesNotMatch(html, /[PA]\/[SC]/);
   assert.match(html, /@media \(max-width: 700px\)/);
   assert.doesNotMatch(html, /<script\b/i);
   assert.doesNotMatch(html, /https:\/\/[^\s]*cdn/i);
@@ -42,6 +49,8 @@ test('renders project and tool breakdowns plus non-adopted case links', () => {
   assert.match(html, /\/work\/app/);
   assert.match(html, /tool別内訳/);
   assert.match(html, /mcp__caveat__search/);
+  assert.match(html, /<th scope="col">対象ターン<\/th>/);
+  assert.match(html, /<th scope="col">判定不能<\/th>/);
   assert.match(html, /非採用case/);
   assert.match(html, /href="\?case=obs-1"/);
   assert.match(html, /1970-01-01T00:00:00\.000Z/);

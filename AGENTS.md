@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.3（2026-08-04公開）**: dashboardから`S/P/I/C/A/M`略号を外し、
+> 6指標と提案率・採用率の分子/分母を日本語で表示する。
+> 内部集計schemaとCLI出力の互換性は維持する。
+
 > **v1.5.2（2026-08-04公開）**: Mac LaunchAgentへHomebrew NodeのPATHを明示し、
 > FOX Windows nativeのdevice portをWSL2 localhost relayと衝突しない53944へ分離する。
 > 評価SQLiteの初回同時openはretryを足さず、SQLite自身のbounded lock待ちを5秒にする。
@@ -103,6 +107,11 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.5.3 (published 2026-08-04)**: dashboardの概要cardとproject/tool別内訳は
+`S/P/I/C/A/M`を表示せず、対象ターン、ツール提案あり、提案ツール数、
+利用判定済み、実際に使用、判定不能と表示する。提案率は「ツール提案あり ÷
+対象ターン」、採用率は「実際に使用 ÷ 利用判定済み」と示し、内部集計schemaは変更しない。
 
 **v1.5.2 (published 2026-08-04)**: Mac LaunchAgentは`spotter`のenv shebangが解決する
 Homebrew NodeのPATHを明示する。FOX Windows nativeはWSL2 localhost relayが53940を共有する

@@ -3,6 +3,14 @@
 // opens EvaluationStore or asks Throughline for context.
 
 const METRIC_KEYS = ['S', 'P', 'I', 'C', 'A', 'M'];
+const METRIC_LABELS = {
+  S: '対象ターン',
+  P: 'ツール提案あり',
+  I: '提案ツール数',
+  C: '利用判定済み',
+  A: '実際に使用',
+  M: '判定不能',
+};
 
 /**
  * Render a complete dashboard document.
@@ -96,7 +104,7 @@ function renderDeviceContent({ overview, cases, caseDetail, filters, action }) {
   return `${renderFilters(filters, action)}
 <section aria-labelledby="overview-heading">
   <div class="section-heading"><h2 id="overview-heading">概要</h2>${renderRates(totals)}</div>
-  <div class="metrics" aria-label="評価メトリクス">${METRIC_KEYS.map((key) => `<article class="metric"><span>${key}</span><strong>${escapeHtml(metric(totals, key))}</strong></article>`).join('')}</div>
+  <div class="metrics" aria-label="評価メトリクス">${METRIC_KEYS.map((key) => `<article class="metric"><span>${METRIC_LABELS[key]}</span><strong>${escapeHtml(metric(totals, key))}</strong></article>`).join('')}</div>
 </section>
 ${renderBreakdown('project-breakdown', 'project別内訳', projects)}
 ${renderBreakdown('tool-breakdown', 'tool別内訳', tools)}
@@ -119,13 +127,13 @@ function renderFilters(filters, action) {
 function renderRates(summary) {
   const proposal = rate(metricNumber(summary, 'P'), metricNumber(summary, 'S'));
   const adoption = rate(metricNumber(summary, 'A'), metricNumber(summary, 'C'));
-  return `<dl class="rates"><div><dt>提案率 P/S</dt><dd>${escapeHtml(proposal)}</dd></div><div><dt>採用率 A/C</dt><dd>${escapeHtml(adoption)}</dd></div></dl>`;
+  return `<dl class="rates"><div><dt>提案率<small>ツール提案あり ÷ 対象ターン</small></dt><dd>${escapeHtml(proposal)}</dd></div><div><dt>採用率<small>実際に使用 ÷ 利用判定済み</small></dt><dd>${escapeHtml(adoption)}</dd></div></dl>`;
 }
 
 function renderBreakdown(id, title, rows) {
   return `<section aria-labelledby="${id}">
   <h2 id="${id}">${title}</h2>
-  ${rows.length === 0 ? '<p class="empty">該当するデータはありません。</p>' : `<div class="table-wrap"><table><thead><tr><th scope="col">項目</th>${METRIC_KEYS.map((key) => `<th scope="col">${key}</th>`).join('')}<th scope="col">提案率</th><th scope="col">採用率</th></tr></thead><tbody>${rows.map(([label, summary]) => `<tr><th scope="row">${escapeHtml(label)}</th>${METRIC_KEYS.map((key) => `<td>${escapeHtml(metric(summary, key))}</td>`).join('')}<td>${escapeHtml(rate(metricNumber(summary, 'P'), metricNumber(summary, 'S')))}</td><td>${escapeHtml(rate(metricNumber(summary, 'A'), metricNumber(summary, 'C')))}</td></tr>`).join('')}</tbody></table></div>`}
+  ${rows.length === 0 ? '<p class="empty">該当するデータはありません。</p>' : `<div class="table-wrap"><table><thead><tr><th scope="col">項目</th>${METRIC_KEYS.map((key) => `<th scope="col">${METRIC_LABELS[key]}</th>`).join('')}<th scope="col">提案率</th><th scope="col">採用率</th></tr></thead><tbody>${rows.map(([label, summary]) => `<tr><th scope="row">${escapeHtml(label)}</th>${METRIC_KEYS.map((key) => `<td>${escapeHtml(metric(summary, key))}</td>`).join('')}<td>${escapeHtml(rate(metricNumber(summary, 'P'), metricNumber(summary, 'S')))}</td><td>${escapeHtml(rate(metricNumber(summary, 'A'), metricNumber(summary, 'C')))}</td></tr>`).join('')}</tbody></table></div>`}
 </section>`;
 }
 
@@ -217,8 +225,8 @@ h1 { margin: .25rem 0; font-size: clamp(1.75rem, 4vw, 2.5rem); } h2 { margin-top
 .device { align-items: center; border: 1px solid #ccd4dd; border-radius: 999px; color: inherit; display: inline-flex; gap: .45rem; padding: .45rem .7rem; text-decoration: none; }
 .device[aria-current="page"] { border-color: #1c63b8; box-shadow: 0 0 0 2px #b8d6fa; }.device small { color: #52606d; }.status-dot { background: #a03333; border-radius: 50%; height: .55rem; width: .55rem; }.online .status-dot { background: #16803c; }
 .filters { align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }.filters label { display: grid; font-size: .85rem; gap: .25rem; }.filters input, button { border: 1px solid #aeb8c4; border-radius: .35rem; font: inherit; padding: .45rem; }button { background: #1c63b8; color: white; cursor: pointer; }
-.section-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }.rates { display: flex; gap: 1.25rem; margin: 0; }.rates div { display: flex; gap: .35rem; }.rates dt { color: #52606d; }.rates dd { font-weight: 700; margin: 0; }
-.metrics { display: grid; gap: .75rem; grid-template-columns: repeat(6, minmax(90px, 1fr)); }.metric { background: #fff; border: 1px solid #d7dce2; border-radius: .5rem; padding: .8rem; }.metric span { color: #52606d; display: block; }.metric strong { font-size: 1.5rem; }
+.section-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }.rates { display: flex; gap: 1.25rem; margin: 0; }.rates div { display: flex; gap: .45rem; }.rates dt { color: #52606d; }.rates dt small { display: block; font-size: .72rem; }.rates dd { font-weight: 700; margin: 0; }
+.metrics { display: grid; gap: .75rem; grid-template-columns: repeat(6, minmax(110px, 1fr)); }.metric { background: #fff; border: 1px solid #d7dce2; border-radius: .5rem; padding: .8rem; }.metric span { color: #52606d; display: block; }.metric strong { font-size: 1.5rem; }
 .table-wrap { overflow-x: auto; }table { border-collapse: collapse; min-width: 680px; width: 100%; }th, td { border-bottom: 1px solid #d7dce2; padding: .6rem; text-align: left; vertical-align: top; }thead { background: #eaf0f6; }tbody tr:nth-child(even) { background: #fbfcfd; }
 .case-detail { border-top: 2px solid #1c63b8; margin-top: 2.5rem; }.metadata { display: flex; flex-wrap: wrap; gap: 1rem; }.metadata div { min-width: 12rem; }.metadata dt { color: #52606d; }.metadata dd { margin: .2rem 0; overflow-wrap: anywhere; }pre { background: #1e2935; color: #e6edf3; margin: 0; overflow-x: auto; padding: 1rem; white-space: pre-wrap; word-break: break-word; }
 @media (max-width: 700px) { .dashboard { padding-top: 1rem; }.metrics { grid-template-columns: repeat(3, 1fr); }.filters { align-items: stretch; flex-direction: column; }.filters input, button { width: 100%; }.rates { flex-direction: column; gap: .25rem; } }
