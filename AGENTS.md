@@ -1,5 +1,8 @@
 # AGENTS.md
 
+> **v1.5.2（2026-08-04公開）**: Mac LaunchAgentへHomebrew NodeのPATHを明示し、
+> FOX Windows nativeのdevice portをWSL2 localhost relayと衝突しない53944へ分離する。
+
 > **v1.5.1（2026-08-04公開）**: main-serverのsystemd user managerがnvmのnpm binを
 > 継承しない実環境に合わせ、dashboard hub unitもhost別env fileからPATHを受ける。
 
@@ -99,6 +102,10 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.5.2 (published 2026-08-04)**: Mac LaunchAgentは`spotter`のenv shebangが解決する
+Homebrew NodeのPATHを明示する。FOX Windows nativeはWSL2 localhost relayが53940を共有する
+実環境に合わせ、deviceをloopback 53944、main-server側reverse portを53943へ固定する。
 
 **v1.5.1 (published 2026-08-04)**: dashboard hubのsystemd user unitも
 `~/.config/spotter/dashboard-hub.env`を読み、main-serverで実測したnpm binをPATHへ設定できる。

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.2 — 2026-08-04
+
+- **Mac LaunchAgentでNodeを解決。** `spotter`の絶対pathだけでなく、env shebangが使う
+  Homebrew Nodeを含むPATHをplistへ明示し、launchdの最小PATHでもdevice serverを起動できるようにした。
+- **Windows nativeとWSL2のloopback portを分離。** WSL2 localhost relayがWindows側の53940も
+  占有する実環境に合わせ、Windows native deviceを53944へ移し、main-serverの53943 tunnelも
+  53944へ接続する。Windowsを選んだ時にWSL2の評価DBが表示される衝突を解消した。
+
 ## 1.5.1 — 2026-08-04
 
 - **main-server hubのsystemd PATHを明示設定可能にした。** user managerがnvmのnpm binを

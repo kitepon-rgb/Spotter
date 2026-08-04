@@ -2,7 +2,9 @@
 
 ## 固定構成
 
-各端末のdevice serverは`127.0.0.1:53940`だけで待ち受ける。main-serverのhubは
+各端末のdevice serverはloopbackだけで待ち受ける。main-server、Mac、FOX WSL2は
+`127.0.0.1:53940`、FOX Windows nativeはWSL2 localhost relayとの衝突を避けて
+`127.0.0.1:53944`を使う。main-serverのhubは
 Docker Caddyから到達できる`172.18.0.1:53940`で待ち受ける。評価DBは各端末の
 `~/.spotter/evaluation.db`をその場で読み、端末外へ複製しない。
 
@@ -88,7 +90,7 @@ main-serverのSSH host名またはIPを明示して次を1回実行する。
 登録される2 taskはログオン時にdevice serverとreverse tunnelを起動する。確認:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:53940/_spotter/health
+Invoke-RestMethod http://127.0.0.1:53944/_spotter/health
 Get-ScheduledTask -TaskName 'Spotter dashboard *' | Get-ScheduledTaskInfo
 ```
 
