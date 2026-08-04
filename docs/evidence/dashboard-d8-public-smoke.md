@@ -14,3 +14,17 @@
 - ブラウザ: hubと同じorigin HTMLをChromeで表示し、端末一覧、実集計、内訳、非採用case、case詳細のDOMとレイアウトを確認
 
 評価SQLiteの複製、background monitor、retry queue、reconcilerは追加していない。
+
+## v1.5.3 指標名修正の再受入
+
+- 公開版: `claude-spotter@1.5.3`、tag / GitHub Release `v1.5.3`、release commit `fae7e5a`
+- CI: GitHub Actions run `30921200287`のmacOS / Linux / Windows × Node 22.13 / 22.xの6 jobが成功
+- 配布: Mac、main-server、FOX WSL2、FOX Windows nativeで`spotter 1.5.3`を確認し、各device serviceを再起動
+- device upstream: 53940–53943の4端末がすべてhealth 200、device IDも設定と一致
+- 実HTML: 4端末すべてで「対象ターン」「ツール提案あり」「提案ツール数」
+  「利用判定済み」「実際に使用」「判定不能」と、2種類の率の日本語分子/分母を確認
+- 旧表示: cardの`S/P/I/C/A/M`と率の`P/S`・`A/C`は4端末のHTMLに残っていない
+- Windows: 旧device child processがTask停止後も残り新起動がport競合していたため、旧PIDだけを停止し、
+  Scheduled Taskからv1.5.3を再起動して稼働HTMLを再確認
+- 公開外形: 未認証`https://spotter.kitepon.dev/`はCloudflare Access loginへHTTP 302。
+  Caddy / Tunnel / Accessは変更せず、既存の認証済み200証跡とhub originの実HTMLを継続使用
