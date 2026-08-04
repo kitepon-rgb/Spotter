@@ -28,8 +28,12 @@ export function createEvaluationStore({
   assertPositiveInteger(busyTimeoutMs, 'busyTimeoutMs');
   mkdirSync(dirname(databasePath), { recursive: true, mode: 0o700 });
   const database = new DatabaseSync(databasePath);
-  database.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=${busyTimeoutMs}; PRAGMA foreign_keys=ON;`);
+  // cold startでは別projectのprocessも同じ未作成DBを同時に開き得る。
+  // WAL化とschema作成が最初のwrite lockを競う前に、既定1秒のbounded waitを有効にする。
+  database.exec(`PRAGMA busy_timeout=${busyTimeoutMs};`);
+  database.exec('PRAGMA foreign_keys=ON;');
   initialize(database);
+  database.exec('PRAGMA journal_mode=WAL;');
   return new EvaluationStore(database);
 }
 
