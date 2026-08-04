@@ -14,3 +14,5 @@ dist/
 .claude/
 .spotter/
 .codex-sidecar/
+.lattice/todo/plans/*/*/independence.json
+.lattice/runs/
