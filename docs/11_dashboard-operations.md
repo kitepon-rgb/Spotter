@@ -40,6 +40,12 @@ SPOTTER_DEVICE_ID=main-server
 SPOTTER_DEVICE_NAME=main-server
 ```
 
+device envと同じPATHを`~/.config/spotter/dashboard-hub.env`にも置く。main-serverの例:
+
+```ini
+PATH=/home/kite/.nvm/versions/node/v24.14.1/bin:/usr/local/bin:/usr/bin:/bin
+```
+
 ```sh
 systemctl --user daemon-reload
 systemctl --user enable --now spotter-dashboard-device.service spotter-dashboard-hub.service
@@ -47,8 +53,7 @@ curl --fail http://127.0.0.1:53940/_spotter/health
 curl --fail http://172.18.0.1:53940/
 ```
 
-systemd user managerの`PATH`から`spotter`が見えない場合だけ、ユーザー環境の実際のnpm binを
-unitの`Environment=PATH=...`として追加する。別の起動経路へfallbackしない。
+device envにも同じPATH行を置く。値は各端末で実測したnpm binを使い、別の起動経路へfallbackしない。
 
 ## FOX WSL2
 

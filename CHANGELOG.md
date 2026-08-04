@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 — 2026-08-04
+
+- **main-server hubのsystemd PATHを明示設定可能にした。** user managerがnvmのnpm binを
+  継承しない実環境に合わせ、hub unitも`dashboard-hub.env`を読む。device unitと同じく、
+  実測したnpm binをPATHへ置き、端末固有のversion pathを配布unitへ焼かない。
+
 ## 1.5.0 — 2026-08-04
 
 - **評価結果を端末別Web dashboardで表示。** 各端末の`~/.spotter/evaluation.db`をrequestごとに読み、

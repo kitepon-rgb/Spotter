@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
+EnvironmentFile=%h/.config/spotter/dashboard-hub.env
 ExecStart=/usr/bin/env spotter dashboard hub --config %h/.config/spotter/dashboard-hub.json --host 172.18.0.1 --port 53940
 Restart=on-failure
 RestartSec=10
