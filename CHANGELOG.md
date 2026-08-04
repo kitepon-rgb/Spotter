@@ -12,7 +12,11 @@
   snapshotを保存しない。
 - **欠測とtool identityを率から分離。** Claudeの利用記録失敗、Codex transcript不全、Stopが30分以上
   欠落したopen proposalは`outcome_missing`として投影し、非採用へ混ぜない。Codex Skillは提案済みの
-  正規`SKILL.md`を実際にreadしたcallだけを採用として認識する。
+  正規`SKILL.md`を実際にreadしたcallだけを採用として認識する。現行Codexのouter `exec`内で実行される
+  nested MCP callと、同じturn内の複数`exec`も個別の利用入力として保持する。
+- **初回同時openを直列化。** 2 projectが未作成の評価DBを同時に開いてもWAL設定前に
+  `database is locked`とならないよう、bounded busy timeoutをschema初期化より先に有効化する。
+  retry、lockfile、background回収は追加しない。
 - **評価CLIを追加。** `spotter evaluation report`で全project / project / tool / host別の
   `S/P/I/C/A/M`、`P/S`、`A/C`を表示し、`cases` / `case`で非採用caseのrequest、2種類の文脈、
   提案ID、利用ID、outcomeを確認できる。reportは保存済みSQLiteだけを読み、JSONはWindows

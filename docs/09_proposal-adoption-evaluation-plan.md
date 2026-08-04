@@ -162,7 +162,8 @@ passも`evaluation_turns`へ1行記録するがitemは0件とする。これが�
 - MCP: catalog IDの`mcp__server__tool`へ揃える。
 - Claude Skill: PreToolUseの`tool_input`内skill selectorをcatalog IDへ揃える。
 - Claude sub-agent: PreToolUseの`tool_input.subagent_type`をcatalog IDへ揃える。
-- Codex MCP: current-turn transcriptの識別子をcatalog IDへ揃える。
+- Codex MCP: current-turn transcriptの識別子をcatalog IDへ揃える。現行Codexのouter `exec`が
+  `tools.mcp__...(...)`を実行する形も、文字列・comment内の言及を除外して実callだけ認識する。
 - Codex Skill: current-turnの`exec` / `exec_command`が、提案済みskillの正規root配下にある実在
   `SKILL.md`をreadした時だけ、frontmatter nameとplugin prefixからcatalog IDへ揃える。
 
