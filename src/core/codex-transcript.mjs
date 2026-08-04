@@ -178,10 +178,14 @@ export async function readCodexToolUsage(transcriptPath, {
       ? payload.call_id
       : null;
     if (callId && seenCallIds.has(callId)) continue;
-    if (seenNames.has(name)) continue;
     if (callId) seenCallIds.add(callId);
-    seenNames.add(name);
-    usage.usedTools.push(name);
+    if (!seenNames.has(name)) {
+      seenNames.add(name);
+      usage.usedTools.push(name);
+    }
+    // `usedTools` is a name set for the Stop auditor, while evaluation needs every actual
+    // invocation input. In current Codex rollouts multiple outer `exec` calls carry distinct
+    // nested tool calls, so name de-duplication must not discard later inputs.
     usage.toolCalls.push({
       toolName: name,
       toolInput: payload.arguments ?? payload.input ?? null,

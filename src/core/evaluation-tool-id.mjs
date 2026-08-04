@@ -42,23 +42,126 @@ function readToolInput(toolInput) {
   }
 }
 
-function codexShellInput(toolInput) {
+function maskJavaScriptLiteralsAndComments(source) {
+  let masked = '';
+  let index = 0;
+  let state = 'code';
+  while (index < source.length) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (state === 'code') {
+      if (char === '/' && next === '/') {
+        masked += '  ';
+        index += 2;
+        state = 'line-comment';
+        continue;
+      }
+      if (char === '/' && next === '*') {
+        masked += '  ';
+        index += 2;
+        state = 'block-comment';
+        continue;
+      }
+      if (char === '"' || char === "'" || char === '`') {
+        masked += ' ';
+        index += 1;
+        state = char;
+        continue;
+      }
+      masked += char;
+      index += 1;
+      continue;
+    }
+    if (state === 'line-comment') {
+      masked += char === '\n' ? '\n' : ' ';
+      index += 1;
+      if (char === '\n') state = 'code';
+      continue;
+    }
+    if (state === 'block-comment') {
+      if (char === '*' && next === '/') {
+        masked += '  ';
+        index += 2;
+        state = 'code';
+      } else {
+        masked += char === '\n' ? '\n' : ' ';
+        index += 1;
+      }
+      continue;
+    }
+    if (char === '\\') {
+      masked += next === '\n' ? ' \n' : '  ';
+      index += Math.min(2, source.length - index);
+      continue;
+    }
+    masked += char === '\n' ? '\n' : ' ';
+    index += 1;
+    if (char === state) state = 'code';
+  }
+  return masked;
+}
+
+function parseJavaScriptStringAt(source, start) {
+  const quote = source[start];
+  if (quote !== '"' && quote !== "'") return null;
+  let raw = quote;
+  for (let index = start + 1; index < source.length; index += 1) {
+    const char = source[index];
+    raw += char;
+    if (char === '\\') {
+      index += 1;
+      if (index < source.length) raw += source[index];
+      continue;
+    }
+    if (char !== quote) continue;
+    if (quote === '"') {
+      try {
+        return { value: JSON.parse(raw), end: index + 1 };
+      } catch {
+        return null;
+      }
+    }
+    // Shell commands in Codex wrappers use ordinary single-quoted JS literals. Decode only
+    // the escape forms needed by those literals; template/expression evaluation is excluded.
+    const body = raw.slice(1, -1);
+    const value = body.replace(/\\(?:([\\'"bnrtfv0])|x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4}))/gu,
+      (match, simple, hex, unicode) => {
+        if (hex) return String.fromCodePoint(Number.parseInt(hex, 16));
+        if (unicode) return String.fromCodePoint(Number.parseInt(unicode, 16));
+        return ({ '\\': '\\', "'": "'", '"': '"', b: '\b', n: '\n', r: '\r', t: '\t', f: '\f', v: '\v', 0: '\0' })[simple] ?? match;
+      });
+    return { value, end: index + 1 };
+  }
+  return null;
+}
+
+function codexShellInputs(toolInput) {
   const parsed = readToolInput(toolInput);
   if (parsed) {
-    const command = parsed.cmd ?? parsed.command;
-    return typeof command === 'string' ? command : '';
+    return [...new Set([parsed.cmd, parsed.command, parsed.text]
+      .filter((value) => typeof value === 'string' && value.length > 0))];
   }
-  if (typeof toolInput !== 'string') return '';
-  // Current `exec` custom calls wrap exec_command in JavaScript. Extract only its cmd/command
-  // string literal so text merely mentioned elsewhere in the wrapper cannot count as a read.
-  const match = /(?:["']?(?:cmd|command)["']?)\s*:\s*("(?:\\.|[^"\\])*")/u.exec(toolInput);
-  if (!match) return '';
-  try {
-    const command = JSON.parse(match[1]);
-    return typeof command === 'string' ? command : '';
-  } catch {
-    return '';
+  if (typeof toolInput !== 'string') return [];
+  // Current outer `exec` calls contain JavaScript which invokes PTY/shell tools. Extract only
+  // literal cmd/command/text property values from executable code, never prose in comments or
+  // string values. A later exact read-command check prevents arbitrary text fields from counting.
+  const masked = maskJavaScriptLiteralsAndComments(toolInput);
+  const inputs = [];
+  const propertyPattern = /(?:^|[,{])\s*(?:cmd|command|text)\s*:/gu;
+  for (const match of masked.matchAll(propertyPattern)) {
+    let valueStart = match.index + match[0].length;
+    while (/\s/u.test(toolInput[valueStart] ?? '')) valueStart += 1;
+    const parsedString = parseJavaScriptStringAt(toolInput, valueStart);
+    if (parsedString && parsedString.value.length > 0) inputs.push(parsedString.value);
   }
+  return [...new Set(inputs)];
+}
+
+function nestedMcpToolIds(toolInput) {
+  if (typeof toolInput !== 'string') return [];
+  const executable = maskJavaScriptLiteralsAndComments(toolInput);
+  const matches = executable.matchAll(/\btools\.(mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_.:/-]+)\s*\(/gu);
+  return [...new Set([...matches].map((match) => match[1]).filter(validCatalogId))];
 }
 
 function escapedRegExp(value) {
@@ -131,24 +234,39 @@ export async function canonicalizeCodexSkillReadToolIds(usages, {
   const adopted = new Set();
   for (const usage of usages) {
     if (!isRecord(usage) || (usage.toolName !== 'exec' && usage.toolName !== 'exec_command')) continue;
-    const command = codexShellInput(usage.toolInput);
-    if (!command) continue;
-    for (const skillPath of mentionedSkillFiles(command)) {
-      if (!isReadCommandForPath(command, skillPath)) continue;
-      const identity = relativeSkillIdentity(skillPath, { projectRoot, codexHome });
-      if (!identity) continue;
-      let frontmatter;
-      try {
-        frontmatter = await readFrontmatterFn(skillPath);
-      } catch {
-        continue;
+    for (const command of codexShellInputs(usage.toolInput)) {
+      for (const skillPath of mentionedSkillFiles(command)) {
+        if (!isReadCommandForPath(command, skillPath)) continue;
+        const identity = relativeSkillIdentity(skillPath, { projectRoot, codexHome });
+        if (!identity) continue;
+        let frontmatter;
+        try {
+          frontmatter = await readFrontmatterFn(skillPath);
+        } catch {
+          continue;
+        }
+        const skillName = typeof frontmatter?.name === 'string' && frontmatter.name.length > 0
+          ? frontmatter.name
+          : identity.directory;
+        const toolId = identity.plugin ? `${identity.plugin}:${skillName}` : skillName;
+        if (proposed.has(toolId)) adopted.add(toolId);
       }
-      const skillName = typeof frontmatter?.name === 'string' && frontmatter.name.length > 0
-        ? frontmatter.name
-        : identity.directory;
-      const toolId = identity.plugin ? `${identity.plugin}:${skillName}` : skillName;
-      if (proposed.has(toolId)) adopted.add(toolId);
     }
+  }
+  return [...adopted];
+}
+
+/**
+ * Recognizes MCP calls that current Codex rollouts execute inside an outer `exec` JavaScript
+ * wrapper. Only a direct executable `tools.mcp__...(` member call counts; string/comment mentions
+ * are deliberately ignored.
+ */
+export function canonicalizeCodexNestedMcpToolIds(usages) {
+  if (!Array.isArray(usages)) return [];
+  const adopted = new Set();
+  for (const usage of usages) {
+    if (!isRecord(usage) || usage.toolName !== 'exec') continue;
+    for (const toolId of nestedMcpToolIds(usage.toolInput)) adopted.add(toolId);
   }
   return [...adopted];
 }

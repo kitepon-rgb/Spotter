@@ -86,18 +86,22 @@ test('readCodexToolUsage: recognizes current shell, legacy function, MCP, and ag
   }
 });
 
-test('readCodexToolUsage: dedupes by call_id and normalized name', async () => {
+test('readCodexToolUsage: dedupes names but preserves every distinct same-name call input', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'spotter-codex-transcript-dedupe-'));
   const transcript = join(dir, 'rollout.jsonl');
   try {
     await writeFile(transcript, [
-      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'same-call' } }),
-      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'same-call' } }),
-      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'exec' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'same-call', input: 'first input' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'same-call', input: 'duplicate event' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'exec', call_id: 'second-call', arguments: 'second input' } }),
     ].join('\n'), 'utf8');
 
     const usage = await readCodexToolUsage(transcript);
     assert.deepEqual(usage.usedTools, ['exec']);
+    assert.deepEqual(usage.toolCalls, [
+      { toolName: 'exec', toolInput: 'first input' },
+      { toolName: 'exec', toolInput: 'second input' },
+    ]);
     assert.equal(usage.stats.recognized, 3);
   } finally {
     await rm(dir, { recursive: true, force: true });

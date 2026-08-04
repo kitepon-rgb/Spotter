@@ -38,6 +38,7 @@ import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
 import { loadEvaluationObserverContext } from '../core/evaluation-context.mjs';
 import {
+  canonicalizeCodexNestedMcpToolIds,
   canonicalizeCodexSkillReadToolIds,
   canonicalizeProposedToolIds,
   canonicalizeUsedToolIds,
@@ -938,7 +939,12 @@ async function closeCodexEvaluationTurn({
           projectRoot,
           codexHome,
         });
-        usedToolIds = [...new Set([...canonicalUsage.resolvedToolIds, ...skillReads])];
+        const nestedMcpCalls = canonicalizeCodexNestedMcpToolIds(allUsages);
+        usedToolIds = [...new Set([
+          ...canonicalUsage.resolvedToolIds,
+          ...nestedMcpCalls,
+          ...skillReads,
+        ])];
         usageStatus = isCompleteCodexUsage(toolUsage, canonicalUsage) ? 'complete' : 'incomplete';
       }
       store.closeTurn({ observationId: row.observation_id, usedToolIds, usageStatus, completedAtMs });
