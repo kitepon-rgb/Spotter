@@ -16,6 +16,7 @@ import {
 } from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 import { canonicalizeToolId } from '../core/evaluation-tool-id.mjs';
+import { createEvaluationStore } from '../core/evaluation-store.mjs';
 
 const TIMEOUT_MS = 1_000;
 
@@ -23,6 +24,7 @@ export async function runPreToolUse({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
   recordHookEventFn = recordClaudeHookEvent,
+  createEvaluationStoreFn = createEvaluationStore,
   writeError = (text) => process.stderr.write(text),
 } = {}) {
   if (isChildCall()) return;
@@ -37,6 +39,12 @@ export async function runPreToolUse({
   const usageIncomplete = evaluationObserved && canonical.status !== 'resolved';
   const projectRoot = findSpotterMarker(input.cwd);
   const startedAt = Date.now();
+  let evaluationInvalidated = false;
+  const invalidateEvaluation = () => {
+    if (!evaluationObserved || evaluationInvalidated) return;
+    evaluationInvalidated = true;
+    closeEvaluationAsIncomplete({ sessionId, createEvaluationStoreFn, writeError });
+  };
 
   try {
     const response = await sendRequestFn({
@@ -55,6 +63,7 @@ export async function runPreToolUse({
       // the tool (exit 0) — a PreToolUse exit 2 would DENY the tool, which must never happen
       // just because Spotter could not record it. The audit at user_input/turn_end still warns
       // loudly if the backend is down.
+      invalidateEvaluation();
       await recordHookEventFn({
         projectRoot,
         event: {
@@ -70,6 +79,19 @@ export async function runPreToolUse({
     }
     if (response.result?.evaluation_record_error === true) {
       safeWriteError(writeError, 'spotter-hook: Spotter の評価記録に失敗しました。\n');
+      invalidateEvaluation();
+      await recordHookEventFn({
+        projectRoot,
+        event: {
+          hook: 'PreToolUse',
+          status: 'degraded',
+          toolName,
+          code: 'E_EVALUATION_RECORD',
+          reason: 'evaluation_record_error',
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      return;
     }
     await recordHookEventFn({
       projectRoot,
@@ -82,6 +104,7 @@ export async function runPreToolUse({
     });
   } catch (err) {
     // Transport failure during best-effort recording: allow the tool (no exit 2 deny).
+    invalidateEvaluation();
     await recordHookEventFn({
       projectRoot,
       event: {
@@ -93,6 +116,18 @@ export async function runPreToolUse({
         durationMs: Date.now() - startedAt,
       },
     });
+  }
+}
+
+function closeEvaluationAsIncomplete({ sessionId, createEvaluationStoreFn, writeError }) {
+  let store;
+  try {
+    store = createEvaluationStoreFn();
+    store.closeOpenTurnsForSession({ sessionId });
+  } catch {
+    safeWriteError(writeError, 'spotter-hook: Spotter の評価記録を outcome_missing で確定できませんでした。\n');
+  } finally {
+    try { store?.close(); } catch {}
   }
 }
 

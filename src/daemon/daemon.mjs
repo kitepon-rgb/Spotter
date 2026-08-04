@@ -172,6 +172,7 @@ export async function startDaemon({
     usedTools: [],
     lastUserInput: null,
     activeObservationId: null,
+    evaluationUsageIncomplete: false,
   };
   let ownedEvaluationStore = evaluationStore;
   if (!ownedEvaluationStore && projectRoot) {
@@ -271,6 +272,7 @@ export async function startDaemon({
     }
     state.lastUserInput = userInput;
     state.usedTools = []; // reset tools for this turn
+    state.evaluationUsageIncomplete = false;
     state.activeObservationId = typeof payload.observation_id === 'string' && payload.observation_id.length > 0
       ? payload.observation_id
       : null;
@@ -320,9 +322,14 @@ export async function startDaemon({
     // Keep the existing raw transcript of tool usage for the turn_end auditor.
     // Evaluation IDs are persisted independently through recordUsage below.
     state.usedTools.push(name);
-    if (payload.evaluation_observed === true && state.activeObservationId && ownedEvaluationStore) {
+    if (payload.evaluation_observed === true && state.activeObservationId) {
+      if (!ownedEvaluationStore) {
+        state.evaluationUsageIncomplete = true;
+        return { recorded: true, evaluation_record_error: true };
+      }
       try {
         if (payload.usage_incomplete === true) {
+          state.evaluationUsageIncomplete = true;
           const marked = ownedEvaluationStore.markUsageIncomplete({ observationId: state.activeObservationId });
           if (marked?.changed === false) return { recorded: true, evaluation_record_error: true };
         } else {
@@ -332,11 +339,13 @@ export async function startDaemon({
           }
           const recorded = ownedEvaluationStore.recordUsage({ observationId: state.activeObservationId, toolIds: [evaluationToolId] });
           if (recorded?.recorded === false) {
+            state.evaluationUsageIncomplete = true;
             ownedEvaluationStore.markUsageIncomplete({ observationId: state.activeObservationId });
             return { recorded: true, evaluation_record_error: true };
           }
         }
       } catch (error) {
+        state.evaluationUsageIncomplete = true;
         logFn(`evaluation usage recording failed: ${error.message}`);
         return { recorded: true, evaluation_record_error: true };
       }
@@ -410,9 +419,14 @@ export async function startDaemon({
   function closeActiveEvaluationTurn() {
     const observationId = state.activeObservationId;
     state.activeObservationId = null;
+    const usageIncomplete = state.evaluationUsageIncomplete;
+    state.evaluationUsageIncomplete = false;
     if (!observationId || !ownedEvaluationStore) return;
     try {
-      ownedEvaluationStore.closeTurn({ observationId });
+      ownedEvaluationStore.closeTurn({
+        observationId,
+        ...(usageIncomplete ? { usageStatus: 'incomplete' } : {}),
+      });
     } catch (error) {
       logFn(`evaluation turn closure failed: ${error.message}`);
     }
@@ -449,6 +463,9 @@ export async function startDaemon({
   const onErrorFn = (err, envelope) => {
     const evt = envelope?.event ?? '(pre-parse)';
     logFn(`handler error on ${evt}: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
+    if (envelope?.event === 'tool_used' && envelope.payload?.evaluation_observed === true) {
+      state.evaluationUsageIncomplete = true;
+    }
     // Handler/auditor failures are owned above. A connection-level error has no
     // envelope and belongs to the transport boundary here.
     if (envelope === null) void observeFailure('daemon_transport');
