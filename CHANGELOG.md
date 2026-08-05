@@ -1440,7 +1440,7 @@ Haiku 突然死 (shutdown ログなしで daemon 再起動する事象、v0.12.0
 - **編集 [src/hooks/session-start.mjs](src/hooks/session-start.mjs)**: spawn ロジックを spawn-daemon.mjs に委譲、`--parent-pid` 渡し削除
 - **編集 [src/hooks/user-prompt.mjs](src/hooks/user-prompt.mjs)**: `sendRequest` が `E_UNREACHABLE` で失敗したら `spawnDaemonAndWaitReady` を呼んで retry (1 回のみ)
 - **削除 [src/hooks/ppid-probe.mjs]**: env dump 用の調査 hook、役目終了
-- **編集 [.claude/settings.json](.claude/settings.json)**: probe hook 登録撤去
+- **編集 `.claude/settings.json`**: probe hook 登録撤去（端末ローカル設定であり、repository 配布物には含めない）
 - **編集 [test/daemon.test.mjs](test/daemon.test.mjs)**: parent-watch test 2 件を削除、heartbeat timeout / heartbeat reset / heartbeatTimeoutMs validation の 3 件を追加
 
 ### 非互換
