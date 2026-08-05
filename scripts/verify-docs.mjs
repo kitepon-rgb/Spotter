@@ -59,7 +59,9 @@ process.stdout.write(`documentation verification: ok (${markdownFiles.length} Ma
 
 async function requireText(repoPath, expected, { exact = false } = {}) {
   const content = await readFile(join(root, repoPath), 'utf8');
-  const valid = exact ? content === expected : content.includes(expected);
+  const valid = exact
+    ? content.replaceAll('\r\n', '\n') === expected.replaceAll('\r\n', '\n')
+    : content.includes(expected);
   if (!valid) failures.push(`${repoPath}: missing canonical text ${JSON.stringify(expected)}`);
 }
 
