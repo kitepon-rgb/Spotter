@@ -1,5 +1,25 @@
 # Changelog
 
+各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
+現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
+
+## 1.5.8 — 2026-08-05
+
+- **コードから全ドキュメントを再照合。** 47 Markdownを現行contract、ADR、完了計画、
+  evidence、外部仕様snapshotへ分類し、現行文書を`bin/spotter.mjs`、`src/`、`test/`、
+  `package.json`、`ops/`と照合した。
+- **実装との不一致を修正。** repository ownership、tool-dbの実schema、Node 22.13 engine、
+  CLI option、再帰guard 3環境変数、runtime-error storeのSQLite mutex、exact-session
+  `auditor-context`、削除済みHook formatterへのRAG pointerを現行コードへ一致させた。
+- **履歴との境界を明示。** `CHANGELOG`、archive、evidence、日付付きRAGは時点記録であり、
+  現行仕様に読み替えない。dashboardの4端末rolloutと各端末の現在install versionも分離した。
+- **文書driftをrelease前に止める。** package version、Node engine表記、正典入口、主要現行文書の
+  release version、repository-local Markdown linkを`npm run verify:docs`で検証し、prepublish gateへ追加した。
+- **診断とhelpも同じ契約へ統一。** `spotter doctor`のNode合格境界をnpm enginesと同じ22.13へ直し、
+  CLI helpに既存のfactory diagnostics、evaluation filter、model-matrix optionを完全表示する。
+- **release gate逸脱を記録。** v1.5.7 prompt matrixのp95 15.432秒 / 11.687秒は
+  10秒gate未達であり、合格扱いしない。次のprompt変更releaseの未完事項として残した。
+
 ## 1.5.7 — 2026-08-05
 
 - **標準ツール先行で比較する。** Claude Haiku / Codex CLI / Codex sidecarのauditorは、
@@ -13,7 +33,7 @@
   呼び出し元と影響範囲の調査は`lattice_sensor_callers` / `lattice_sensor_impact`を提案した。
 - **判定品質。** prompt version 3を`terra-medium` / fixture 9件 / repeat 3で2回実行し、
   合計54/54 exact、false positive / false negative / timeoutはすべて0。p95は15.432秒と11.687秒で、
-  実運用SLOの7日窓判定とは分けて単発matrixの変動値として記録する。
+  release gateの10秒以下は未達。v1.5.8でrelease process逸脱として明記した。
 
 ## 1.5.6 — 2026-08-05
 

@@ -3,6 +3,9 @@
 この文書はPhase 1aのcontract captureを起点に更新している、Claude-first / Codex adapter共通の
 現行実装checklistである。
 
+v1.5.8文書監査で`bin/spotter.mjs`、`src/cli/`、`src/hooks/`、`src/daemon/`、
+`src/core/`、対応testと照合済み。実挙動の権威はそれらの実装である。
+
 正本は `AGENTS.md`。`CLAUDE.md`は`@AGENTS.md`だけを読むimport入口。ここは実装時に参照する
 checklist と test 対応表。
 
@@ -35,12 +38,15 @@ Public CLI:
 - `spotter db rebuild [--host-agent claude|codex|automation]`
 - `spotter status`
 - `spotter doctor`
-- `spotter diagnostics logs [--log-dir <dir>] [--json]`
+- `spotter diagnostics logs [--log-dir <dir>] [--project <dir>] [--json]`
 - `spotter diagnostics factory`
 - `spotter diagnostics runtime-errors [snapshot [--after-cursor <n>] [--limit <n>]
   | ack <cursor> | resolve <fingerprint> | reopen <fingerprint> | compact]`
-- `spotter evaluation report [--project <path>] [--from <ISO>] [--to <ISO>] [--json]`
-- `spotter evaluation cases [--outcome <outcome>] [filters] [--json]`
+- `spotter evaluation report [--project <path>] [--from <ISO>] [--to <ISO>] [--host <host>]
+  [--tool-id <id>] [--backend <name>] [--model <name>] [--spotter-version <version>] [--json]`
+- `spotter evaluation cases --outcome <outcome> [--project <path>] [--from <ISO>] [--to <ISO>]
+  [--host <host>] [--tool-id <id>] [--backend <name>] [--model <name>]
+  [--spotter-version <version>] [--json]`
 - `spotter evaluation case <observation-id> [--json]`
 - `spotter dashboard device --id <id> [--name <name>] [--host <host>] [--port <port>] [--db <path>]`
 - `spotter dashboard hub --config <file> [--host <host>] [--port <port>]`
@@ -55,8 +61,9 @@ Public CLI:
 - `spotter codex-hook diagnostics [--codex-home <dir>] [--project <dir>]`
 - `spotter auditor judge --stage <stage> --input <file> [...]` (experimental)
 - `spotter auditor matrix --stage <stage> --input <file> [...]` (experimental)
-- `spotter auditor model-matrix --fixtures <file> [--profile baseline|luna|terra]...
-  [--repeat <n>] [--project <dir>] [--output <file>]` (experimental)
+- `spotter auditor model-matrix --fixtures <file>
+  [--profile baseline|luna|terra|terra-medium]... [--repeat <n>] [--project <dir>]
+  [--output <file>] [--recent-turns 0|1|2|3] [--body-cap <n>]` (experimental)
 - `spotter --help | -h`
 - `spotter --version | -v`
 
@@ -77,14 +84,15 @@ hook event exit with code `2` and print usage / error to stderr.
 
 ## Hook Contract
 
-All hooks read one JSON object from stdin, unless `SPOTTER_PARENT_PID` is set. Invalid or
-empty stdin is an unexpected hook failure.
+All hooks read one JSON object from stdin unless `isChildCall()` finds a non-empty
+`SPOTTER_PARENT_PID`, `SPOTTER_BACKEND`, or `SPOTTER_CHILD_BACKEND`. Invalid or empty stdin is
+an unexpected hook failure.
 
 Codex native hooks use Codex hook payloads, not Claude hook JSON. The
 current Codex adapter installs user-level `~/.codex/hooks.json` entries for `SessionStart`,
 `UserPromptSubmit`, and `Stop`, enables the current Codex CLI `[features].hooks = true`
 (while still recognizing legacy `codex_hooks` diagnostics output), keeps `.spotter/marker.json`
-project gating, exits early when `SPOTTER_PARENT_PID` is set, and selects Codex CLI as the
+project gating, exits early on any of those three child-process variables, and selects Codex CLI as the
 default primary auditor backend.
 Installer-owned command handlers use only the current canonical fields `{type, command, timeout}`.
 `SessionStart` must not use `async:true`: Codex currently skips async command hooks. Upgrade install
@@ -110,13 +118,13 @@ Windows nativeではNode起動とproject discoveryが5秒を超える実測が�
 再install時に30秒へ正規化する。UserPromptSubmit / Stopは従来どおり60秒である。
 
 - Claude `SessionStart`
-  - returns without spawning when `SPOTTER_PARENT_PID` is set.
+  - returns without spawning when any child-process variable above is set.
   - returns without spawning when `agent_id` is present.
   - returns without spawning when `source !== "startup"`.
   - returns without spawning outside a project containing `.spotter/marker.json`.
   - otherwise starts the daemon for `session_id`, waits for readiness, then launches bg refresh.
 - Codex `SessionStart`
-  - returns early when `SPOTTER_PARENT_PID` is set.
+  - returns early when any child-process variable above is set.
   - returns outside a project containing `.spotter/marker.json`.
   - otherwise starts exactly one detached `spotter db refresh --host-agent codex` and returns without waiting.
 - `UserPromptSubmit`
@@ -175,6 +183,8 @@ Windows nativeではNode起動とproject discoveryが5秒を超える実測が�
 Recursive hook / daemon proliferation must stay blocked by:
 
 - `SPOTTER_PARENT_PID`
+- `SPOTTER_BACKEND`
+- `SPOTTER_CHILD_BACKEND`
 - `agent_id`
 - `source === "startup"`
 - `.spotter/marker.json`
@@ -264,7 +274,7 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   `anomalies`, then projected back to the existing `reason` field.
 - `E_HAIKU_TIMEOUT` and `E_INTERNAL` are not normal judgments. They continue to surface
   as thrown daemon errors after session reset.
-- Codex context projection uses local JSON compatibility only in Phase 3:
+- Codex sidecar context projection uses local structured JSON:
   `kind:"manual_note"`, `source:"spotter"`, `trust:"local"`.
 - Codex sidecar policy for second-pass workflows is explicit: `unavailable` and
   `explicitly disabled` return a skipped / compatibility result for the sidecar workflow,
@@ -301,10 +311,11 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   terminates the worker and its descendants, so FIFO/device I/O cannot indefinitely block a hook or daemon.
   Optional reporter endpoints are valid only when the exact input equals `new URL(input).href`, uses
   `http:` or `https:`, and contains no userinfo or fragment.
-- POSIX reads verify the current uid and exact owner-private modes on every access. Mutation locks identify
-  the holder by PID, process-start identity, and a random token; reclaim/release use atomic rename plus token
-  readback and never use mtime as a liveness signal. Windows store access replaces inherited/ambient ACLs
-  with one FullControl ACE for the current process SID and verifies the readback before continuing.
+- POSIX reads verify the current uid and exact owner-private modes on every access. Mutations serialize
+  through an owner-private SQLite lock file using `BEGIN IMMEDIATE`; SQLite releases ownership on process
+  death. The JSON aggregate itself is written by fsync plus atomic rename. Windows store access replaces
+  inherited/ambient ACLs with one FullControl ACE for the current process SID and verifies the readback
+  before continuing.
 - `spotter diagnostics runtime-errors` is the read-only allow-listed snapshot. `diagnostics logs` and
   `diagnostics factory` expose only bounded collection/store status and counts. Cursor acknowledgement
   is monotonic; resolve/reopen advance sequence; compaction preserves all unacknowledged records.
@@ -364,3 +375,5 @@ quota を含む invocation failure で別 model へ fallback しない。`spotte
   diagnostics and operational anomaly signals.
 - `test/transport.test.mjs`: IPC response shape and transport errors.
 - `test/install.test.mjs`: hook registration and timeout updates.
+- `test/doctor.test.mjs`: Node engine boundary, Codex readiness, and evaluation-context diagnostics.
+- `scripts/verify-docs.test.mjs`: canonical version/engine markers and repository-local Markdown links.

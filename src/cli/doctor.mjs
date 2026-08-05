@@ -19,10 +19,8 @@ export async function runDoctor() {
 
   // Node version
   const nodeVersion = process.versions.node;
-  const major = parseInt(nodeVersion.split('.')[0], 10);
-  const minor = parseInt(nodeVersion.split('.')[1], 10);
-  const okNode = major > 22 || (major === 22 && minor >= 5);
-  mark(okNode, `Node.js ${nodeVersion}`, 'need >= 22.5');
+  const okNode = isSupportedNodeVersion(nodeVersion);
+  mark(okNode, `Node.js ${nodeVersion}`, 'need >= 22.13');
   if (!okNode) failures += 1;
 
   // claude CLI — on Windows the entry is `claude.cmd`; route through cmd.exe /c
@@ -114,6 +112,12 @@ export async function runDoctor() {
     process.exit(1);
   }
   console.log(`result: OK (${warnings} warnings)`);
+}
+
+export function isSupportedNodeVersion(value) {
+  if (typeof value !== 'string' || !/^\d+\.\d+(?:\.\d+)?(?:[-+].*)?$/.test(value)) return false;
+  const [major, minor] = value.split('.').map(Number);
+  return major > 22 || (major === 22 && minor >= 13);
 }
 
 export async function inspectCodexCliVersion({

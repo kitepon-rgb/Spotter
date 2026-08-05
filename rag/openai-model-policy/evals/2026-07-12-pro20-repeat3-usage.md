@@ -1,5 +1,7 @@
 # Auditor model matrix — Pro20 repeat=3 with token usage
 
+> 当時の実測記録。本文の「昇格判断は未完了」は実行時点の状態であり、その後Terra mediumをproduction採用した。
+
 出典: [`2026-07-12-pro20-repeat3-usage.json`](2026-07-12-pro20-repeat3-usage.json)
 
 取得日: 2026-07-12
@@ -47,4 +49,3 @@ Codex CLIにはこのartifactから対応する金額を算出できないため
 - token usage取得のblockerは解消した。
 - Terra lowは現時点の第一候補だがexact 100%ではなく、medium比較が必要。
 - 金額costと合意SLOは未解決。production `gpt-5.4-mini × low` と`promotionEligible:false`を維持する。
-

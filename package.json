@@ -1,6 +1,6 @@
 {
   "name": "claude-spotter",
-  "version": "1.5.7",
+  "version": "1.5.8",
   "description": "Audit agent running alongside Claude Code that catches missed tool calls — 気づく役と実行する役の分離",
   "type": "module",
   "bin": {
@@ -11,8 +11,9 @@
   },
   "scripts": {
     "test": "node --test",
+    "verify:docs": "node scripts/verify-docs.mjs",
     "verify:release-commit": "node scripts/verify-release-commit.mjs",
-    "prepublishOnly": "npm run verify:release-commit && npm test",
+    "prepublishOnly": "npm run verify:docs && npm run verify:release-commit && npm test",
     "postinstall": "node scripts/postinstall.mjs",
     "preuninstall": "node scripts/preuninstall.mjs"
   },

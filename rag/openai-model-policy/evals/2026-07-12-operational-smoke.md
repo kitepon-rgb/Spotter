@@ -1,5 +1,7 @@
 # Auditor model matrix operational smoke — 2026-07-12
 
+> 当時の実測記録。現行production選定は[`../spotter-auditor-model-policy.md`](../spotter-auditor-model-policy.md)を参照。
+
 出典: [`2026-07-12-operational-smoke.json`](2026-07-12-operational-smoke.json)
 
 取得日: 2026-07-12

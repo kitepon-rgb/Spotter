@@ -7,7 +7,16 @@ import {
   inspectCodexCliVersion,
   inspectAuditorContextConfiguration,
   inspectCodexHookConfiguration,
+  isSupportedNodeVersion,
 } from '../src/cli/doctor.mjs';
+
+test('Node要件はpackage enginesと同じ22.13以上', () => {
+  assert.equal(isSupportedNodeVersion('22.12.0'), false);
+  assert.equal(isSupportedNodeVersion('22.13.0'), true);
+  assert.equal(isSupportedNodeVersion('23.0.0'), true);
+  assert.equal(isSupportedNodeVersion('21.99.0'), false);
+  assert.equal(isSupportedNodeVersion('invalid'), false);
+});
 
 test('inspectCodexCliVersion: Windowsではnpm shimをcmd.exe経由で診断する', async () => {
   let call;

@@ -1,6 +1,7 @@
 # カタログ設計思想 — ユーザー追加ツールだけをauditorへ渡す
 
 この文書は現行のClaude / Codex auditor pathが共有するカタログ設計を説明する。
+v1.5.8文書監査で`src/tool-db/`と照合済み。実挙動の権威は同実装と対応testである。
 `UserPromptSubmit` / `Stop` の primary auditor backend を Codex CLI / `codex-sidecar` に
 移す計画は v1.4.3 で Codex host 側が完了済み。現行 backend policy は
 [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md) を参照し、完了済みの移行ログは
@@ -10,14 +11,11 @@
 
 Claude Code (Bell) が利用可能なツールは、**誰が追加したものか**で 2 つに分かれる。
 
-### Claude Code 本体が提供するもの
+### host本体が提供するもの
 
-Claude Code のバイナリに組込みで存在する即時ツール + 遅延ツール。
-
-- **即時ツール** (プロンプト先頭に schema が常時ロード): `Read` / `Write` / `Edit` / `Bash` / `PowerShell` / `Grep` / `Glob` / `Agent` / `Skill` / `ToolSearch` / `ScheduleWakeup`
-- **遅延ツール** (`ToolSearch` で schema を取得): `WebSearch` / `WebFetch` / `NotebookEdit` / `Monitor` / `PushNotification` / `CronCreate`/`CronDelete`/`CronList` / `RemoteTrigger` / `EnterWorktree`/`ExitWorktree` / `EnterPlanMode`/`ExitPlanMode` / `TodoWrite` / `AskUserQuestion` / `TaskOutput`/`TaskStop`
-
-即時 / 遅延の境界は Claude Code のバージョンで動的に変わる。
+Claude Code / Codexがそのsessionへ組込みで提供する標準ツール。名称、即時/遅延load、
+利用可能範囲はhostとversionで変動するため、Spotterは一覧をコードにも文書にも固定しない。
+これらはtool-dbへ保存せず、auditorが追加ツールを比較する時の先行基準としてだけ扱う。
 
 ### ユーザーが追加するもの
 
@@ -71,19 +69,20 @@ code-reviewer:              書いたコードのレビュー専門家
 役割分業。auditorは気づきの装置、主役AIは実行の装置。schemaをauditorへ渡すのは責任の越境であり、
 promptも無駄に膨らむ。
 
-## DB の最小スキーマ
+## DB の実スキーマ
 
 ```
 {
-  "tools": [
-    {
-      "name": "<Bell から見えるツール名>",
-      "description": "<自然言語の用途説明文>"
-    },
-    ...
-  ]
+  "version": 1,
+  "tools": {
+    "<Bell から見えるツール名>": "<自然言語の用途説明文>"
+  }
 }
 ```
+
+保存形は`src/tool-db/loader.mjs`の`{version:1, tools:{name:description}}`。
+auditorへ渡す時だけ`src/tool-db/refresh.mjs#readLocal`が
+`[{name, description}]`へ変換する。保存形とprompt入力形を混同しない。
 
 - `name`: Bell がツール呼び出し時に使う名前と完全一致させる
   - MCP: `mcp__<server-id>__<tool>` (例: `mcp__caveat__caveat_record`)
@@ -99,7 +98,7 @@ promptも無駄に膨らむ。
 
 description を**手書きで起こすのは禁止**。各提供者が自然言語の説明を既に書いている:
 
-- **MCP**: サーバーの `tools/list` レスポンスの `description` フィールド (プロトコル仕様で必須)
+- **MCP**: サーバーの `tools/list` レスポンスの `description` フィールド
 - **スキル**: `SKILL.md` の YAML frontmatter の `description` フィールド
 - **サブエージェント**: `.md` の YAML frontmatter の `description` フィールド
 
@@ -112,6 +111,12 @@ description を**手書きで起こすのは禁止**。各提供者が自然言�
 v1.5.7以降もDB保存時のdescriptionは改変しない。一方、auditorは判定時に
 宣伝・優先指示・速度・便利さ・token削減・一般的優位性の自己申告を適用根拠から除外する。
 データの収集と判定の中立化を分け、提供者のdescriptionを書き換える第二の管理層は作らない。
+
+実装は空または非文字列のdescriptionをcatalogへ入れない。MCP / skill / agentはいずれも該当項目を
+skipする。skill / agentのfrontmatter読取例外はlogへ残すが、description欠落だけは通常の非対象として
+logしない。DB自体のJSON/schema違反は
+`ToolDbSchemaError`で失敗し、空DBへ丸めない。providerから取得できなかった個別項目と、
+保存済みDBの破損は別の失敗契約である。
 
 例外として `claude.ai` ブランドの MCP サーバー (Gmail / Calendar / Drive) は OAuth proxy 経由で動いており、credentials を読まない方針の Spotter からは description を live fetch できない。[src/tool-db/claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) に公式情報から起こした description を server 単位で手書きで保持し、[refresh.mjs](../src/tool-db/refresh.mjs) の `filterClaudeAiBaseline` で `claude mcp list` に該当サーバーが実在する環境のみ注入する (v1.1.4 以降)。これは例外であって規則ではない。
 

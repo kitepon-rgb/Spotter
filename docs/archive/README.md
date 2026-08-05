@@ -1,7 +1,8 @@
 # Docs Archive
 
 このディレクトリは完了済み計画と歴史的スナップショットの保管場所。
-現行仕様の正本ではない。
+現行仕様の正本ではない。本文中の「現行」「TODO」「未実装」は各文書の記録時点を指し、
+現在のsource treeへ読み替えない。
 
 現役ドキュメント:
 
@@ -21,4 +22,5 @@ Archived:
 - [`SPOTTER_CODEX_DUAL_SUPPORT_TODO.md`](SPOTTER_CODEX_DUAL_SUPPORT_TODO.md): completed dual-support phase gates
 - [`SPOTTER_PRIMARY_BACKEND_TODO.md`](SPOTTER_PRIMARY_BACKEND_TODO.md): completed primary backend migration notes and smoke logs
 - [`SPOTTER_HOOK_PARITY_TODO.md`](SPOTTER_HOOK_PARITY_TODO.md): completed Claude / Codex hook parity phase gates
+- [`WINDOWS_CODEX_DISCOVERY_FIX_PLAN.md`](WINDOWS_CODEX_DISCOVERY_FIX_PLAN.md): completed Windows npm-shim / Codex discovery fix
 - [`spotter-plan.md`](spotter-plan.md): frozen v0.1 design discussion

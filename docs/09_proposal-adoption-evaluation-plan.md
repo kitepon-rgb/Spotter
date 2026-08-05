@@ -3,6 +3,7 @@
 ## 0. 状態
 
 - 状態: **実装・受入完了**
+- v1.5.8文書監査: `src/core/evaluation-*`、Claude/Codex lifecycle、CLI、dashboard consumerと照合済み。
 - 現行補正: v1.5.4でThroughlineを監査条件・監査入力から撤去。v1.5.5で評価文脈を
   exact-session `auditor-context`へ戻した。
 - 工程正本: Lattice plan `proposal-adoption-eval`。本文書は目的、設計判断、非目標、受入条件を持つ。
@@ -328,7 +329,7 @@ baselineが十分に溜まった後、ownerがreportと非採用caseを見て次
 
 計測コード自身に自動の存廃判定やcontext変更はさせない。
 
-## 10. 実装中も行わないこと
+## 11. 実装中も行わないこと
 
 - Throughline側のsource、DB schema、I/F変更。
 - 新しいturn ID、background collector、retry worker、reconciliation daemon、常時validator。

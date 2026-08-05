@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.8（2026-08-05公開）**: 全文書を実装・test・CLI・配布設定から再照合する。
+> 現行contract、時点証拠、履歴snapshotを明示分離し、tool-db実schema、所有境界、
+> Node要件、再帰guard、runtime-error mutex、Throughline readerの誤記を修正する。
+
 > **v1.5.7（2026-08-05公開）**: auditorはカタログを読む前に標準ツールでの対応を
 > 先に判定する。descriptionの宣伝・優先指示・自己申告の優位性は比較根拠にせず、
 > 現在の依頼に直接適用でき、標準ツールより適する追加ツールだけを提示する。
@@ -122,6 +126,11 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.5.8 (published 2026-08-05)**: 現行文書をv1.5.7 source boundary `0977fd7`、
+CLI、test、公開設定から再照合した。現行contractと履歴・evidence・RAG snapshotの役割を
+`docs/00_overview.md`へ固定し、実装と矛盾していたtool-db schema、repository ownership、
+Node engine、再帰guard、runtime-error store mutex、評価用Throughline readerを修正した。
 
 **v1.5.7 (published 2026-08-05)**: Claude Haiku / Codex CLI / Codex sidecarのauditorは、
 カタログを判断材料にする前に標準ツールを特定するか該当なしと判断する。
@@ -444,11 +453,11 @@ refresh の local → global → investigate cache path でも Claude / Codex �
 
 ## Product Concept (一行)
 
-**Bell (主役の Claude) が呼び忘れるツールを、カタログを完全把握した別エージェント (Spotter) が並走監査して検出する。** 気づく役と実行する役の分離。
+**Bell (主役の Claude) が呼び忘れるユーザー追加ツールを、host-local catalogから把握した別エージェント (Spotter) が並走監査して検出する。** host標準ツールは提案対象ではなく、追加ツールとの比較基準にだけ使う。気づく役と実行する役の分離。
 
 ### 判定軸 (v0.13.0 で 2 軸化)
 
-- **stage=user_input**: ユーザー要請に対し、ローカル tool-db の `{name, description}` から用途が明確に該当するツールを列挙する **要請充足チェック**。挨拶・雑談は pass
+- **stage=user_input**: ユーザー要請に対し、まずhost標準ツールでの対応を特定するか該当なしと判断し、その基準より直接適用性が高いローカルtool-dbのツールだけを列挙する **要請充足チェック**。比較不能・該当なし・挨拶・雑談はpass
 - **stage=turn_end**: Bell の最終応答に対し、事実の断定 / 記録すべき新情報 / 既知情報の参照 それぞれに、カタログ上のツール (検証 / 登録 / 照会) を差し込める余地がないか監査する **ツール適用機会の監査**。指摘ゼロは歓迎、`used_tools` 既含は再指摘しない
 
 ## Architecture の核 (実装判断に効く部分)
@@ -493,8 +502,10 @@ hook boundary が event 契約に従って loud degradation へ変換する。ex
 spotter install / uninstall
 spotter db list / refresh / rebuild
 spotter status / doctor
-spotter diagnostics logs [--json]
-spotter evaluation report [--project <path>] [--from <ISO>] [--to <ISO>] [--json]
+spotter diagnostics logs [--log-dir <dir>] [--project <dir>] [--json]
+spotter diagnostics factory
+spotter diagnostics runtime-errors [snapshot|ack|resolve|reopen|compact]
+spotter evaluation report [--project <path>] [--from <ISO>] [--to <ISO>] [--host <host>] [--tool-id <id>] [--backend <name>] [--model <name>] [--spotter-version <version>] [--json]
 spotter evaluation cases --outcome not-adopted [filters] [--json]
 spotter evaluation case <observation-id> [--json]
 spotter dashboard device --id <id> [--name <name>] [--host <host>] [--port <port>] [--db <path>]
@@ -504,7 +515,7 @@ spotter codex review / explore / opinion --findings <file> [--host-agent <agent>
 spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path> (--preserve-worktree | --remove-worktree)
 spotter codex-hook install / uninstall / diagnostics   # Codex native hooks; SessionStart refreshes Codex DB
 spotter auditor judge / matrix                         # experimental primary-backend smoke
-spotter auditor model-matrix --fixtures <file>         # pinned model profiles の再現可能な比較 eval
+spotter auditor model-matrix --fixtures <file> [--profile <profile>] [--repeat <n>] [--recent-turns 0|1|2|3] [--body-cap <chars>] [--project <dir>] [--output <file>]
 spotter daemon start              # 内部用 (hook から呼ばれる)
 spotter hook <event>              # 内部用 (Claude Code hook から呼ばれる)
 ```

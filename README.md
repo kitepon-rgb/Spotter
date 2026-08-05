@@ -17,15 +17,17 @@ Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https:/
 
 ## Ownership boundary
 
-This repository owns auditor behavior, project markers, installers, release,
-and diagnostics. The cross-product catalog and host integration are handled by
-[dotagents](https://github.com/kitepon-rgb/dotagents), the internal development
-toolchain behind kitepon.dev's products.
-MarkItDown is managed separately as a third-party CLI.
+This repository owns the complete Spotter product surface: auditor behavior,
+Claude/Codex hook adapters, project markers, catalog discovery and host-local
+tool databases, evaluation storage, dashboard servers, diagnostics, installers,
+and release packaging. [dotagents](https://github.com/kitepon-rgb/dotagents)
+owns shared agent instructions and the optional factory-reporter configuration
+that enables Spotter's local runtime-error aggregate; it does not own Spotter's
+catalog or host integration. MarkItDown is a separate third-party CLI.
 
 Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It may skip a project memory MCP when a decision should be recorded, answer from stale memory instead of a docs-lookup MCP, or reason about UI state without a browser-automation MCP. The model can't always tell when it doesn't know — so the tool stays unused.
 
-Spotter runs a separate auditor with the full tool catalog and checks both the user's prompt and the primary agent's reply. Automatic selection uses Codex CLI on a Claude host when available, otherwise the session-scoped Haiku path; on a Codex host it defaults to Codex CLI. An explicit backend override takes precedence, but a runtime failure never silently switches backend. Before the primary reply, validated tool IDs may become fixed, non-directive advice; after the reply, findings remain structured events and are not injected into a later turn. Auditor prose never enters the parent session. **The primary agent is never asked to self-audit** — that would defeat the premise. Detection happens through hooks, independent of the primary agent's intent.
+Spotter runs a separate auditor with the host-local catalog of user-added tools and checks both the user's prompt and the primary agent's reply. Host built-ins are not proposal candidates; the auditor considers them first only as the comparison baseline. Automatic selection uses Codex CLI on a Claude host when available, otherwise the session-scoped Haiku path; on a Codex host it defaults to Codex CLI. An explicit backend override takes precedence, but a runtime failure never silently switches backend. Before the primary reply, validated tool IDs may become fixed, non-directive advice; after the reply, findings remain structured events and are not injected into a later turn. Auditor prose never enters the parent session. **The primary agent is never asked to self-audit** — that would defeat the premise. Detection happens through hooks, independent of the primary agent's intent.
 
 <p align="center">
   <img src=".github/concept.svg" alt="Claude answers · Spotter watches" width="80%">
@@ -78,7 +80,6 @@ For Codex, install enables the current `[features].hooks = true` flag and still 
 Installer-owned Codex handlers use the current synchronous command schema. After install or upgrade, review them with `/hooks`, then open a fresh Codex session; `spotter codex-hook diagnostics` reports registration/readiness but does not guess hook trust.
 
 After upgrading Spotter, re-run `spotter install` in each installed project when release notes mention hook setting changes. The global package update changes the code path, but existing `.claude/settings.json` timeout values are not rewritten automatically.
-`v1.4.19` changes runtime output projection only, so already installed projects do not need another `spotter install`; update the global package and open a fresh Claude/Codex session.
 
 ```bash
 spotter uninstall        # remove hooks from this project
@@ -102,6 +103,13 @@ spotter codex-hook install
 - **Claude Max plan** only when a Claude host selects the Haiku path (Codex CLI is absent or `SPOTTER_AUDITOR_BACKEND=haiku` is explicit)
 
 ## Architecture
+
+The code is the behavioral authority. The maintained contract documents are
+[`docs/00_overview.md`](docs/00_overview.md),
+[`docs/01_catalog-design.md`](docs/01_catalog-design.md), and
+[`docs/02_spotter-claude-contract.md`](docs/02_spotter-claude-contract.md).
+`CHANGELOG.md`, `docs/archive/`, `docs/evidence/`, and dated `rag/` entries are
+point-in-time records and must not be used as the current runtime contract.
 
 ### Audit flow per turn
 
@@ -146,7 +154,7 @@ flowchart LR
     DB --> H[Independent auditor<br/>Codex CLI when available<br/>otherwise session-scoped Haiku]
 ```
 
-The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`, while Codex uses `<project>/.spotter/tool-db.codex.json`. **The daemon audits against the Claude local DB only**, and Codex native hooks read the Codex local DB. Global description caches are host-specific too: Claude uses `~/.spotter/tool-db.json`, while Codex uses `~/.spotter/tool-db.codex.json`. They are shared only across projects for the same host and are never audit sources. Each host-local DB matches that host's **current** discovery snapshot for the project (stale entries are pruned on refresh), so tools from another project or another host cannot overwrite this session's audit catalog.
+The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`, while Codex uses `<project>/.spotter/tool-db.codex.json`. **The daemon audits against the Claude local DB only**, and Codex native hooks read the Codex local DB. Global description caches are host-specific too: Claude uses `~/.spotter/tool-db.json`, while Codex uses `~/.spotter/tool-db.codex.json`. They are shared only across projects for the same host and are never audit sources. Each host-local DB matches that host's **current discovery membership** for the project (stale entries are pruned on refresh). If description lookup fails transiently for a still-present tool, the last valid local description is retained instead of shrinking the audit set.
 
 **`spotter install` seeds the Claude catalog automatically, and the SessionStart hook runs a background `spotter db refresh` on every Claude Code session start** — so you don't need to invoke Claude catalog commands by hand. When Codex CLI is available, the same `spotter install` registers Codex native hooks and seeds `.spotter/tool-db.codex.json` synchronously, so the first Codex session has a catalog too. Later Codex `SessionStart` hooks start `spotter db refresh --host-agent codex` in the background, updating `.spotter/tool-db.codex.json` without touching the Claude catalog. Claude discovery reads `claude mcp list` plus Claude skills / sub-agents; Codex discovery reads `codex mcp list/get` plus Codex skills. Each MCP server's `tools/list` is fetched via JSON-RPC (HTTP / SSE / stdio transports supported); skill and sub-agent metadata comes straight from frontmatter; the claude.ai baseline (25 hand-curated entries for Gmail / Calendar / Drive over OAuth proxy) is injected only for Claude when `claude mcp list` confirms the server is present. **You never have to maintain the tool list by hand.**
 
@@ -200,7 +208,7 @@ spotter install -y --auditor-context throughline `
 ```
 
 `spotter doctor` reports this as `evaluation context` without printing commands,
-arguments, or conversation text. Observer snapshots stay in the terminal-local
+arguments, or conversation text. Evaluation-context snapshots stay in the terminal-local
 evaluation SQLite. Spotter adds no network upload, retry, or background recovery.
 
 ## Common commands
@@ -219,6 +227,8 @@ spotter db rebuild       # wipe Claude local + Claude global DBs and refresh fro
 spotter status           # list running daemons
 spotter doctor           # environment check (Node / claude CLI / Codex readiness / tool-db integrity)
 spotter diagnostics logs # summarize daemon logs for pass=false / backend latency / anomaly signals
+spotter diagnostics factory
+                         # emit a fixed-field read-only factory diagnostic as JSON
 spotter diagnostics runtime-errors
                          # print the local allow-listed runtime-error aggregate snapshot (no network)
 spotter evaluation report
@@ -320,7 +330,7 @@ the production values for controlled experiments; diagnostics mark overrides as 
 - **Current design** (catalog, discovery, classification axes): [docs/01_catalog-design.md](docs/01_catalog-design.md) — source of truth from v1.0.0
 - **Open issues + unverified concerns**: [docs/open-issues.md](docs/open-issues.md) — read this before starting new work
 - **Runtime contract**: [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku contract plus Codex native hook policy
-- **Implementation invariants (§0)**: [CLAUDE.md](CLAUDE.md) — no fallbacks, no silent failures, no provisional code
+- **Implementation invariants (§0)**: [AGENTS.md](AGENTS.md) — no fallbacks, no silent failures, no provisional code (`CLAUDE.md` is only its import entry)
 - **Archived plans and history**: [docs/archive/](docs/archive/) — completed Codex rollout plans, primary backend smoke logs, and the frozen v0.1 design discussion
 
 ## Known limitations
@@ -340,7 +350,7 @@ the production values for controlled experiments; diagnostics mark overrides as 
 - **Zero-touch catalog** — `spotter install` seeds the Claude DB automatically; Claude and Codex SessionStart hooks keep their host-local DBs fresh in the background. You never have to maintain the tool list by hand
 - **Codex native hooks** — Codex host uses Codex CLI as the primary auditor backend, keeps a separate `.spotter/tool-db.codex.json`, and surfaces backend failures explicitly instead of falling back to Haiku
 - **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Claude already uses those reliably
-- **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in CLAUDE.md](CLAUDE.md))
+- **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in AGENTS.md](AGENTS.md))
 
 Full release history: [CHANGELOG](CHANGELOG.md).
 

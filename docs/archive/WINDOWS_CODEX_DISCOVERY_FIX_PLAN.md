@@ -1,5 +1,8 @@
 # Windows Codex CLI実行経路修正計画
 
+> Archived: 実装・公開済みの修正記録。現行契約は
+> [`../02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)を参照。
+
 ## 目的
 
 Windowsで`codex.cmd`がPowerShellから利用可能でも、Nodeの直接spawnがnpm shimを解決できず、

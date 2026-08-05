@@ -2,7 +2,7 @@
 sources:
   - https://learn.chatgpt.com/docs/hooks
   - "[[raw/codex-hooks-2026-07-12]]"
-retrieved_at: 2026-07-12
+retrieved_at: 2026-08-05（公式Hooks pageを再取得）
 certainty: high（公式仕様とローカル実測を分離して記載）
 ---
 
@@ -17,6 +17,7 @@ certainty: high（公式仕様とローカル実測を分離して記載）
 - non-managed command hook は定義 hash ごとの review / trust が必要で、未 review または変更済みの
   Hook は skip される。確認 UI は `/hooks`。
 - `async:true` の command hook は未対応で、Codex が handler 自体を skip する。
+- Hookは既定で有効。canonical feature keyは`features.hooks`で、`codex_hooks`はdeprecated alias。
 - 現行 event には `SessionStart`、`PreToolUse`、`UserPromptSubmit`、`Stop` 等がある。
 - Codex `Stop` は `decision:"block"` で turn を棄却するのではなく、`reason` を新しい continuation
   prompt として Codex を続行させる。
@@ -24,21 +25,21 @@ certainty: high（公式仕様とローカル実測を分離して記載）
   enforcement boundary ではない。
 - `transcript_path` は convenience であり、transcript format は stable hook interface ではない。
 
-## 初回監査で確認した Spotter との相違点
+## 2026-07-12初回監査で確認した修正前の相違点
 
 - Spotter の正規 Codex adapter は user-global `~/.codex/hooks.json` に `codex-hook` 3 event を登録する。
   これは現行仕様でも有効だが、diagnostics は JSON 登録と feature flag だけを見て trust を確認しない。
 - 修正前の Spotter generator は `SessionStart` に `async:true` を出力した。実機 UI も同 handler を
   `async hooks are not supported yet` として skip し、Codex hook-event に SessionStart は 0 件。
   自動 tool-db refresh は動かない一方、diagnostics は `available` と返す。
-- repo-local の未コミット `.codex/hooks.json` は Claude 用 `spotter hook ...` を登録している。
-  現在は trust state がなく未発火だが、trust すると正規 global adapter と並行実行される。
+- 当時repo-localにあった未コミット `.codex/hooks.json` は Claude 用 `spotter hook ...` を登録していた。
+  2026-07-12時点ではtrust stateがなく未発火だったが、trustすると正規global adapterと並行実行される状態だった。
 - 修正前の Codex used-tools parser は `function_call` だけを数えたが、現行 shell execution は実 transcript で
   `custom_tool_call exec` として記録され、short-skip 判定から漏れ得る。
-- Spotter の 2026-05 文書は Codex Stop continuation が使えないことを pending queue 採用理由としている。
-  pending delivery 自体は依然有効な設計選択だが、「Hook の制約で必須」という前提は再検証対象。
+- Spotter の 2026-05 文書は Codex Stop continuation が使えないことを pending queue 採用理由としていた。
+  当時は設計比較の対象としたが、v1.4.19でpending delivery自体を親context安全境界のため撤去した。
 
-## 計画へ渡す論点
+## 当時の計画へ渡した論点
 
 1. `registered` / `schema-valid` / `observed` を分離した diagnostics と install 後の `/hooks` 案内。
    trust は安定した機械 API がないため内部 state から断定しない。
@@ -59,3 +60,13 @@ certainty: high（公式仕様とローカル実測を分離して記載）
   release / global update / 各 project の `spotter install` / `/hooks` review までは実環境の警告は消えない。
 - 未追跡 repo-local `.codex/hooks.json` は Claude adapter を Codex source に置いた別経路であり、
   user-global 正規 adapter と並行発火し得る。commit / trust せず、削除または正式化は owner 承認待ち。
+
+## 2026-08-05 source tree再照合
+
+- installerはuser-level `~/.codex/hooks.json`の`SessionStart` / `UserPromptSubmit` / `Stop`だけを所有し、
+  canonical `{type, command, timeout}`へ正規化する。`SessionStart=30秒`、他2件は`60秒`。
+- `[features].hooks = true`を書き、diagnosticsはdeprecated `codex_hooks`出力も互換認識する。
+- trustは機械的に成功扱いせず、`/hooks` reviewと新規sessionを案内する。
+- `SessionStart`はdaemonを起動せず、Codex host-local DB refreshをdetached起動する。
+- `Stop`はcontinuation機能を意図的に使わず、findingを構造eventとしてだけ記録する。
+- 現行実装契約は[`../../docs/02_spotter-claude-contract.md`](../../docs/02_spotter-claude-contract.md)を正とする。

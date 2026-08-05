@@ -18,14 +18,16 @@
 
 ## 所有境界
 
-本repositoryは監査挙動、project marker、installer、release、diagnosticsを所有します。
-製品横断のcatalogとhost統合は、kitepon.devの製品開発を支える内部基盤
-[dotagents](https://github.com/kitepon-rgb/dotagents)が担当します。
-MarkItDownは別区分の第三者CLIです。
+本repositoryはSpotter製品面の全体、すなわち監査挙動、Claude/Codex hook adapter、
+project marker、catalog discoveryとhost-local tool DB、評価store、dashboard server、
+diagnostics、installer、release packagingを所有します。
+[dotagents](https://github.com/kitepon-rgb/dotagents)が所有するのは共有agent指示と、
+Spotterの端末内runtime-error集計を有効化する任意のfactory-reporter設定です。
+Spotterのcatalogやhost統合はdotagentsの責務ではありません。MarkItDownは別区分の第三者CLIです。
 
 Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。記録すべき決定を memory / caveat MCP に残さない、docs lookup MCP を呼ばずに古い知識で応答する、ブラウザ自動化 MCP で確認せず UI 状態を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
 
-Spotter はツールカタログを完全に把握した別の監査エージェントで、ユーザー入力と主役 AI の応答を並走監査します。自動選択では Claude host は Codex CLI があればそれを、なければ session-scoped Haiku を選び、Codex host は Codex CLI を既定にします。明示 backend override は host より優先しますが、runtime failure で別 backend へ黙って切り替えません。応答前は検証済みtool IDだけを固定・非命令形の助言へ変換でき、応答後のfindingは構造eventに留めて後続turnへ注入しません。監査用AIの自由文が親セッションへ入ることはありません。**主役 AI が自覚して自己監査する**設計は本プロダクトの存在意義を破壊するため、hook 経由でその意思と独立に検出します。
+Spotter はユーザー追加ツールのhost-local catalogを把握した別の監査エージェントで、ユーザー入力と主役 AI の応答を並走監査します。host標準ツールは提案候補に入れず、追加ツールと比較する先行基準としてだけ判断します。自動選択では Claude host は Codex CLI があればそれを、なければ session-scoped Haiku を選び、Codex host は Codex CLI を既定にします。明示 backend override は host より優先しますが、runtime failure で別 backend へ黙って切り替えません。応答前は検証済みtool IDだけを固定・非命令形の助言へ変換でき、応答後のfindingは構造eventに留めて後続turnへ注入しません。監査用AIの自由文が親セッションへ入ることはありません。**主役 AI が自覚して自己監査する**設計は本プロダクトの存在意義を破壊するため、hook 経由でその意思と独立に検出します。
 
 <p align="center">
   <img src=".github/concept.svg" alt="Claude が答え、Spotter が見ている" width="80%">
@@ -77,7 +79,6 @@ Codex 側では現行の `[features].hooks = true` を有効化し、互換の�
 Spotter が所有する Codex handler は現行の同期 command schema で生成します。install / upgrade 後は `/hooks` で review して新しい Codex session を開いてください。`spotter codex-hook diagnostics` は登録と readiness を診断しますが、trust を内部状態から推測しません。
 
 Spotter を upgrade した後、release note で hook 設定変更が案内されている場合は、各 install 済みプロジェクトで `spotter install` を再実行してください。global package update でコード経路は変わりますが、既存 `.claude/settings.json` の timeout 値は自動では書き換わりません。
-`v1.4.19`はruntimeの出力変換だけを変更するため、install済みprojectで`spotter install`をやり直す必要はありません。global packageを更新し、新しいClaude/Codexセッションを開いてください。
 
 ```bash
 spotter uninstall        # このプロジェクトの hook 登録を解除
@@ -95,12 +96,19 @@ spotter codex-hook install
 
 ## 動作要件
 
-- **Node.js 22.5 以上**
+- **Node.js 22.13 以上**（npmの`engines.node`と同じ）
 - **Claude Code 2.0 以上**
 - **Codex CLI**。Codex native hooks の既定 backend と Claude host の優先 auditor path で使います。自動選択後の runtime failure で Haiku へ fallback しません
 - **Claude Max プラン**は Claude host が Haiku path を選ぶ場合だけ必要です（Codex CLI 不在、または `SPOTTER_AUDITOR_BACKEND=haiku` 明示時）
 
 ## アーキテクチャ
+
+実際の挙動の権威はコードです。保守対象の現行契約は
+[`docs/00_overview.md`](docs/00_overview.md)、
+[`docs/01_catalog-design.md`](docs/01_catalog-design.md)、
+[`docs/02_spotter-claude-contract.md`](docs/02_spotter-claude-contract.md)です。
+`CHANGELOG.md`、`docs/archive/`、`docs/evidence/`、日付付き`rag/`は時点記録であり、
+現行runtime契約として読んではいけません。
 
 ### 1 ターンの監査フロー
 
@@ -145,7 +153,7 @@ flowchart LR
     DB --> H[独立 auditor<br/>Codex CLI があれば優先<br/>なければ session-scoped Haiku]
 ```
 
-監査対象のツール (name + description) は host-local に分離されます。Claude は `<project>/.spotter/tool-db.json`、Codex は `<project>/.spotter/tool-db.codex.json` を使います。**daemon が監査に使うのは Claude local DB のみ**で、Codex native hooks は Codex local DB を読みます。グローバル description cache も host ごとに分離され、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使います。これらは同じ host の他プロジェクト間でだけ再利用され、監査入力には混ぜません。各 host-local DB は **その host の現時点の discovery 結果と一致** (refresh 時に prune される) するため、別プロジェクトや別 host のツールリストで上書きされることはありません。
+監査対象のツール (name + description) は host-local に分離されます。Claude は `<project>/.spotter/tool-db.json`、Codex は `<project>/.spotter/tool-db.codex.json` を使います。**daemon が監査に使うのは Claude local DB のみ**で、Codex native hooks は Codex local DB を読みます。グローバル description cache も host ごとに分離され、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使います。これらは同じ host の他プロジェクト間でだけ再利用され、監査入力には混ぜません。各 host-local DB の**ツール構成は、そのhost / projectの現時点のdiscovery結果と一致**します（refresh時に不在項目をprune）。存在中のツールでdescription取得だけが一時失敗した場合は、監査範囲を縮めず最後の有効なlocal descriptionを保持します。
 
 **`spotter install` が Claude catalog の初回 seed を自動実行し、Claude Code セッション起動ごとに SessionStart hook が bg で `spotter db refresh` を走らせる**ため、Claude 通常運用で手動コマンドを叩く必要はありません。Codex CLI が使える環境では、同じ `spotter install` が Codex native hooks も登録し、`.spotter/tool-db.codex.json` も同期 seed します。これにより初回 Codex セッションから catalog を読めます。以降の Codex `SessionStart` hook は `spotter db refresh --host-agent codex` を bg 起動して `.spotter/tool-db.codex.json` を更新します。Claude catalog には書き込みません。Claude discovery は `claude mcp list` と Claude skills / sub-agents、Codex discovery は `codex mcp list/get` と Codex skills を読むため、両 host の利用可能ツール差分を別 DB として保持できます。各 MCP サーバーの `tools/list` は JSON-RPC で取得 (HTTP / SSE / stdio transport 対応)、スキルとサブエージェントは frontmatter から直接抽出、claude.ai baseline (OAuth proxy 経由の Gmail / Calendar / Drive 25 件) は Claude 側でのみ `claude mcp list` に該当サーバーが存在する環境で注入されます。**手書きでツールリストを管理する必要はありません**。
 
@@ -263,6 +271,23 @@ SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root 
 `spotter codex risk-check` に渡します。hook 応答は Codex を待ちません。
 配線だけ確認する場合は `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` を併用します。
 
+## 端末内runtime error集計
+
+factory diagnosticsとruntime error集計は既定OFFです。canonicalなdotagents factory reporter設定で
+JSON booleanの`collection.enabled: true`が明示された場合だけ、固定codeの失敗を端末内へ集計します。
+Spotterはreporting credentialもnetwork送信経路も持ちません。保存APIは固定templateとallow-list済み集計だけを受け付け、
+例外本文、stdout/stderr、stack、prompt、hook payload、finding、ファイル内容、絶対pathを保存しません。
+
+daemonとCodex hookの収集境界は、bounded timeout付きのkill可能なchild process groupで実行します。
+POSIXでは各accessで現在uidと`0600` file / `0700` directoryを再検証し、mutationはprivate SQLiteの
+`BEGIN IMMEDIATE` mutexで直列化します。process crash時はOSがlockを解放し、PID/mtimeによるstale-owner
+reclaimはありません。Windowsでは各accessで現在process SIDだけにFullControlを与えるDACLへ再構築し、
+readbackを検証します。
+
+`spotter diagnostics runtime-errors`はread-only snapshotを返し、`ack`、`resolve`、`reopen`、`compact`が
+受理後のlifecycle操作です。`spotter diagnostics logs`と`spotter diagnostics factory`はboundedな件数と
+statusだけを返し、store/config pathやrecord本文を出しません。
+
 Primary auditor backend policy: Claude hooks の auto selection は PATH に Codex CLI があれば Codex CLI、
 なければ Haiku compatibility path。Codex native hooks の auto selection は Codex CLI です。
 `SPOTTER_AUDITOR_BACKEND` の明示 override はどちらの host でも優先し、runtime failure では別 backend へ
@@ -280,7 +305,7 @@ profile から production へ自動昇格しません。`latest` alias や
 - **現行設計 (カタログ / 収集経路 / 分類軸)**: [docs/01_catalog-design.md](docs/01_catalog-design.md) — v1.0.0 以降の真実源
 - **現時点で塞がっていない穴 + 実測未検証の懸念**: [docs/open-issues.md](docs/open-issues.md) — 新規作業に入る前に必読
 - **Runtime contract**: [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku 契約と Codex native hook policy
-- **実装規範と不変条件 (§0)**: [CLAUDE.md](CLAUDE.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止
+- **実装規範と不変条件 (§0)**: [AGENTS.md](AGENTS.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止（`CLAUDE.md`はimport入口のみ）
 - **Archive**: [docs/archive/](docs/archive/) — 完了済み Codex rollout 計画、primary backend smoke log、v0.1 設計議事録
 
 ## 既知の制約
@@ -300,7 +325,7 @@ profile から production へ自動昇格しません。`latest` alias や
 - **手放しでカタログ維持** — `spotter install` が Claude DB を自動 seed、Claude / Codex それぞれの SessionStart が host-local DB を bg refresh する。手書き管理は一切不要
 - **Codex native hooks** — Codex host は primary auditor backend として Codex CLI を使い、`.spotter/tool-db.codex.json` を Claude DB と分離し、backend failure は Haiku fallback ではなく明示 error として扱う
 - **監査対象** — ユーザー追加分 (MCP / スキル / サブエージェント) のみ。Claude Code 本体側のツールは意図的に対象外 (Claude は元から自発率が高いため)
-- **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([CLAUDE.md §0](CLAUDE.md))
+- **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([AGENTS.md §0](AGENTS.md))
 
 リリース履歴の全文は [CHANGELOG](CHANGELOG.md) を参照。
 

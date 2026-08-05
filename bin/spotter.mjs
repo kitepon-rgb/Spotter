@@ -44,11 +44,15 @@ Usage:
                                         wipe host-local + global DBs then refresh
   spotter status                        show running daemons
   spotter doctor                        environment diagnostic
-  spotter diagnostics logs [--json]     summarize daemon logs for precision diagnostics
+  spotter diagnostics logs [--log-dir DIR] [--project DIR] [--json]
+                                        summarize daemon and project hook-event logs
+  spotter diagnostics factory           emit a fixed-field read-only JSON diagnostic
   spotter diagnostics runtime-errors [snapshot|ack|resolve|reopen|compact]
                                         consume the local allow-listed aggregate store
-  spotter evaluation report [filters] [--json]
-  spotter evaluation cases --outcome OUTCOME [filters] [--json]
+  spotter evaluation report [--project PATH] [--from ISO] [--to ISO] [--host HOST]
+                            [--tool-id ID] [--backend NAME] [--model NAME]
+                            [--spotter-version VERSION] [--json]
+  spotter evaluation cases --outcome OUTCOME [same filters] [--json]
   spotter evaluation case OBSERVATION_ID [--json]
                                         read saved proposal-adoption observations
   spotter dashboard device --id ID [--name NAME] [--host HOST] [--port PORT] [--db PATH]
@@ -66,7 +70,9 @@ Usage:
                                         (experimental) run primary auditor backend once
   spotter auditor matrix --stage STAGE --input FILE
                                         (experimental) compare primary auditor backend matrix
-  spotter auditor model-matrix --fixtures FILE
+  spotter auditor model-matrix --fixtures FILE [--profile PROFILE] [--repeat N]
+                               [--recent-turns 0|1|2|3] [--body-cap CHARS]
+                               [--project DIR] [--output FILE]
                                         (experimental) evaluate pinned Codex auditor profiles
   spotter daemon start --session-id ID  (internal) run session daemon
   spotter hook <event>                  (internal) hook dispatch

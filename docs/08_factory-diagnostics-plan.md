@@ -1,7 +1,8 @@
-# Factory diagnostics plan
+# Factory diagnostics — 完了済み実装記録
 
 Status: **complete**。`spotter diagnostics factory`とopt-in local runtime error storeは
-v1.4.23で公開済み。
+v1.4.23で公開済み。runtime error storeの詳細な完了記録は
+[`BUGHUB_RUNTIME_ERROR_STORE_PLAN.md`](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md)を参照する。
 
 ## 契約
 
@@ -10,7 +11,7 @@ v1.4.23で公開済み。
 - 引数違反はexit 2。生path、marker/catalog内容、prompt/session、token、log、envは返さない。
 - marker不在だけを`not_applicable`とし、破損・読取不能を対象外へ丸めない。
 
-## TODO
+## 完了項目
 
 - [x] 既存doctorのcontext inspectorとtool DB validatorを再利用する。
 - [x] JSON-only factory diagnostics subcommandを追加する。

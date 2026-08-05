@@ -4,7 +4,7 @@ sources:
   - https://code.claude.com/docs/en/hooks
   - "[[../codex-hooks/raw/codex-hooks-2026-07-12]]"
   - "[[raw/claude-hooks-2026-07-12]]"
-retrieved_at: 2026-07-12
+retrieved_at: 2026-08-05（Codex公式Hooks再照合、Claude sourceは2026-07-12 snapshot）
 certainty: high（公式仕様2件とローカル実装・実ログを照合）
 ---
 
@@ -39,8 +39,8 @@ certainty: high（公式仕様2件とローカル実装・実ログを照合）
 
 ## 実装ポインタ
 
-- 現行命令文: `src/hooks/lib.mjs` の`formatTransparentContext` / `formatTransparentBlockReason`
-- 現行failure自由文: 同`formatSpotterWarning`
-- 次turn配送: `src/hooks/pending-context.mjs`、`src/hooks/user-prompt.mjs`、`src/hooks/stop.mjs`
+- 親向け固定助言と固定failure: `src/hooks/parent-output-projector.mjs`
+- legacy pendingは`src/hooks/pending-context.mjs`が内容を読まず削除するだけで、新規配送はしない
+- Claude adapter: `src/hooks/user-prompt.mjs`、`src/hooks/stop.mjs`
 - Codex adapter: `src/cli/codex-hook-cmd.mjs`
 - 完了プラン: `docs/archive/05_parent-session-safety-plan.md`

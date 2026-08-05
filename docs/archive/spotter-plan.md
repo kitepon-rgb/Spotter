@@ -6,7 +6,7 @@
 
 > Archived: **この文書は v0.1 時点の設計議事録** (作成時点で固定されたスナップショット)。
 > 現行設計の真実源は [`../01_catalog-design.md`](../01_catalog-design.md)、現時点で塞がっていない穴は
-> [`../open-issues.md`](../open-issues.md)、実装規範は [`../../CLAUDE.md`](../../CLAUDE.md) を参照してください。
+> [`../open-issues.md`](../open-issues.md)、実装規範は [`../../AGENTS.md`](../../AGENTS.md) を参照してください。
 > 本文書は議論過程の記録として保持しています。
 
 ---

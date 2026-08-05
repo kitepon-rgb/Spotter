@@ -2,6 +2,9 @@
 
 調査日: 2026-07-12
 
+現行source再照合: 2026-08-05。model policy version 3 / `gpt-5.6-terra × medium`は維持。
+auditor prompt contractはv1.5.7でversion 3へ更新されたが、model selectionは変更していない。
+
 確度: **仕様判断は高、`gpt-5.6-terra × medium` は24/24 exactを根拠にproduction採用済み**
 
 ## 出典

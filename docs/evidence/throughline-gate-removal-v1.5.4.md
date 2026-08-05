@@ -6,7 +6,7 @@
 - 修正commit: `047cac34780738b794d59d6aae9cb77925a41e63`
 - 公開: npm `claude-spotter@1.5.4`、git tag / GitHub Release `v1.5.4`
 - 監査入力: Claude / Codexとも現在のユーザー入力とhost-local tool catalogだけを使用する
-- Throughline: `observer-read`は提案評価用snapshotの取得だけに使用し、disabled、stale、設定失敗、provider失敗のいずれも監査を止めない
+- Throughline: v1.5.4時点では`observer-read`を提案評価用snapshot取得だけに使用し、disabled、stale、設定失敗、provider失敗のいずれも監査を止めなかった。v1.5.5でこのreaderだけをexact-session `auditor-context`へ変更した
 - 旧payload互換: `audit:false`、`context_status`、`recent_context`はdaemonの監査実行可否と入力へ影響しない
 - focused test: 166 pass
 - full test: 588 tests、586 pass、platform skip 2、fail 0

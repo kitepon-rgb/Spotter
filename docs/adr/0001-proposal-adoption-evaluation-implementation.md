@@ -13,8 +13,8 @@ Spotterが実際に提示したtool itemについて、同じ親turnで呼び出
 提案しなかったturnは採用率の母数から除外し、結果不明itemは`outcome_missing`として率からも除外する。
 提案率は成功UserPromptSubmitに対する提案turnの割合として別に表示する。
 
-提案時情報は、auditorへ実際に渡したrequestと、同時点の既存Throughline
-`observer-read` snapshotを分離して保存する。Throughline側は変更しない。実行ToDo、依存、状態、
+提案時情報は、auditorへ実際に渡したrequestと、提案元のexact session / host / transcriptを指定して
+既存Throughline `auditor-context`から取得したsnapshotを分離して保存する。Throughline側は変更しない。実行ToDo、依存、状態、
 完了証拠の正本はLattice plan `proposal-adoption-eval`とする。
 
 2026-08-05 amendment: v1.5.4以降、auditorへ渡す本文は現在のrequestだけで履歴文脈は渡さない。

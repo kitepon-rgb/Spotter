@@ -1,7 +1,10 @@
 # Spotter評価dashboard運用
 
-現行npm配布版: **v1.5.7**（2026-08-05）。v1.5.7はauditorの提案判定promptの変更であり、
+現行npm配布版: **v1.5.8**（2026-08-05）。v1.5.8は文書整合releaseであり、
 dashboard routing構成はv1.5.3から変更していない。
+
+この文書はservice設定の正本であり、各端末に現在installされているnpm versionの台帳ではない。
+端末versionは対象端末で`spotter --version`を実行して確認する。
 
 ## 固定構成
 

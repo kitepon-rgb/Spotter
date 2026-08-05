@@ -1,10 +1,11 @@
-# BugHub runtime error store plan
+# BugHub runtime error store — completed implementation record
 
 Status: complete; v1.4.23 published 2026-07-13
 
-This plan is Spotter's implementation TODO for a product-owned local runtime
+This is Spotter's completed implementation record for a product-owned local runtime
 error projection. It must preserve the Claude-first hook/daemon contracts and
-the recursion-safety guarantees described in `CLAUDE.md`.
+the recursion-safety guarantees described in `AGENTS.md`. `CLAUDE.md` is only
+the Claude Code import entry for that canonical file.
 
 ## Contract
 
@@ -25,7 +26,7 @@ the recursion-safety guarantees described in `CLAUDE.md`.
   acknowledgement, explicit resolve/reopen, and retention that preserves every
   unacknowledged record.
 
-## TODO
+## Completed scope
 
 - [x] Add disabled/missing/malformed config characterization tests.
 - [x] Add privacy, aggregation, and duplicate-layer negative fixtures.

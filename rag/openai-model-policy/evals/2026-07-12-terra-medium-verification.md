@@ -1,5 +1,7 @@
 # Terra low / medium verification
 
+> 当時の検証記録。本文の「production昇格はSLO合意待ち」は実行時点の状態であり、同日owner裁定でTerra mediumをproduction採用した。
+
 出典:
 
 - [`2026-07-12-terra-low-medium-repeat3.json`](2026-07-12-terra-low-medium-repeat3.json)
@@ -38,4 +40,3 @@ reasoning outputは増えるが、全体tokenを押し上げる結果にはな�
 - 金額costはChatGPTプラン枠から算出できず、合意SLOも未定義。production変更はこのartifactだけでは行わない。
 - production変更時はpolicy versionを別commitで上げ、baseline profile、verifiedAt、README、diagnostics、
   full suite、OS CIを同じ境界で更新する。
-

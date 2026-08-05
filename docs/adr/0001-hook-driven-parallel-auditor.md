@@ -9,7 +9,7 @@ Spotter exists because the primary agent can miss tools it has access to. Asking
 the primary agent to self-audit would keep detection dependent on the same blind
 spot.
 
-`CLAUDE.md`, `README.md`, and the implementation describe Spotter as a separate
+`AGENTS.md`, `README.md`, and the implementation describe Spotter as a separate
 auditor that receives hook events independently of the primary agent's intent.
 The daemon records user input, used tools, and final responses, then asks the
 configured primary auditor backend to return structured findings.

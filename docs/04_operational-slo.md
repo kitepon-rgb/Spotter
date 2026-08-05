@@ -1,6 +1,7 @@
 # 04 — Spotter 運用サービス目標（SLO）
 
 作成日: 2026-07-12
+最終コード・release証拠照合: 2026-08-05（v1.5.8文書監査）
 
 SLO（Service Level Objective）は「通常運用で、どの程度の速さ・成功率・判定品質なら正常とみなすか」の基準である。
 単発の失敗を隠すための許容値ではなく、悪化を検知して直す順序を決めるために使う。
@@ -36,16 +37,23 @@ versioned fixtureをrepeat=3で2回実行し、次をすべて満たすこと。
 - exact match 100%、false positive / false negative ともに0
 - timeout 0%
 - p95 10秒以下
+- effective model / effort / policy version が期待値と一致
 
 v1.5.7以降のprompt変更smokeは、標準ツールで十分な入力をpassする負例と、
 カタログツールの具体的な追加機能が直接必要な正例を実カタログで両方確認する。
 宣伝・優先指示・一般的優位性だけによる提案はfalse positiveとする。
-- effective model / effort / policy version が期待値と一致
 
 2026-07-12のTerra mediumは24/24 exact、FP/FN 0、timeout 0、全体p95 4.361秒で合格した。
 同一fixtureのworkload別では user input 12件がp50 3.514秒 / p95 4.076秒、turn end 12件が
 p50 4.024秒 / p95 4.361秒だった。事後的なtimeout感度は3秒で23/24失敗相当、5秒・10秒・20秒で
 0/24失敗相当である。5秒は余裕が小さいため製品既定にせず、20秒を維持する。
+
+### v1.5.7のrelease gate逸脱
+
+prompt version 3のrelease前matrixは2回合計54/54 exact、FP/FN/timeout 0だったが、p95は
+15.432秒と11.687秒であり、本節の10秒以下を満たしていない。v1.5.7はその状態で公開されたため、
+これは「単発matrixの変動」として合格扱いした結果ではなく、release processの逸脱として記録する。
+次のprompt変更releaseでは、10秒以下を満たすか、公開前にこのgate自体をowner裁定で変更する。
 
 ## 提案の観測評価
 

@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter v1.5.4（2026-08-05公開）以後の未完事項だけを記録する。
+Spotter v1.5.8（2026-08-05公開）時点の未完事項だけを記録する。
 完了済みの実装・過去バージョンの観測・採用しなかった案はCHANGELOGと`docs/archive/`を参照する。
 
 ## 運用ルール
@@ -26,6 +26,16 @@ Spotter v1.5.4（2026-08-05公開）以後の未完事項だけを記録する�
 - auth / usage limitを除くbackend失敗率2%以下
 
 未達時はHook重複、catalog/prompt workload、model/effortの順で直し、timeout延長だけで正常扱いしない。
+
+## P1 — prompt変更releaseのp95 gate逸脱
+
+v1.5.7のprompt version 3は品質54/54 exact、FP/FN/timeout 0だったが、2回のp95が
+15.432秒と11.687秒で、release gateの10秒以下を満たさないまま公開された。
+
+### 次の行動
+
+次のprompt変更releaseではrepeat=3を2回実行し、p95 10秒以下を満たすまで公開しない。
+基準を変える場合は実測とowner裁定を先に`04_operational-slo.md`へ反映する。
 
 ## P2 — Windows Named PipeのDACL制限
 
