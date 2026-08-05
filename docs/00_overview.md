@@ -5,9 +5,11 @@ and Codex hosts to surface missed tool-use opportunities. `AGENTS.md` is the
 canonical agent source for product philosophy, invariants, commands, hook contracts,
 error handling, and release workflow. `CLAUDE.md` is only the `@AGENTS.md` import entry.
 
-Current production release: **v1.5.4**. UserPromptSubmit auditing uses only the current
-request and the host-local tool catalog. Throughline is optional proposal-evaluation
-evidence and never gates or changes auditing.
+Current production release: **v1.5.7**. UserPromptSubmit auditing uses only the current
+request and the host-local tool catalog. Before reading catalog descriptions, the auditor
+establishes a standard-host-tool baseline and reports only directly applicable catalog tools
+that are better suited. Throughline is optional proposal-evaluation evidence and never gates
+or changes auditing.
 
 ## Naming Convention
 

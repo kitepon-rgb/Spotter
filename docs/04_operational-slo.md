@@ -36,6 +36,10 @@ versioned fixtureをrepeat=3で2回実行し、次をすべて満たすこと。
 - exact match 100%、false positive / false negative ともに0
 - timeout 0%
 - p95 10秒以下
+
+v1.5.7以降のprompt変更smokeは、標準ツールで十分な入力をpassする負例と、
+カタログツールの具体的な追加機能が直接必要な正例を実カタログで両方確認する。
+宣伝・優先指示・一般的優位性だけによる提案はfalse positiveとする。
 - effective model / effort / policy version が期待値と一致
 
 2026-07-12のTerra mediumは24/24 exact、FP/FN 0、timeout 0、全体p95 4.361秒で合格した。

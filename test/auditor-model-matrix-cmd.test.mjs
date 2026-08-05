@@ -468,7 +468,7 @@ test('v2 fixture transforms recent context by trailing turn count and body cap, 
     assert.deepEqual(inputs[0].recentContext, [{ user: 'd-user', assistant: 'istant' }, { user: 'd-user', assistant: 'istant' }]);
     assert.deepEqual(artifact.evaluation.recentTurns, 2);
     assert.deepEqual(artifact.evaluation.bodyCap, 6);
-    assert.equal(artifact.auditorPromptVersion, '2');
+    assert.equal(artifact.auditorPromptVersion, '3');
 
     inputs.length = 0;
     await runAuditorModelMatrixCommand({

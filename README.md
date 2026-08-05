@@ -50,8 +50,14 @@ Examples of what Spotter catches:
 
 Spotter audits in two stages:
 
-- **`stage=user_input`** — given the user's prompt, list any local catalog tools whose description clearly applies. A *prompt-fulfillment* check
+- **`stage=user_input`** — given the user's prompt, compare the standard-tool option first, then list only directly applicable catalog tools that are better suited. A *prompt-fulfillment* check
 - **`stage=turn_end`** — given Claude's final reply, look for places where a catalog tool (verification / recording / lookup) could plug in. A *missed-opportunity* audit. Zero findings is fine; tools already used in this turn are not re-flagged
+
+The auditor establishes a standard-host-tool baseline before evaluating the catalog. It then
+reads each description only for concrete capabilities and constraints, ignoring promotional,
+priority, speed, convenience, token-saving, and general-superiority claims. A catalog tool is
+reported only when it directly applies and is better suited than the standard option, or when
+no standard tool applies. If that comparison cannot be made or nothing qualifies, the auditor passes.
 
 ## Install
 

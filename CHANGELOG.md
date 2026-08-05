@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.7 — 2026-08-05
+
+- **標準ツール先行で比較する。** Claude Haiku / Codex CLI / Codex sidecarのauditorは、
+  カタログを読む前に現在の依頼に該当する標準ツールを特定するか、該当なしと判断する。
+  どちらとも判断できなければpassする。
+  Codex auditor promptの契約versionは`3`へ上げる。
+- **descriptionの強さと適用性を分離する。** 宣伝、優先指示、速度・便利さ・token削減・
+  一般的優位性の自己申告は比較根拠にせず、具体的な機能と制約だけを読む。
+  現在の依頼に直接適用でき、標準ツールより適するカタログツールだけを提示する。
+- **実カタログsmoke。** 「今の聖典には類似することは書いてない？」は提案なし、
+  呼び出し元と影響範囲の調査は`lattice_sensor_callers` / `lattice_sensor_impact`を提案した。
+- **判定品質。** prompt version 3を`terra-medium` / fixture 9件 / repeat 3で2回実行し、
+  合計54/54 exact、false positive / false negative / timeoutはすべて0。p95は15.432秒と11.687秒で、
+  実運用SLOの7日窓判定とは分けて単発matrixの変動値として記録する。
+
 ## 1.5.6 — 2026-08-05
 
 - **Codexの動的nested MCP利用を採用として記録する。** `functions.exec`内で

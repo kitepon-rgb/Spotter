@@ -1,7 +1,7 @@
 # Spotter評価dashboard運用
 
-現行配布版: **v1.5.4**（2026-08-05）。Mac、main-server、FOX WSL2、FOX Windows nativeへ
-global install済み。v1.5.4は監査gate修正でありdashboard routing構成はv1.5.3から変更していない。
+現行npm配布版: **v1.5.7**（2026-08-05）。v1.5.7はauditorの提案判定promptの変更であり、
+dashboard routing構成はv1.5.3から変更していない。
 
 ## 固定構成
 

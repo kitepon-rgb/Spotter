@@ -23,6 +23,8 @@ test('buildCodexSidecarAuditorPrompt: uses sidecar auditor contract and exact ca
   assert.match(prompt, /missingTools/);
   assert.match(prompt, /mcp__caveat__caveat_search/);
   assert.match(prompt, /follow-up tools whose need depends on a result not yet observed/);
+  assert.match(prompt, /for each required action identify a standard host tool or none/);
+  assert.match(prompt, /If none qualify, set pass=true/);
 });
 
 test('buildCodexSidecarAuditorCommand: supports local built CLI path for smoke before global install', () => {

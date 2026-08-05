@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.7（2026-08-05公開）**: auditorはカタログを読む前に標準ツールでの対応を
+> 先に判定する。descriptionの宣伝・優先指示・自己申告の優位性は比較根拠にせず、
+> 現在の依頼に直接適用でき、標準ツールより適する追加ツールだけを提示する。
+
 > **v1.5.6（2026-08-05公開）**: Codexの`functions.exec`内で、`ALL_TOOLS`からexact IDで
 > 解決して`tools[tool.name](...)`と実行したnested MCPを、評価上の採用として記録する。
 
@@ -118,6 +122,11 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.5.7 (published 2026-08-05)**: Claude Haiku / Codex CLI / Codex sidecarのauditorは、
+カタログを判断材料にする前に標準ツールを特定するか該当なしと判断する。
+その後でdescriptionの具体的な機能と制約だけを比較し、直接適用できる上位の
+カタログツールだけを提示する。標準ツールが不明で比較できない場合と該当ツールがない場合はpassする。
 
 **v1.5.6 (published 2026-08-05)**: Codexのouter `functions.exec`が、lazy tool一覧から
 `ALL_TOOLS.find(...name === "mcp__...")`でexact IDを解決し`tools[tool.name](...)`で実行した場合も、
