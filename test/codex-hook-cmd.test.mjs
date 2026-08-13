@@ -1478,6 +1478,7 @@ test('codexHookDiagnostics: Windowsではnpm shim経由でfeaturesを診断す�
   let call;
   const result = await codexHookDiagnostics({
     platform: 'win32',
+    env: { Path: '' },
     resolveModelSelectionFn: () => ({ effectiveModel: 'gpt-5.6-terra' }),
     spawnSyncFn: (command, args, options) => {
       call = { command, args, options };

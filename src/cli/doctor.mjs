@@ -123,12 +123,14 @@ export function isSupportedNodeVersion(value) {
 export async function inspectCodexCliVersion({
   codexBin = 'codex',
   platform = process.platform,
+  env = process.env,
   execFileFn = execFileP,
 } = {}) {
   const invocation = buildWindowsCompatibleInvocation({
     command: codexBin,
     args: ['--version'],
     platform,
+    env,
   });
   const { stdout } = await execFileFn(invocation.command, invocation.args, {
     timeout: 5_000,

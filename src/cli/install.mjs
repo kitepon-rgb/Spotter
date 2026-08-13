@@ -281,6 +281,7 @@ async function exists(path) {
 
 export function isCodexCliPresent({
   platform = process.platform,
+  env = process.env,
   spawnSyncFn = spawnSync,
   codexBin = 'codex',
 } = {}) {
@@ -288,6 +289,7 @@ export function isCodexCliPresent({
     command: codexBin,
     args: ['--version'],
     platform,
+    env,
   });
   const result = spawnSyncFn(invocation.command, invocation.args, {
     encoding: 'utf8',

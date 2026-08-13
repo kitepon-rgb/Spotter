@@ -561,6 +561,7 @@ export async function codexHookDiagnostics({
     command: 'codex',
     args: ['features', 'list'],
     platform,
+    env,
   });
   const features = spawnSyncFn(invocation.command, invocation.args, {
     encoding: 'utf8',

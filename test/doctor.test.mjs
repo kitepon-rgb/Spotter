@@ -22,6 +22,7 @@ test('inspectCodexCliVersion: Windowsではnpm shimをcmd.exe経由で診断す�
   let call;
   const version = await inspectCodexCliVersion({
     platform: 'win32',
+    env: { Path: '' },
     execFileFn: async (command, args, options) => {
       call = { command, args, options };
       return { stdout: 'codex-cli 0.144.3\r\n' };

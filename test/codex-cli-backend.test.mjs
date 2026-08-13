@@ -36,7 +36,7 @@ function createCodexCliAuditorBackend(options) {
 
 test('buildWindowsCompatibleInvocation: 未解決shimの固定probeだけcmd.exe fallbackを許す', () => {
   assert.deepEqual(buildWindowsCompatibleInvocation({
-    command: 'codex', args: ['exec', '-'], platform: 'win32',
+    command: 'codex', args: ['exec', '-'], platform: 'win32', env: { Path: '' },
   }), {
     command: 'cmd.exe', args: ['/d', '/s', '/c', 'codex', 'exec', '-'],
   });

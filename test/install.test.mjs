@@ -32,7 +32,7 @@ test('install: Windowsではcodex.cmdをcmd.exe経由で検出する', () => {
     calls.push({ command, args, options });
     return { status: 0 };
   };
-  assert.equal(isCodexCliPresent({ platform: 'win32', spawnSyncFn }), true);
+  assert.equal(isCodexCliPresent({ platform: 'win32', env: { Path: '' }, spawnSyncFn }), true);
   assert.equal(calls[0].command, 'cmd.exe');
   assert.deepEqual(calls[0].args, ['/d', '/s', '/c', 'codex', '--version']);
   assert.equal(calls[0].options.windowsHide, true);
