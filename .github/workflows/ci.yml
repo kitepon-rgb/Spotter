@@ -4,18 +4,24 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 実行する工場環境
+        type: choice
+        default: all
+        options: [all, macos-native, linux-native, windows-native, wsl2]
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node: ['22.13.0', '22.x']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-      - run: npm ci --no-audit --no-fund
-      - run: node --test
+  full:
+    uses: kitepon/dotagents/.github/workflows/factory-full-ci.yml@main
+    with:
+      environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'all' }}
+      full-command: >-
+        npm ci --no-audit --no-fund &&
+        npm run verify:docs &&
+        npm test
