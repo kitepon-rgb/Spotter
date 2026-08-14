@@ -46,6 +46,19 @@ export function isSubagentCall(input) {
       && input.agent_id.length > 0;
 }
 
+// Grok invokes Claude-compatible hook commands with a camelCase wire envelope.
+// Spotter does not support Grok as a host: ignore that envelope before any
+// project lookup, daemon, evaluation, or hook-event side effect.
+export function isUnsupportedNonClaudeEnvelope(input) {
+  return input !== null
+      && typeof input === 'object'
+      && typeof input.sessionId === 'string'
+      && input.sessionId.length > 0
+      && typeof input.hookEventName === 'string'
+      && input.hookEventName.length > 0
+      && !Object.hasOwn(input, 'session_id');
+}
+
 // Walk up from startCwd looking for .spotter/marker.json. Returns the project
 // root path containing the marker, or null if none was found before reaching
 // the filesystem root.

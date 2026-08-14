@@ -8,6 +8,7 @@ import {
   findSpotterMarker,
   isChildCall,
   isSubagentCall,
+  isUnsupportedNonClaudeEnvelope,
   recordClaudeHookEvent,
 } from './lib.mjs';
 import { getLastAssistantText } from './transcript-reader.mjs';
@@ -26,6 +27,7 @@ export async function runStop({
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
+  if (isUnsupportedNonClaudeEnvelope(input)) return;
   if (isSubagentCall(input)) return;
   // Resolve the installed project once. Keeping this proven root lets the failure event remain
   // attributable even if the marker disappears while the daemon request is in flight.

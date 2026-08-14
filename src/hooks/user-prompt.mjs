@@ -17,6 +17,7 @@ import {
   die,
   isChildCall,
   isSubagentCall,
+  isUnsupportedNonClaudeEnvelope,
   isOutsideSpotterProject,
   findSpotterMarker,
   recordClaudeHookEvent,
@@ -48,6 +49,7 @@ export async function runUserPrompt({
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
+  if (isUnsupportedNonClaudeEnvelope(input)) return;
   if (isSubagentCall(input)) return;
   if (isOutsideSpotterProject(input)) return;
 

@@ -22,6 +22,7 @@ import {
   die,
   isChildCall,
   isSubagentCall,
+  isUnsupportedNonClaudeEnvelope,
   isOutsideSpotterProject,
   findSpotterMarker,
   recordClaudeHookEvent,
@@ -39,6 +40,7 @@ export async function runSessionStart({
 
   const input = await readInput();
 
+  if (isUnsupportedNonClaudeEnvelope(input)) return;
   if (isSubagentCall(input)) return;
   if (input.source !== 'startup') return;
   if (isOutsideSpotterProject(input)) return;

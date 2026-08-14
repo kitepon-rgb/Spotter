@@ -8,6 +8,7 @@ import {
   requireString,
   isChildCall,
   isSubagentCall,
+  isUnsupportedNonClaudeEnvelope,
   isOutsideSpotterProject,
   findSpotterMarker,
   recordClaudeHookEvent,
@@ -24,6 +25,7 @@ export async function runSessionEnd({
 } = {}) {
   if (isChildCall()) return;
   const input = await readInput();
+  if (isUnsupportedNonClaudeEnvelope(input)) return;
   if (isSubagentCall(input)) return;
   if (isOutsideSpotterProject(input)) return;
 
