@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.9（2026-08-14公開）**: Codex side conversationで`transcript_path`が無いStopを
+> 未処理例外にせず、評価をincompleteで閉じて構造化skip・exit 0にする。
+> 通常task・ENOENT・anomalyの既存監査契約は維持する。
+
 > **v1.5.8（2026-08-05公開）**: 全文書を実装・test・CLI・配布設定から再照合する。
 > 現行contract、時点証拠、履歴snapshotを明示分離し、tool-db実schema、所有境界、
 > Node要件、再帰guard、runtime-error mutex、Throughline readerの誤記を修正する。
@@ -126,6 +130,11 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.5.9 (published 2026-08-14)**: Codex Stop payloadの`transcript_path`が欠落、`null`、
+空文字の場合は、auditorとtranscript readerを呼ばず、評価turnを`incomplete`で閉じ、
+`transcript_unavailable`の構造Hook eventを記録してexit 0にする。非string payloadはmalformed、
+非空pathのENOENT・anomaly・通常taskは既存挙動を維持する。4環境CIは工場共通workflowへ移行した。
 
 **v1.5.8 (published 2026-08-05)**: 現行文書をv1.5.7 source boundary `0977fd7`、
 CLI、test、公開設定から再照合した。現行contractと履歴・evidence・RAG snapshotの役割を

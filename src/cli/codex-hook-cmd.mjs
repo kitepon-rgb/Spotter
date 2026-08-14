@@ -15,6 +15,7 @@ import {
   die,
   findSpotterMarker,
   isChildCall,
+  optionalString,
   readStdinJson,
   requireString,
 } from '../hooks/lib.mjs';
@@ -286,7 +287,27 @@ export async function runCodexStopHook({
     });
     return;
   }
-  const transcriptPath = requireString(input, 'transcript_path');
+  const transcriptPath = optionalString(input, 'transcript_path');
+  if (!transcriptPath) {
+    await closeCodexEvaluationTurn({
+      createEvaluationStoreFn,
+      sessionId: codexSessionId(input),
+      usageStatus: 'incomplete',
+      completedAtMs: now(),
+      writeError: reportError,
+    });
+    await recordCodexHookEventSafe(recordHookEventFn, {
+      projectRoot,
+      event: {
+        hook: 'Stop',
+        status: 'skipped',
+        reason: 'transcript_unavailable',
+        usedToolCount: 0,
+        durationMs: Date.now() - startedAt,
+      },
+    }, reportError);
+    return;
+  }
   const finalResponse = codexLastAssistantMessage(input) ?? '(no final response available)';
   let toolUsage;
   try {

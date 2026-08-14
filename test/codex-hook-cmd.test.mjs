@@ -722,6 +722,96 @@ test('runCodexStopHook: stop_hook_active closes the latest evaluation observatio
   }
 });
 
+test('runCodexStopHook: side conversation without a transcript closes evaluation and skips auditing', async (t) => {
+  const cases = [
+    { name: 'missing transcript_path', transcript: {} },
+    { name: 'null transcript_path', transcript: { transcript_path: null } },
+    { name: 'empty transcript_path', transcript: { transcript_path: '' } },
+  ];
+
+  for (const [index, current] of cases.entries()) {
+    await t.test(current.name, async () => {
+      const project = await makeProject();
+      const databasePath = join(project, 'evaluation.db');
+      const observationId = `33333333-3333-4333-8333-33333333333${index}`;
+      const sessionId = `side-conversation-${index}`;
+      const events = [];
+      const output = [];
+      const errors = [];
+      try {
+        const store = createEvaluationStore({ databasePath });
+        try {
+          store.recordTurn({
+            observationId,
+            recordedAtMs: 1000,
+            projectPath: project,
+            host: 'codex',
+            sessionId,
+            auditStatus: 'success',
+            proposedToolIds: ['mcp__caveat__caveat_search'],
+            observerContextStatus: 'not_requested',
+          });
+        } finally {
+          store.close();
+        }
+
+        await runCodexStopHook({
+          readInput: async () => ({
+            cwd: project,
+            session_id: sessionId,
+            last_assistant_message: 'side conversation response',
+            ...current.transcript,
+          }),
+          createEvaluationStoreFn: () => createEvaluationStore({ databasePath }),
+          now: () => 2000,
+          readCodexToolUsageFn: async () => { throw new Error('must not read an unavailable transcript'); },
+          readLocalFn: async () => { throw new Error('must not load the catalog without tool usage'); },
+          createAuditorBackendFn: () => { throw new Error('must not audit without tool usage'); },
+          recordHookEventFn: async ({ event }) => { events.push(event); },
+          writeOutput: (text) => output.push(text),
+          writeError: (text) => errors.push(text),
+        });
+
+        const closed = createEvaluationStore({ databasePath });
+        try {
+          const recorded = closed.getCase(observationId);
+          assert.equal(recorded.completedAtMs, 2000);
+          assert.equal(recorded.usageStatus, 'incomplete');
+          assert.deepEqual(recorded.items, [{ toolId: 'mcp__caveat__caveat_search', outcome: 'outcome_missing' }]);
+        } finally {
+          closed.close();
+        }
+        assert.deepEqual(output, []);
+        assert.deepEqual(errors, []);
+        assert.equal(events.length, 1);
+        assert.equal(events[0].status, 'skipped');
+        assert.equal(events[0].reason, 'transcript_unavailable');
+        assert.equal(events[0].usedToolCount, 0);
+      } finally {
+        await rm(project, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test('runCodexStopHook: non-string transcript_path remains a malformed envelope', async () => {
+  const project = await makeProject();
+  try {
+    await assert.rejects(
+      runCodexStopHook({
+        readInput: async () => ({
+          cwd: project,
+          transcript_path: 42,
+          last_assistant_message: 'invalid payload',
+        }),
+      }),
+      (err) => err?.exitCode === 2 && /transcript_path/.test(err.message),
+    );
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test('runCodexUserPromptSubmitHook: child Codex backend env exits before reading stdin', async () => {
   const old = process.env.SPOTTER_PARENT_PID;
   process.env.SPOTTER_PARENT_PID = 'codex-cli:test';

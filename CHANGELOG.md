@@ -3,6 +3,19 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.5.9 — 2026-08-14
+
+- **Codex side conversationのStopを正常終了させる。** Codex公式Hook契約でnullableな
+  `transcript_path`が欠落または`null`の場合と、互換payloadが空文字の場合、未処理例外とexit 2を出さず、
+  `transcript_unavailable`の構造Hook eventを記録してexit 0で終了する。
+- **不完全な利用観測を監査成功へ偽装しない。** transcriptが無いturnはauditorを呼ばず、
+  対応する評価turnを`usageStatus: incomplete`で閉じる。非空pathのENOENT・transcript anomaly・
+  通常taskの監査経路は変更せず、非string値はmalformed envelopeとしてexit 2を維持する。
+- **4環境CIを工場共通workflowへ統合。** macOS native、Linux native、Windows native、WSL2の
+  reusable workflowへ移行し、依存導入、文書検証、full testの時間を分離する。
+- **Windows CLI試験を端末PATHから分離。** Codex CLI検出・診断のWindows shim解決へ明示envを渡し、
+  開発端末の実PATHに左右されない回帰testへ固定する。
+
 ## 1.5.8 — 2026-08-05
 
 - **コードから全ドキュメントを再照合。** 47 Markdownを現行contract、ADR、完了計画、

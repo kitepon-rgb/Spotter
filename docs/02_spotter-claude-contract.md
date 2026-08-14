@@ -112,6 +112,11 @@ Hook event. Neither path may carry auditor prose or provider stdout / stderr int
 Codex hook auditor calls use the production model policy (currently `gpt-5.6-terra × medium`) and a 20s timeout.
 Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
+When a Codex surface has no persisted transcript and sends a missing, `null`, or empty
+`transcript_path`, Stop closes any open evaluation turn as incomplete, records a structured
+`transcript_unavailable` skip event, and exits 0 without invoking the transcript reader or auditor.
+Non-string values remain malformed envelopes. A non-empty path that is missing or anomalous keeps
+the existing observation-failure audit path.
 
 Codex `SessionStart` handler timeout is 30 seconds. The hook itself only launches detached refresh, but
 Windows nativeではNode起動とproject discoveryが5秒を超える実測があるため、installerは旧5秒設定を

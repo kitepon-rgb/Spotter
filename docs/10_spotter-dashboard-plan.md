@@ -1,7 +1,7 @@
 # Spotter端末横断Web dashboard実装計画
 
 状態: **dashboard機能・公開経路・4端末service rollout完了**。現行npm配布版は
-`claude-spotter@1.5.8`。4端末で同一npm versionが現在もinstall済みであることまでは本書で主張しない。
+`claude-spotter@1.5.9`。4端末で同一npm versionが現在もinstall済みであることまでは本書で主張しない。
 公開時点の実測は[`evidence/dashboard-d8-public-smoke.md`](evidence/dashboard-d8-public-smoke.md)を正とする。
 
 ## 目的
