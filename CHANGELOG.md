@@ -3,6 +3,15 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.5.10 — 2026-08-14
+
+- **非ClaudeのHook入力を副作用前に無視する。** 非空の`sessionId`と`hookEventName`を持ち、
+  Claudeの`session_id`を持たないcamelCase envelopeだけをunsupportedとして識別する。
+  SessionStart、UserPromptSubmit、PreToolUse、Stop、SessionEndはproject探索、daemon、評価store、
+  tool記録、Stop監査、Hook eventより前に無出力・exit 0で終了する。
+- **正式host範囲を広げない。** camelCase payloadをClaude形へ変換せず、Grok向けtool DB、auditor、
+  installer、diagnosticsを追加しない。Claude/Codexの既存入力と処理は変更しない。
+
 ## 1.5.9 — 2026-08-14
 
 - **Codex side conversationのStopを正常終了させる。** Codex公式Hook契約でnullableな

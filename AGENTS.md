@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.10（2026-08-14公開）**: Claude互換Hookへ流入した非ClaudeのcamelCase envelopeを、
+> payload変換や製品状態の変更より前にunsupportedとして無出力・exit 0で終了する。
+> Claude/Codexの既存Hook契約とSpotterの正式host範囲は変更しない。
+
 > **v1.5.9（2026-08-14公開）**: Codex side conversationで`transcript_path`が無いStopを
 > 未処理例外にせず、評価をincompleteで閉じて構造化skip・exit 0にする。
 > 通常task・ENOENT・anomalyの既存監査契約は維持する。

@@ -1,6 +1,6 @@
 # Spotter評価dashboard運用
 
-現行npm配布版: **v1.5.9**（2026-08-14）。v1.5.9はCodex StopとCIの修正releaseであり、
+現行npm配布版: **v1.5.10**（2026-08-14）。v1.5.10は非Claude Hook入力の副作用前no-op releaseであり、
 dashboard routing構成はv1.5.3から変更していない。
 
 この文書はservice設定の正本であり、各端末に現在installされているnpm versionの台帳ではない。
