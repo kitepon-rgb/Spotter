@@ -17,7 +17,6 @@ import {
 } from './lib.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
 import { canonicalizeToolId } from '../core/evaluation-tool-id.mjs';
-import { createEvaluationStore } from '../core/evaluation-store.mjs';
 
 const TIMEOUT_MS = 1_000;
 
@@ -25,7 +24,7 @@ export async function runPreToolUse({
   readInput = readStdinJson,
   sendRequestFn = sendRequest,
   recordHookEventFn = recordClaudeHookEvent,
-  createEvaluationStoreFn = createEvaluationStore,
+  createEvaluationStoreFn = null,
   writeError = (text) => process.stderr.write(text),
 } = {}) {
   if (isChildCall()) return;
@@ -33,6 +32,8 @@ export async function runPreToolUse({
   if (isUnsupportedNonClaudeEnvelope(input)) return;
   if (isSubagentCall(input)) return;
   if (isOutsideSpotterProject(input)) return;
+  const evaluationStoreFactory = createEvaluationStoreFn
+    ?? (await import('../core/evaluation-store.mjs')).createEvaluationStore;
 
   const sessionId = requireString(input, 'session_id');
   const toolName = requireString(input, 'tool_name');
@@ -45,7 +46,7 @@ export async function runPreToolUse({
   const invalidateEvaluation = () => {
     if (!evaluationObserved || evaluationInvalidated) return;
     evaluationInvalidated = true;
-    closeEvaluationAsIncomplete({ sessionId, createEvaluationStoreFn, writeError });
+    closeEvaluationAsIncomplete({ sessionId, createEvaluationStoreFn: evaluationStoreFactory, writeError });
   };
 
   try {

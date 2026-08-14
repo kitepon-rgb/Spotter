@@ -1,7 +1,7 @@
 # Spotter評価dashboard運用
 
-現行npm配布版: **v1.5.10**（2026-08-14）。v1.5.10は非Claude Hook入力の副作用前no-op releaseであり、
-dashboard routing構成はv1.5.3から変更していない。
+現行npm配布版: **v1.5.11**（2026-08-15）。v1.5.11はWindows dashboard taskを
+ユーザープロファイル維持のhidden PowerShell起動へ変更し、routing構成は変更していない。
 
 この文書はservice設定の正本であり、各端末に現在installされているnpm versionの台帳ではない。
 端末versionは対象端末で`spotter --version`を実行して確認する。
@@ -93,7 +93,7 @@ main-serverのSSH host名またはIPを明示して次を1回実行する。
 .\install-dashboard-tasks.ps1 -MainServer '<main-server-host-or-ip>'
 ```
 
-登録される2 taskはログオン時にdevice serverとreverse tunnelを起動する。確認:
+登録される2 taskはログオン時にdevice serverとreverse tunnelをhidden起動し、console windowを表示しない。確認:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:53944/_spotter/health

@@ -3,6 +3,15 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.5.11 — 2026-08-15
+
+- **Windows dashboard taskのconsole windowを隠す。** device serverとreverse tunnelの
+  PowerShell actionへ`-NonInteractive -WindowStyle Hidden`を指定し、ログオン時に黒い窓を表示しない。
+- **既存のユーザー実行契約を維持する。** Task Schedulerの`Interactive` principal、APPDATA上の
+  npm shim、SSH鍵とknown_hostsのユーザープロファイルは変更せず、起動表示だけを修正する。
+- **非Claude Hookの無出力契約をNode 24でも満たす。** UserPromptSubmitとPreToolUseはunsupported判定後に
+  評価SQLiteを遅延読込し、negative fixtureへ`ExperimentalWarning`を出さない。
+
 ## 1.5.10 — 2026-08-14
 
 - **非ClaudeのHook入力を副作用前に無視する。** 非空の`sessionId`と`hookEventName`を持ち、

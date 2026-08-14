@@ -27,7 +27,6 @@ import { spawnDaemonAndWaitReady } from './spawn-daemon.mjs';
 import { discardLegacyPending } from './pending-context.mjs';
 import { projectBackendFailure, projectParentAdvice, projectToolIds } from './parent-output-projector.mjs';
 import { randomUUID } from 'node:crypto';
-import { createEvaluationStore } from '../core/evaluation-store.mjs';
 import { loadEvaluationContext } from '../core/evaluation-context.mjs';
 import { version } from '../version.mjs';
 
@@ -39,7 +38,7 @@ export async function runUserPrompt({
   spawnDaemonAndWaitReadyFn = spawnDaemonAndWaitReady,
   discardLegacyPendingFn = discardLegacyPending,
   recordHookEventFn = recordClaudeHookEvent,
-  createEvaluationStoreFn = createEvaluationStore,
+  createEvaluationStoreFn = null,
   loadEvaluationContextFn = loadEvaluationContext,
   randomUUIDFn = randomUUID,
   spotterVersion = version,
@@ -52,6 +51,8 @@ export async function runUserPrompt({
   if (isUnsupportedNonClaudeEnvelope(input)) return;
   if (isSubagentCall(input)) return;
   if (isOutsideSpotterProject(input)) return;
+  const evaluationStoreFactory = createEvaluationStoreFn
+    ?? (await import('../core/evaluation-store.mjs')).createEvaluationStore;
 
   const sessionId = requireString(input, 'session_id');
   const prompt = requireString(input, 'prompt');
@@ -76,7 +77,7 @@ export async function runUserPrompt({
           recordedAtMs: proposalRecordedAtMs,
         })
         : { status: 'not_requested', snapshot: null };
-      const store = createEvaluationStoreFn();
+      const store = evaluationStoreFactory();
       try {
         store.recordTurn({
           observationId,

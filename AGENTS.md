@@ -1,5 +1,10 @@
 # AGENTS.md
 
+> **v1.5.11（2026-08-15公開）**: Windows dashboardのdevice／tunnel taskを、
+> ユーザープロファイルを維持したまま非対話・hidden PowerShellで起動する。
+> ログオン時の黒いconsole windowを表示せず、既存のSSH・APPDATA契約は変更しない。
+> 非Claude Hookのnegative fixtureではSQLiteを判定後に読み、Node 24でもstderrを空に保つ。
+
 > **v1.5.10（2026-08-14公開）**: Claude互換Hookへ流入した非ClaudeのcamelCase envelopeを、
 > payload変換や製品状態の変更より前にunsupportedとして無出力・exit 0で終了する。
 > Claude/Codexの既存Hook契約とSpotterの正式host範囲は変更しない。

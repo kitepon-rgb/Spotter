@@ -17,3 +17,13 @@ test('Windows native device avoids the WSL2 localhost relay port', async () => {
   assert.match(tunnel, /127\.0\.0\.1:53943:127\.0\.0\.1:53944/);
   assert.doesNotMatch(tunnel, /127\.0\.0\.1:53943:127\.0\.0\.1:53940/);
 });
+
+test('Windows dashboard tasks keep the user profile while hiding both console windows', async () => {
+  const installer = await read('ops/dashboard/windows/install-dashboard-tasks.ps1');
+  assert.match(installer, /-LogonType Interactive/);
+  const actions = installer.match(/New-ScheduledTaskAction[^\r\n]+/gu) ?? [];
+  assert.equal(actions.length, 2);
+  for (const action of actions) {
+    assert.match(action, /-NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass/);
+  }
+});
