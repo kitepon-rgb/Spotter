@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, mkdir, readdir, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
 import { runSessionEnd } from '../src/hooks/session-end.mjs';
 import { runUserPrompt as runUserPromptImpl } from '../src/hooks/user-prompt.mjs';
@@ -35,6 +37,91 @@ async function seedLegacyPending({ projectRoot, sessionId, content }) {
   await writeFile(path, content, 'utf8');
   return path;
 }
+
+test('Grok camelCase envelopes are unsupported no-op before Spotter side effects [GF04S]', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-grok-envelope-'));
+  const common = {
+    sessionId: 'grok-session',
+    cwd: project,
+    workspaceRoot: project,
+    timestamp: '2026-08-14T00:00:00Z',
+    permissionMode: 'default',
+  };
+  const cases = [
+    {
+      event: 'SessionStart',
+      entrypoint: '../src/hooks/session-start.mjs',
+      input: { ...common, hookEventName: 'session_start', source: 'startup' },
+    },
+    {
+      event: 'UserPromptSubmit',
+      entrypoint: '../src/hooks/user-prompt.mjs',
+      input: { ...common, hookEventName: 'user_prompt_submit', prompt: 'hello' },
+    },
+    {
+      event: 'PreToolUse',
+      entrypoint: '../src/hooks/pre-tool-use.mjs',
+      input: {
+        ...common,
+        hookEventName: 'pre_tool_use',
+        toolUseId: 'tool-use-1',
+        toolName: 'run_terminal_command',
+        toolInput: { command: 'true' },
+        toolInputTruncated: false,
+      },
+    },
+    {
+      event: 'Stop',
+      entrypoint: '../src/hooks/stop.mjs',
+      input: {
+        ...common,
+        hookEventName: 'stop',
+        reason: 'end_turn',
+        stopHookActive: false,
+        lastAssistantMessage: 'done',
+        backgroundTasks: [],
+        sessionCrons: [],
+      },
+    },
+    {
+      event: 'SessionEnd',
+      entrypoint: '../src/hooks/session-end.mjs',
+      input: { ...common, hookEventName: 'session_end', reason: 'shutdown' },
+    },
+  ];
+
+  try {
+    await mkdir(join(project, '.spotter'), { recursive: true });
+    await writeFile(join(project, '.spotter', 'marker.json'), '{}', 'utf8');
+    const env = { ...process.env };
+    delete env.SPOTTER_PARENT_PID;
+    delete env.SPOTTER_BACKEND;
+    delete env.SPOTTER_CHILD_BACKEND;
+
+    const results = cases.map(({ event, entrypoint, input }) => {
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL(entrypoint, import.meta.url))], {
+        cwd: project,
+        env,
+        input: JSON.stringify(input),
+        encoding: 'utf8',
+      });
+      return { event, status: result.status, stdout: result.stdout, stderr: result.stderr };
+    });
+
+    assert.deepEqual(
+      {
+        results,
+        spotterEntries: (await readdir(join(project, '.spotter'))).sort(),
+      },
+      {
+        results: cases.map(({ event }) => ({ event, status: 0, stdout: '', stderr: '' })),
+        spotterEntries: ['marker.json'],
+      },
+    );
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
 
 test('formatTransparentContext: mentions Spotter explicitly (§12.2)', () => {
   const text = formatTransparentContext([
