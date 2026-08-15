@@ -86,19 +86,52 @@ systemctl --user enable --now spotter-dashboard-device.service spotter-dashboard
 
 ## FOX Windows native
 
-管理者権限は不要。`ops/dashboard/windows/`を固定pathへ配置し、Windows側から解決できる
-main-serverのSSH host名またはIPを明示して次を1回実行する。
+同梱された`ops/dashboard/windows/`のPowerShellを固定pathへ配置する。npm global版から
+`~/.spotter/dashboard/`へ反映し、Windows側から解決できるmain-serverのSSH host名またはIPを
+明示してinstallerを実行する。npm更新後も同じ手順で配布scriptとtask定義を更新する。
 
 ```powershell
-.\install-dashboard-tasks.ps1 -MainServer '<main-server-host-or-ip>'
+$source = Join-Path (npm root -g) 'claude-spotter\ops\dashboard\windows'
+$target = Join-Path $HOME '.spotter\dashboard'
+New-Item -ItemType Directory -Path $target -Force | Out-Null
+Copy-Item -Path (Join-Path $source '*.ps1') -Destination $target -Force
+& (Join-Path $target 'install-dashboard-tasks.ps1') -MainServer '<main-server-host-or-ip>'
 ```
 
-登録される2 taskはログオン時にdevice serverとreverse tunnelをhidden起動し、console windowを表示しない。確認:
+新規taskまたは現在ユーザーが所有するtaskなら管理者権限は不要。既存taskが
+`BUILTIN\Administrators`所有で`Register-ScheduledTask`が`Access is denied`になった場合だけ、
+同じinstallerを管理者PowerShellから再実行する。principalは`Interactive` / `Limited`のままで、
+APPDATAのnpm shim、SSH鍵、known_hostsを現在ユーザープロファイルから読む。
+
+登録される2 taskはログオン時にdevice serverとreverse tunnelをhidden起動し、console windowを
+表示しない。task actionに`-NonInteractive -WindowStyle Hidden`が含まれることとdevice healthを確認する。
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:53944/_spotter/health
-Get-ScheduledTask -TaskName 'Spotter dashboard *' | Get-ScheduledTaskInfo
+Get-ScheduledTask -TaskName 'Spotter dashboard *' |
+  Select-Object TaskName, State, @{Name='Arguments'; Expression={$_.Actions.Arguments}}
 ```
+
+task更新時に旧deviceの子processだけが残ると、healthは旧processから返る一方、新taskはport競合で
+`Ready` / result `2`になる。この組合せを観測した場合だけ、53944 listenerのcommand lineを先に確認する。
+
+```powershell
+$connection = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 53944 -State Listen
+$owner = Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)"
+$owner | Select-Object ProcessId, ParentProcessId, Name, CommandLine
+```
+
+`CommandLine`が`claude-spotter`の`dashboard device`かつtaskが`Ready`であることを確認できた時だけ、
+その旧PIDを停止してtaskを起動し直す。名前だけで全Node processを停止しない。
+
+```powershell
+Stop-Process -Id $owner.ProcessId
+Start-ScheduledTask -TaskName 'Spotter dashboard device'
+Invoke-RestMethod http://127.0.0.1:53944/_spotter/health
+```
+
+v1.5.11のFOX Windows native実測は
+[`evidence/dashboard-windows-hidden-v1.5.11.md`](evidence/dashboard-windows-hidden-v1.5.11.md)に記録する。
 
 ## 公開経路
 

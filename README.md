@@ -269,6 +269,8 @@ or retry queue.
 
 The reference four-terminal service, reverse-tunnel, and Caddy/Cloudflare layout is documented in
 [docs/11_dashboard-operations.md](docs/11_dashboard-operations.md).
+On Windows, the bundled Task Scheduler installer keeps the interactive user's profile for npm and
+SSH while starting both dashboard PowerShell actions non-interactively with hidden console windows.
 
 Optional async Codex risk dispatch:
 

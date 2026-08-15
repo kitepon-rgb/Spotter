@@ -260,6 +260,8 @@ retry queueを作らず、その端末だけを切り離せる。
 
 4端末のservice、reverse tunnel、Caddy/Cloudflare構成は
 [docs/11_dashboard-operations.md](docs/11_dashboard-operations.md)を参照。
+Windows同梱のTask Scheduler installerはnpm・SSH用の対話ユーザープロファイルを維持しつつ、
+dashboardの2つのPowerShell actionを非対話・console非表示で起動する。
 
 Codex risk dispatch を daemon から非同期に流す場合:
 
