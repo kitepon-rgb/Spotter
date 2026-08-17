@@ -20,7 +20,7 @@ test('evaluation report fixes proposal and adoption denominators across saved ob
       proposalRate: 0.4, toolAdoptionRate: 0.4,
     });
     assert.match(output.join(''), /proposal rate: 4\/10 = 40%/);
-    assert.match(output.join(''), /tool adoption rate: 2\/5 = 40%/);
+    assert.match(output.join(''), /tool fit rate \(upper bound\): 2\/5 = 40%/);
     assert.match(output.join(''), /S=10 P=4 I=6 C=5 A=2 M=1/);
     assert.equal(report.byProject[fixture.alphaProjectPath].S, 5);
     assert.equal(report.byHost.claude.A, 2);

@@ -68,7 +68,9 @@ function appendSummary(lines, label, summary, prefix = '') {
   lines.push(`${prefix}${label}`);
   lines.push(`${prefix}  S=${summary.S} P=${summary.P} I=${summary.I} C=${summary.C} A=${summary.A} M=${summary.M}`);
   lines.push(`${prefix}  proposal rate: ${fraction(summary.P, summary.S)}`);
-  lines.push(`${prefix}  tool adoption rate: ${fraction(summary.A, summary.C)}`);
+  // Same-turn usage proves at most that a proposal fit the context; it cannot
+  // attribute the usage to Spotter. Label the A/C ratio as an upper bound.
+  lines.push(`${prefix}  tool fit rate (upper bound): ${fraction(summary.A, summary.C)}`);
 }
 
 function fraction(numerator, denominator) {

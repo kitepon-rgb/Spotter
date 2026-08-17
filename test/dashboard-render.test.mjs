@@ -30,7 +30,7 @@ test('renders device list, overview metrics, rates, and responsive dependency-fr
   assert.match(html, /実際に使用<\/span><strong>2<\/strong>/);
   assert.match(html, /判定不能<\/span><strong>1<\/strong>/);
   assert.match(html, /提案率<small>ツール提案あり ÷ 対象ターン<\/small><\/dt><dd>50% \(5\/10\)<\/dd>/);
-  assert.match(html, /採用率<small>実際に使用 ÷ 利用判定済み<\/small><\/dt><dd>67% \(2\/3\)<\/dd>/);
+  assert.match(html, /提案適合率（上限）<small>実際に使用 ÷ 利用判定済み<\/small><\/dt><dd>67% \(2\/3\)<\/dd>/);
   assert.doesNotMatch(html, />[SPICAM]<\/span>/);
   assert.doesNotMatch(html, /[PA]\/[SC]/);
   assert.match(html, /@media \(max-width: 700px\)/);

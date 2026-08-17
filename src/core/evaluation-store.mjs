@@ -50,12 +50,18 @@ export class EvaluationStore {
   recordTurn(input) {
     const turn = normalizeTurn(input);
     return this.#transaction(() => {
+      // A still-open previous turn means its Stop was never observed (steering /
+      // queued prompt / Esc interrupt). Grade it with the usage evidence collected
+      // so far instead of discarding it: only a turn already marked incomplete
+      // keeps outcome_missing.
       const previous = this.database.prepare(`
-        SELECT observation_id FROM evaluation_turns
+        SELECT observation_id, used_tool_ids, usage_status FROM evaluation_turns
         WHERE session_id = ? AND completed_at_ms IS NULL
         ORDER BY recorded_at_ms DESC LIMIT 1
       `).get(turn.sessionId);
-      if (previous) this.#close(previous.observation_id, [], 'incomplete', turn.recordedAtMs);
+      if (previous) {
+        this.#close(previous.observation_id, parseToolIds(previous.used_tool_ids), previous.usage_status, turn.recordedAtMs);
+      }
 
       this.database.prepare(`
         INSERT INTO evaluation_turns (

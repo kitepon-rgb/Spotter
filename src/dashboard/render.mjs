@@ -127,13 +127,13 @@ function renderFilters(filters, action) {
 function renderRates(summary) {
   const proposal = rate(metricNumber(summary, 'P'), metricNumber(summary, 'S'));
   const adoption = rate(metricNumber(summary, 'A'), metricNumber(summary, 'C'));
-  return `<dl class="rates"><div><dt>提案率<small>ツール提案あり ÷ 対象ターン</small></dt><dd>${escapeHtml(proposal)}</dd></div><div><dt>採用率<small>実際に使用 ÷ 利用判定済み</small></dt><dd>${escapeHtml(adoption)}</dd></div></dl>`;
+  return `<dl class="rates"><div><dt>提案率<small>ツール提案あり ÷ 対象ターン</small></dt><dd>${escapeHtml(proposal)}</dd></div><div><dt>提案適合率（上限）<small>実際に使用 ÷ 利用判定済み</small></dt><dd>${escapeHtml(adoption)}</dd></div></dl>`;
 }
 
 function renderBreakdown(id, title, rows) {
   return `<section aria-labelledby="${id}">
   <h2 id="${id}">${title}</h2>
-  ${rows.length === 0 ? '<p class="empty">該当するデータはありません。</p>' : `<div class="table-wrap"><table><thead><tr><th scope="col">項目</th>${METRIC_KEYS.map((key) => `<th scope="col">${METRIC_LABELS[key]}</th>`).join('')}<th scope="col">提案率</th><th scope="col">採用率</th></tr></thead><tbody>${rows.map(([label, summary]) => `<tr><th scope="row">${escapeHtml(label)}</th>${METRIC_KEYS.map((key) => `<td>${escapeHtml(metric(summary, key))}</td>`).join('')}<td>${escapeHtml(rate(metricNumber(summary, 'P'), metricNumber(summary, 'S')))}</td><td>${escapeHtml(rate(metricNumber(summary, 'A'), metricNumber(summary, 'C')))}</td></tr>`).join('')}</tbody></table></div>`}
+  ${rows.length === 0 ? '<p class="empty">該当するデータはありません。</p>' : `<div class="table-wrap"><table><thead><tr><th scope="col">項目</th>${METRIC_KEYS.map((key) => `<th scope="col">${METRIC_LABELS[key]}</th>`).join('')}<th scope="col">提案率</th><th scope="col">提案適合率（上限）</th></tr></thead><tbody>${rows.map(([label, summary]) => `<tr><th scope="row">${escapeHtml(label)}</th>${METRIC_KEYS.map((key) => `<td>${escapeHtml(metric(summary, key))}</td>`).join('')}<td>${escapeHtml(rate(metricNumber(summary, 'P'), metricNumber(summary, 'S')))}</td><td>${escapeHtml(rate(metricNumber(summary, 'A'), metricNumber(summary, 'C')))}</td></tr>`).join('')}</tbody></table></div>`}
 </section>`;
 }
 

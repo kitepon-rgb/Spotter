@@ -73,6 +73,35 @@ test('report時点でstaleなopen proposalだけをMへ分類し保存行は変�
   }
 });
 
+test('次turn開始時のopen前turnは収集済み使用実績で採点し、incomplete印だけをMへ残す', async () => {
+  const fixture = await openFixture();
+  try {
+    // Stop未観測のまま次promptが来た前turn: 収集済み使用実績で adopted / not_adopted に確定する。
+    recordOpen(fixture.store, 'graded', 'shared-session', 1_000, ['mcp__tools__hit', 'mcp__tools__miss']);
+    fixture.store.recordUsage({ observationId: 'graded', toolIds: ['mcp__tools__hit'] });
+    recordOpen(fixture.store, 'next-1', 'shared-session', 2_000, []);
+
+    const graded = fixture.store.getCase('graded');
+    assert.equal(graded.completedAtMs, 2_000);
+    assert.equal(graded.usageStatus, 'complete');
+    assert.deepEqual(graded.items, [
+      { toolId: 'mcp__tools__hit', outcome: 'adopted' },
+      { toolId: 'mcp__tools__miss', outcome: 'not_adopted' },
+    ]);
+
+    // 使用証拠が壊れてincomplete印の付いたturnは従来どおりoutcome_missingのまま。
+    recordOpen(fixture.store, 'poisoned', 'other-session', 3_000, ['mcp__tools__hit']);
+    fixture.store.markUsageIncomplete({ observationId: 'poisoned' });
+    recordOpen(fixture.store, 'next-2', 'other-session', 4_000, []);
+
+    const poisoned = fixture.store.getCase('poisoned');
+    assert.equal(poisoned.usageStatus, 'incomplete');
+    assert.deepEqual(poisoned.items, [{ toolId: 'mcp__tools__hit', outcome: 'outcome_missing' }]);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 async function openFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'spotter-evaluation-metrics-'));
   const store = createEvaluationStore({ databasePath: join(directory, 'evaluation.db') });
