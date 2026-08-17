@@ -232,7 +232,7 @@ spotter diagnostics factory
 spotter diagnostics runtime-errors
                          # print the local allow-listed runtime-error aggregate snapshot (no network)
 spotter evaluation report
-                         # show cross-project proposal/adoption counts and rates from the local DB
+                         # show cross-project proposal counts and fit (upper-bound) rates from the local DB
 spotter evaluation cases --outcome not-adopted
                          # list proposed tools that were not used in the same turn
 spotter evaluation case <observation-id>
@@ -261,8 +261,9 @@ spotter uninstall        # remove hooks from this project (leaves ~/.spotter int
 
 The dashboard is local-first. Every terminal reads its own `~/.spotter/evaluation.db`; the hub
 keeps only a static device-to-upstream map and does not copy evaluation data into a cloud database.
-The device view shows Japanese labels for every evaluation metric, proposal and adoption rates
-with their numerator and denominator, project/tool breakdowns, non-adopted cases, the request
+The device view shows Japanese labels for every evaluation metric, the proposal rate and the
+fit rate (an upper bound: same-turn usage does not prove Spotter caused it) with their
+numerator and denominator, project/tool breakdowns, non-adopted cases, the request
 audited by Spotter, and optional proposal-time Throughline evidence. The hub checks health only
 when the device list is requested, so an offline terminal is isolated without a background monitor
 or retry queue.

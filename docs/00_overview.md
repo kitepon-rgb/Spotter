@@ -5,9 +5,13 @@ and Codex hosts to surface missed tool-use opportunities. `AGENTS.md` is the
 canonical agent source for product philosophy, invariants, commands, hook contracts,
 error handling, and release workflow. `CLAUDE.md` is only the `@AGENTS.md` import entry.
 
-Current production release: **v1.5.11**. Windows dashboard tasks retain their user profile while
-starting PowerShell non-interactively with hidden console windows. Unsupported non-Claude hooks are rejected
-before evaluation SQLite loads, including on Node 24. UserPromptSubmit auditing uses only
+Current production release: **v1.5.12**. Evaluation turns whose Stop was never observed are now
+graded at the next prompt from the usage evidence collected so far instead of being discarded as
+`outcome_missing`; only turns marked `usage_status=incomplete` remain unjudged. The A/C ratio is
+displayed as a fit rate (upper bound), not as a Spotter attribution metric. Windows dashboard
+tasks retain their user profile while starting PowerShell non-interactively with hidden console
+windows. Unsupported non-Claude hooks are rejected before evaluation SQLite loads, including on
+Node 24. UserPromptSubmit auditing uses only
 the current request and the host-local tool catalog. Before reading catalog descriptions, the auditor
 establishes a standard-host-tool baseline and reports only directly applicable catalog tools
 that are better suited. Throughline is optional proposal-evaluation evidence and never gates

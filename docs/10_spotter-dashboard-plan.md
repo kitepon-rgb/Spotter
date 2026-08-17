@@ -1,7 +1,7 @@
 # Spotter端末横断Web dashboard実装計画
 
 状態: **dashboard機能・公開経路・4端末service rollout完了**。現行npm配布版は
-`claude-spotter@1.5.11`。4端末で同一npm versionが現在もinstall済みであることまでは本書で主張しない。
+`claude-spotter@1.5.12`。4端末で同一npm versionが現在もinstall済みであることまでは本書で主張しない。
 公開時点の実測は[`evidence/dashboard-d8-public-smoke.md`](evidence/dashboard-d8-public-smoke.md)を正とする。
 
 ## 目的
@@ -40,7 +40,7 @@ hubのonline表示は端末一覧request時のhealth取得だけで決め、back
 
 - 端末一覧: Mac、main-server、FOX WSL2、FOX Windows nativeと到達状態
 - 端末概要: 対象ターン、ツール提案あり、提案ツール数、利用判定済み、実際に使用、判定不能
-- 提案率は「ツール提案あり ÷ 対象ターン」、採用率は「実際に使用 ÷ 利用判定済み」と表示する
+- 提案率は「ツール提案あり ÷ 対象ターン」、提案適合率（上限）は「実際に使用 ÷ 利用判定済み」と表示する（v1.5.12で「採用率」から改名）
 - project別内訳とtool別内訳
 - 非採用case一覧
 - case詳細: request、監査履歴なしを示す互換欄、任意のThroughline評価文脈、提案ID、利用ID、item結果

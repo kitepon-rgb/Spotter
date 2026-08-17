@@ -1,5 +1,10 @@
 # AGENTS.md
 
+> **v1.5.12（2026-08-18公開）**: Stop未観測のまま次promptが来た評価turnを白紙廃棄せず、
+> 収集済み使用実績で採点して閉じる（実測でoutcome_missingの94%がこの経路だった）。
+> A/C率の表示を「提案適合率（上限）」へ改名し、Spotter起因の成果指標として扱わない。
+> 内部集計schemaは変更しない。
+
 > **v1.5.11（2026-08-15公開）**: Windows dashboardのdevice／tunnel taskを、
 > ユーザープロファイルを維持したまま非対話・hidden PowerShellで起動する。
 > ログオン時の黒いconsole windowを表示せず、既存のSSH・APPDATA契約は変更しない。

@@ -224,7 +224,7 @@ spotter diagnostics factory
 spotter diagnostics runtime-errors
                          # opt-in端末内runtime error集計をread-only表示（network送信なし）
 spotter evaluation report
-                         # 端末内DBからproject横断の提案率・tool採用率を集計
+                         # 端末内DBからproject横断の提案率・提案適合率（上限）を集計
 spotter evaluation cases --outcome not-adopted
                          # 提案されたが同じturnで使われなかったtool itemを一覧
 spotter evaluation case <observation-id>
@@ -253,7 +253,7 @@ spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 
 dashboardはlocal-firstで動く。各端末が自身の`~/.spotter/evaluation.db`を読み、hubは固定の
 端末・upstream対応だけを持つ。評価データをcloud DBへ複製しない。端末画面では
-対象ターン、ツール提案あり、提案ツール数、利用判定済み、実際に使用、判定不能、提案率、採用率、
+対象ターン、ツール提案あり、提案ツール数、利用判定済み、実際に使用、判定不能、提案率、提案適合率（上限。同一ターン内の利用はSpotter起因を証明しない）、
 project/tool内訳、非採用case、監査対象request、任意の提案時Throughline証拠を確認できる。
 health確認は端末一覧request時だけなので、端末がofflineでもbackground監視や
 retry queueを作らず、その端末だけを切り離せる。

@@ -5,7 +5,9 @@
 - 状態: **実装・受入完了**
 - v1.5.8文書監査: `src/core/evaluation-*`、Claude/Codex lifecycle、CLI、dashboard consumerと照合済み。
 - 現行補正: v1.5.4でThroughlineを監査条件・監査入力から撤去。v1.5.5で評価文脈を
-  exact-session `auditor-context`へ戻した。
+  exact-session `auditor-context`へ戻した。v1.5.12でStop未観測のopen turnを次prompt時に
+  収集済み使用実績で採点する方式へ変更し、表示名を「提案適合率（上限）」へ改めた
+  （実測でoutcome_missingの94%がStop未観測の白紙廃棄だった）。
 - 工程正本: Lattice plan `proposal-adoption-eval`。本文書は目的、設計判断、非目標、受入条件を持つ。
 - 実装対象repo: `/Users/kite/Developer/Spotter`
 - 外部依存: Throughlineの既存read-only I/F `throughline auditor-context`。Throughline側は変更しない。
@@ -141,7 +143,9 @@ passも`evaluation_turns`へ1行記録するがitemは0件とする。これが�
 - auditor結果とsafe projector後のtool IDsを同じ行へ記録する。
 - proposal tool IDsは、親向け出力生成に使う配列そのものを保存する。raw findingは保存しない。
 - Stop findingは親へtool提案として提示する経路ではないため、この集計へ入れない。
-- 新しいUserPromptSubmit開始時に同じsessionの古いopen rowがあれば、そのitemsを`outcome_missing`で閉じる。
+- 新しいUserPromptSubmit開始時に同じsessionの古いopen rowがあれば、収集済み`used_tool_ids`で
+  `adopted` / `not_adopted`へ採点して閉じる（v1.5.12。steering・キュー済みprompt・Esc中断でStopが
+  来ないturnを白紙廃棄しない）。`usage_status=incomplete`の印が付いたrowだけ`outcome_missing`で閉じる。
 - 最終turnなどでStopも次のUserPromptSubmitも来ないopen proposalは、daemonのidle lifetimeと同じ30分を
   経過した後、report時にだけ`outcome_missing`として投影する。DBを書き換える常時回収処理は置かない。
 

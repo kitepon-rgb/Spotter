@@ -18,6 +18,11 @@ Spotterが実際に提示したtool itemについて、同じ親turnで呼び出
 完了証拠の正本はLattice plan `proposal-adoption-eval`とする。
 
 2026-08-05 amendment: v1.5.4以降、auditorへ渡す本文は現在のrequestだけで履歴文脈は渡さない。
+
+2026-08-18 amendment (v1.5.12): Stop未観測のまま次UserPromptSubmitが来たopen turnは
+`outcome_missing`で廃棄せず、収集済み`used_tool_ids`で`adopted` / `not_adopted`へ採点して閉じる。
+`usage_status=incomplete`のturnだけ`outcome_missing`を維持する。A/C率の表示名は
+「提案適合率（上限）」とし、Spotter起因の成果指標としては表示しない。
 互換列`auditor_seen_context`は`null`とし、Throughline snapshotは評価・改善用の別証拠に限定する。
 Throughlineの状態は監査可否・監査結果・親向け助言へ影響させない。
 

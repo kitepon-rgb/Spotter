@@ -3,6 +3,18 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.5.12 — 2026-08-18
+
+- **Stop未観測の評価turnを次prompt時に採点して閉じる。** 実測でoutcome_missing 2,091件の94%が
+  「Stop未観測のまま次promptが来てincomplete廃棄」だった（steering・キュー済みprompt・Esc中断で
+  prompt:StopはClaude 3:1 / Codex 24:1）。`recordTurn`はopenな前turnを白紙で捨てず、収集済み
+  `used_tool_ids`で`adopted` / `not_adopted`へ確定する。`usage_status=incomplete`の印が付いたturn
+  だけが従来どおり`outcome_missing`に残る。
+- **A/C率の表示を「提案適合率（上限）」へ改名。** 同一turn内の利用は提案の文脈適合の上限しか
+  示さず、Spotter起因の成果を証明しない。CLI報告は`tool fit rate (upper bound)`、dashboardは
+  「提案適合率（上限）」と表示する。内部schema（`toolAdoptionRate`キー）と集計式は変更しない。
+- 過去に保存済みの`outcome_missing`itemは遡って再採点しない（closeの証拠が残っていないため）。
+
 ## 1.5.11 — 2026-08-15
 
 - **Windows dashboard taskのconsole windowを隠す。** device serverとreverse tunnelの

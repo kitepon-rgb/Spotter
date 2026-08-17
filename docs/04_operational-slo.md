@@ -60,10 +60,12 @@ prompt version 3のrelease前matrixは2回合計54/54 exact、FP/FN/timeout 0だ
 運用評価は意味的な妥当性や有用性を推定せず、実際の利用だけを測る。
 
 - 提案率: auditorがvalidな判断を返したUserPromptSubmitのうち、1件以上のtoolを提示したturnの割合。
-- tool採用率: 利用結果を確定できた提示tool itemのうち、同じ親turnで同じcanonical tool IDが
-  1回以上呼び出された割合。
-- 提案しなかったturnはtool採用率の母数に入れない。
-- Stop欠落や利用記録不全は`outcome_missing`として率の母数から分離する。
+- 提案適合率（上限）: 利用結果を確定できた提示tool itemのうち、同じ親turnで同じcanonical tool IDが
+  1回以上呼び出された割合。同一turn内の利用はSpotter起因を証明しないため、この率は
+  「提案が文脈に適合していた割合の上限」としてだけ読み、Spotterの成果指標として扱わない。
+- 提案しなかったturnは提案適合率の母数に入れない。
+- Stopが来ないままの次UserPromptSubmit到来時は、そのturnを収集済み利用実績で採点して閉じる
+  （v1.5.12）。利用記録不全（`usage_status=incomplete`）だけを`outcome_missing`として率の母数から分離する。
 - 呼び出されなかったitemは`not_adopted`と呼び、「不適切」「役に立たなかった」とは解釈しない。
 
 非採用caseではrequest、提案tool、利用tool、提案元exact sessionの任意Throughline評価文脈を改善材料として表示する。
