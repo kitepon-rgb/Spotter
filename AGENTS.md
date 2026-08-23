@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.13（2026-08-23公開）**: OS依存（win32分岐）を`src/platform/`へ、
+> ベンダー依存（claude / codex分岐）の決定点を`src/host/adapters.mjs`へ集約する内部リファクタ。
+> 公開契約・hook/daemon IPC・CLI表面・test fixtureは変更せず、配置規約を「依存の配置規約」節へ正典化した。
+
 > **v1.5.12（2026-08-18公開）**: Stop未観測のまま次promptが来た評価turnを白紙廃棄せず、
 > 収集済み使用実績で採点して閉じる（実測でoutcome_missingの94%がこの経路だった）。
 > A/C率の表示を「提案適合率（上限）」へ改名し、Spotter起因の成果指標として扱わない。
@@ -144,6 +148,11 @@ guarantee, document the failure path covered, and add regression coverage.
 `docs/archive/SPOTTER_HOOK_PARITY_TODO.md` は実装済みの履歴台帳。
 
 ## Repository Status
+
+**v1.5.13 (published 2026-08-23)**: OS依存はsrc/platform/（spawn / ipc / paths）、ベンダー依存の
+決定点はsrc/host/adapters.mjsだけが所有する構造へ移設した。windows-cli-shim.mjsは
+platform/spawn.mjsへ吸収、Claude側discoveryはinvestigate-claude.mjsへ逐語移設し、
+既存exportは元moduleからの再exportで維持した。挙動変更なし（593 test pass、4環境CI green）。
 
 **v1.5.9 (published 2026-08-14)**: Codex Stop payloadの`transcript_path`が欠落、`null`、
 空文字の場合は、auditorとtranscript readerを呼ばず、評価turnを`incomplete`で閉じ、

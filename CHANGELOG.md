@@ -3,6 +3,22 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.5.13 — 2026-08-23
+
+- **OS依存を`src/platform/`へ集約。** 6ファイルへ重複していたWindowsのcmd.exe /c wrap・
+  `.cmd` shim解決・`windowsHide`強制を[spawn.mjs](src/platform/spawn.mjs)の
+  `windowsCompatibleCommand` / `execFileWindowsSafe`へ一本化し、socket/Named Pipeの
+  path生成・権限・stale socket除去を[ipc.mjs](src/platform/ipc.mjs)へ、パス表記正規化と
+  PATH実行体探索を[paths.mjs](src/platform/paths.mjs)へ移設した。`windows-cli-shim.mjs`は
+  `platform/spawn.mjs`へ吸収した。
+- **ベンダー依存の決定点を`src/host/adapters.mjs`へ集約。** hostごとのtool-db file名と
+  snapshot builder選択をadapter tableで引き、loader / refreshの`if (hostAgent === 'codex')`
+  分岐を業務ロジックから消した。Claude側discovery実装は`investigate-codex.mjs`と対称の
+  [investigate-claude.mjs](src/tool-db/investigate-claude.mjs)へ逐語移設した。
+- **公開契約は変更なし。** 既存のexport名・`{cmd, cmdArgs}` shape・hook/daemon IPC・
+  CLI表面・test fixtureは再exportで維持し、挙動変更ゼロ（`node --test` 593 pass）。
+  配置規約はAGENTS.md「依存の配置規約」として正典化した。
+
 ## 1.5.12 — 2026-08-18
 
 - **Stop未観測の評価turnを次prompt時に採点して閉じる。** 実測でoutcome_missing 2,091件の94%が
