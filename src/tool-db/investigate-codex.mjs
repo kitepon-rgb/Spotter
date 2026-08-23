@@ -4,22 +4,16 @@
 // discovery path. Codex and Claude expose different MCP servers and skills, so a
 // Codex refresh must build a separate snapshot and write it to tool-db.codex.json.
 
-import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { execFileWindowsSafe } from '../platform/spawn.mjs';
 import { bellVisibleName, listMcpToolsOne, splitArgs } from './investigate-mcp.mjs';
 import { readFrontmatter } from './frontmatter.mjs';
 
-const execFileP = promisify(execFile);
-
+// Windows の .cmd shim 解決と windowsHide 強制は src/platform/spawn.mjs が所有する。
 async function execCodex(codexBin, args, opts) {
-  const execOpts = { ...opts, windowsHide: true };
-  if (process.platform === 'win32') {
-    return execFileP('cmd.exe', ['/c', codexBin, ...args], execOpts);
-  }
-  return execFileP(codexBin, args, execOpts);
+  return execFileWindowsSafe(codexBin, args, opts);
 }
 
 export async function buildCodexInvestigationSnapshot({

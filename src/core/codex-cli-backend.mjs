@@ -10,7 +10,7 @@ import {
   resolveCodexAuditorModelSelection,
 } from './codex-auditor-model-policy.mjs';
 import { serializeAuditorPromptData, validateRecentContext } from './auditor-prompt-data.mjs';
-import { buildWindowsCompatibleInvocation, terminateProcessTree } from './windows-cli-shim.mjs';
+import { buildWindowsCompatibleInvocation, terminateProcessTree } from '../platform/spawn.mjs';
 
 const DEFAULT_CODEX_CLI_TIMEOUT_MS = 45_000;
 const DEFAULT_CODEX_CLI_MODEL = CODEX_AUDITOR_MODEL_POLICY.production.model;

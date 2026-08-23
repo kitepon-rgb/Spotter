@@ -1,6 +1,49 @@
-import { spawn } from 'node:child_process';
+// OS依存のプロセス起動プリミティブの唯一の置き場。
+// Windows の .cmd shim 解決・cmd.exe /c wrap・windowsHide・process tree 終了は
+// すべてこのファイルが所有し、呼び出し側は process.platform を見ない。
+//
+// 2 種類の Windows コマンド解決を提供する:
+//   - windowsCompatibleCommand: 素朴な cmd.exe /c wrap (.exe は直接起動)。
+//     bare 名 / .cmd shim を PATHEXT 経由で起動する高頻度経路用。
+//   - buildWindowsCompatibleInvocation: npm shim の実体 (.cjs/.mjs/.js) を
+//     解決して node で直接起動する精密経路。cmd.exe を避けたい場合に使う。
+
+import { execFile, spawn } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { win32 } from 'node:path';
+import { promisify } from 'node:util';
+
+const execFileP = promisify(execFile);
+
+// On Windows, npm-global CLI tools (e.g. `claude`, `codex`, `claude-mermaid`) ship as
+// `<name>.cmd` batch wrappers. Node's `child_process` without `shell: true` calls
+// Windows `CreateProcess`, which only directly executes `.exe` files — it does NOT
+// search PATHEXT for `.cmd`/`.bat` shims when given a bare command name, so
+// `spawn('claude', ...)` fails with ENOENT even though `claude.cmd` is on PATH.
+//
+// We route any non-`.exe` command through `cmd.exe /c` on Windows, which makes
+// PATHEXT lookup apply and runs both `.cmd` shims and bare names transparently.
+// Absolute `.exe` paths stay un-wrapped because (a) they spawn correctly as-is and
+// (b) wrapping them through `cmd.exe /c "<path with spaces>" args` runs into
+// cmd.exe's quoting rules for paths containing spaces, which add risk for zero
+// benefit. We use `cmd.exe /c` explicitly rather than `spawn({ shell: true })`
+// because the latter triggers DEP0190 on Node 24+ and re-introduces
+// argument-quoting risks (caveat:
+// `windows-node-spawn-claude-fails-with-enoent-because-claude-is-a-cmd-wrapper`).
+export function windowsCompatibleCommand(command, args = [], { platform = process.platform } = {}) {
+  if (platform !== 'win32' || /\.exe$/i.test(command)) {
+    return { command, args };
+  }
+  return { command: 'cmd.exe', args: ['/c', command, ...args] };
+}
+
+// execFile を windowsCompatibleCommand + windowsHide 強制で実行する。
+// `windowsHide: true` はこの層で強制する — 無いと Windows で cmd.exe の console
+// window が毎回 flash して入力フォーカスを奪う (v1.1.5 の実被弾)。
+export async function execFileWindowsSafe(command, args = [], opts = {}) {
+  const invocation = windowsCompatibleCommand(command, args);
+  return execFileP(invocation.command, invocation.args, { ...opts, windowsHide: true });
+}
 
 // Windows の npm global CLI は多くが `<name>.cmd` shim であり、Node の shell:false
 // 直接 spawn では PATHEXT 解決されない。cmd.exe を明示して Node 24 の shell:true

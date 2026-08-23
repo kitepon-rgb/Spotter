@@ -14,6 +14,7 @@
 // puts the catalog only in the first turn's user message; the session retains it for free.
 
 import { spawn } from 'node:child_process';
+import { windowsCompatibleCommand } from '../platform/spawn.mjs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdir, writeFile, unlink, open } from 'node:fs/promises';
@@ -241,9 +242,7 @@ export async function preparePromptFile(wirePrompt) {
   };
 }
 
-// On Windows, the `claude` entry is typically a .cmd shim which Node's spawn cannot locate
-// without going through the shell. We use cmd.exe /c explicitly rather than spawn({ shell:
-// true }) because the latter triggers DEP0190 on Node 24+.
+// Windows の .cmd shim 解決 (cmd.exe /c wrap) は src/platform/spawn.mjs が所有する。
 //
 // v1.3.0: `--strict-mcp-config --mcp-config <empty>` を必ず付けて MCP load を無効化する。
 // `mcpConfigPath` は呼び出し側 (createHaikuCaller) が必ず渡す前提。テストで shape を pin。
@@ -255,10 +254,8 @@ export function buildSpawnArgs({ claudeBin, model, sessionId, resume, mcpConfigP
     ? ['-p', '--resume', sessionId, '--model', model]
     : ['-p', '--session-id', sessionId, '--model', model];
   const args = [...baseArgs, '--strict-mcp-config', '--mcp-config', mcpConfigPath];
-  if (process.platform === 'win32') {
-    return { cmd: 'cmd.exe', cmdArgs: ['/c', claudeBin, ...args] };
-  }
-  return { cmd: claudeBin, cmdArgs: args };
+  const invocation = windowsCompatibleCommand(claudeBin, args);
+  return { cmd: invocation.command, cmdArgs: invocation.args };
 }
 
 // Invoke `claude -p` in the isolated workdir. Returns raw stdout.

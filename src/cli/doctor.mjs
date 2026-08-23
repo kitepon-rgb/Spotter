@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { loadDb, globalDbPath, localDbPath } from '../tool-db/loader.mjs';
 import { findSpotterMarker } from '../hooks/lib.mjs';
 import { codexHookDiagnostics } from './codex-hook-cmd.mjs';
-import { buildWindowsCompatibleInvocation } from '../core/windows-cli-shim.mjs';
+import { buildWindowsCompatibleInvocation, execFileWindowsSafe } from '../platform/spawn.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -23,13 +23,9 @@ export async function runDoctor() {
   mark(okNode, `Node.js ${nodeVersion}`, 'need >= 22.13');
   if (!okNode) failures += 1;
 
-  // claude CLI — on Windows the entry is `claude.cmd`; route through cmd.exe /c
-  // rather than shell:true (DEP0190 on Node 24+).
+  // claude CLI — Windows の .cmd shim 解決は src/platform/spawn.mjs が所有する。
   try {
-    const opts = { timeout: 5_000, windowsHide: true };
-    const { stdout } = process.platform === 'win32'
-      ? await execFileP('cmd.exe', ['/c', 'claude', '--version'], opts)
-      : await execFileP('claude', ['--version'], opts);
+    const { stdout } = await execFileWindowsSafe('claude', ['--version'], { timeout: 5_000 });
     mark(true, `claude CLI: ${stdout.trim()}`);
   } catch (err) {
     mark(false, 'claude CLI', `not found or failed: ${err.message}`);

@@ -16,7 +16,7 @@ import {
   createSidecarResultRecord,
   spotterFindingsToSidecarContextBlocks,
 } from './sidecar-context.mjs';
-import { buildWindowsCompatibleInvocation } from './windows-cli-shim.mjs';
+import { buildWindowsCompatibleInvocation } from '../platform/spawn.mjs';
 
 const execFileP = promisify(execFile);
 const WORKFLOW_MAP = {

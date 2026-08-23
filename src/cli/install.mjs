@@ -15,7 +15,7 @@
 import { mkdir, writeFile, readFile, access, realpath } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { buildWindowsCompatibleInvocation } from '../core/windows-cli-shim.mjs';
+import { buildWindowsCompatibleInvocation } from '../platform/spawn.mjs';
 import { homedir } from 'node:os';
 import { join, resolve, dirname, delimiter, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';

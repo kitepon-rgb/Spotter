@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { toSpotterJudgment } from './judgment.mjs';
 import { filterCatalogMisses } from './auditor-response.mjs';
 import { AuditorBackendError } from './auditor-error.mjs';
-import { buildWindowsCompatibleInvocation } from './windows-cli-shim.mjs';
+import { buildWindowsCompatibleInvocation } from '../platform/spawn.mjs';
 
 const execFileP = promisify(execFile);
 const DEFAULT_CODEX_SIDECAR_AUDITOR_TIMEOUT_MS = 45_000;

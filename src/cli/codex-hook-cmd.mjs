@@ -7,7 +7,7 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuditorBackend, selectAuditorBackend } from '../core/auditor-backend.mjs';
 import { resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
-import { buildWindowsCompatibleInvocation } from '../core/windows-cli-shim.mjs';
+import { buildWindowsCompatibleInvocation } from '../platform/spawn.mjs';
 import { codexLastAssistantMessage, readCodexToolUsage } from '../core/codex-transcript.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
 import { spawnRefreshDetached } from '../hooks/spawn-daemon.mjs';

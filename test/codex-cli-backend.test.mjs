@@ -19,7 +19,7 @@ import {
   buildWindowsCompatibleInvocation,
   npmShimEntryPath,
   terminateProcessTree,
-} from '../src/core/windows-cli-shim.mjs';
+} from '../src/platform/spawn.mjs';
 import { AuditorBackendError, createAuditorBackend } from '../src/core/auditor-backend.mjs';
 
 const catalog = [

@@ -10,29 +10,17 @@
 //   5. ← tools/list result   (response with tools[] each having {name, description})
 
 import { spawn } from 'node:child_process';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { execFileWindowsSafe, windowsCompatibleCommand } from '../platform/spawn.mjs';
 import { listToolsHttp } from './investigate-mcp-http.mjs';
 import { readMcpServers, describeServer } from './mcp-config.mjs';
 import { version as SPOTTER_VERSION } from '../version.mjs';
 
-const execFileP = promisify(execFile);
-
 const PROTOCOL_VERSION = '2025-03-26'; // MCP protocol version we claim to speak.
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 
-// On Windows, `claude` is a .cmd shim; Node's execFile cannot locate it directly without
-// going through cmd.exe. Matches the pattern in src/daemon/haiku-caller.mjs buildSpawnArgs.
-// We use cmd.exe /c rather than shell:true to avoid DEP0190 on Node 24+.
-// `windowsHide: true` is forced at this layer so every caller (listMcpServers,
-// getStdioConfig, etc.) is silent — without it a cmd.exe console window flashes on every
-// refresh, and those flashes steal keyboard focus on Windows.
+// Windows の .cmd shim 解決と windowsHide 強制は src/platform/spawn.mjs が所有する。
 async function execClaude(claudeBin, args, opts) {
-  const execOpts = { ...opts, windowsHide: true };
-  if (process.platform === 'win32') {
-    return execFileP('cmd.exe', ['/c', claudeBin, ...args], execOpts);
-  }
-  return execFileP(claudeBin, args, execOpts);
+  return execFileWindowsSafe(claudeBin, args, opts);
 }
 
 export class McpInvestigationError extends Error {
@@ -257,36 +245,11 @@ export function splitArgs(s) {
   return out;
 }
 
-// On Windows, npm-global CLI tools (e.g. `claude-mermaid`) ship as `<name>.cmd`
-// batch wrappers. Node's `child_process.spawn` without `shell: true` calls Windows
-// `CreateProcess`, which only directly executes `.exe` files — it does NOT search
-// PATHEXT for `.cmd`/`.bat` shims when given a bare command name. So
-// `spawn('claude-mermaid', ...)` fails with ENOENT even though `claude-mermaid.cmd`
-// is on PATH.
-//
-// Until v1.2.1 this function only wrapped commands whose name literally ended in
-// `.cmd`/`.bat`, which missed the common case where the registered command is a
-// bare name (the CLI as installed). v1.2.2 routes any non-`.exe` command through
-// `cmd.exe /c` on Windows, which makes PATHEXT lookup apply and runs both `.cmd`
-// shims and bare names transparently.
-//
-// We keep absolute `.exe` paths un-wrapped because (a) they spawn correctly as-is
-// and (b) wrapping them through `cmd.exe /c "<path with spaces>" args` runs into
-// cmd.exe's quoting rules for paths containing spaces, which add risk for zero
-// benefit.
-//
-// We use `cmd.exe /c` explicitly rather than `spawn({ shell: true })` because the
-// latter triggers DEP0190 on Node 24+ and re-introduces argument-quoting risks
-// (matches the rationale in haiku-caller's buildSpawnArgs and the caveat
-// `windows-node-spawn-claude-fails-with-enoent-because-claude-is-a-cmd-wrapper`).
+// Windows の cmd.exe /c wrap 規則 (.exe は直接起動) は src/platform/spawn.mjs が所有する。
+// 歴史的な {cmd, cmdArgs} shape は既存呼び出し・test 契約のため維持する。
 export function buildStdioSpawn(command, args) {
-  if (process.platform !== 'win32') {
-    return { cmd: command, cmdArgs: args };
-  }
-  if (/\.exe$/i.test(command)) {
-    return { cmd: command, cmdArgs: args };
-  }
-  return { cmd: 'cmd.exe', cmdArgs: ['/c', command, ...args] };
+  const invocation = windowsCompatibleCommand(command, args);
+  return { cmd: invocation.command, cmdArgs: invocation.args };
 }
 
 async function spawnAndQuery({ command, args, env = {} }, serverName) {
