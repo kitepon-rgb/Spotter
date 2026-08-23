@@ -1,0 +1,38 @@
+# 一時診断workflow: factory-windows-fox上のgit getaddrinfo障害の切り分け専用。
+# checkoutせずrunner文脈でネットワーク・ポート状態を観測する。切り分け完了後に削除する。
+name: diag-windows
+on:
+  workflow_dispatch:
+jobs:
+  diag:
+    runs-on: [self-hosted, factory, windows-native]
+    timeout-minutes: 5
+    steps:
+      - name: git ls-remote both repos x3
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          foreach ($i in 1..3) {
+            foreach ($r in 'Spotter','Throughline') {
+              $out = git ls-remote "https://github.com/kitepon/$r" HEAD 2>&1 | Select-Object -First 1
+              Write-Host "[$i][$r] $out"
+            }
+          }
+      - name: curl variants
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $m = & 'C:\Program Files\Git\mingw64\bin\curl.exe' -sS -m 6 -o NUL -w '%{http_code}' https://github.com 2>&1
+          Write-Host "mingw_curl: $m"
+          $s = & 'C:\Windows\System32\curl.exe' -sS -m 6 -o NUL -w '%{http_code}' https://github.com 2>&1
+          Write-Host "system_curl: $s"
+      - name: port reservations and env
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          netsh int ipv4 show excludedportrange protocol=tcp
+          Write-Host "=== dynamicport ==="
+          netsh int ipv4 show dynamicport tcp
+          Write-Host "=== session/user ==="
+          whoami
+          [System.Diagnostics.Process]::GetCurrentProcess().SessionId
