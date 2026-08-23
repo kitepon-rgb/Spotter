@@ -1,7 +1,7 @@
 # Spotter評価dashboard運用
 
-現行npm配布版: **v1.5.12**（2026-08-18）。v1.5.12は評価の採点方式と表示名
-（提案適合率（上限））を変更し、dashboardのrouting構成は変更していない。
+現行npm配布版: **v1.5.13**（2026-08-23）。v1.5.13はOS依存・ベンダー依存の内部配置だけを
+変更した挙動同一リファクタで、評価・dashboardのrouting構成は変更していない。
 
 この文書はservice設定の正本であり、各端末に現在installされているnpm versionの台帳ではない。
 端末versionは対象端末で`spotter --version`を実行して確認する。
