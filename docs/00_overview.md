@@ -7,7 +7,7 @@ error handling, and release workflow. `CLAUDE.md` is only the `@AGENTS.md` impor
 
 Current production release: **v1.5.13**. OS-specific branches (`process.platform`) live only in
 `src/platform/` (process spawning, hook⇄daemon IPC paths, path normalization and PATH lookup), and
-host-vendor decision points (per-host tool-db file names and snapshot builders) live only in
+host-harness decision points (per-host tool-db file names and snapshot builders) live only in
 `src/host/adapters.mjs`; public exports, hook/daemon IPC, CLI surface, and behavior are unchanged.
 Evaluation turns whose Stop was never observed are
 graded at the next prompt from the usage evidence collected so far instead of being discarded as
