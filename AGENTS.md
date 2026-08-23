@@ -483,6 +483,28 @@ refresh の local → global → investigate cache path でも Claude / Codex �
 - **stage=user_input**: ユーザー要請に対し、まずhost標準ツールでの対応を特定するか該当なしと判断し、その基準より直接適用性が高いローカルtool-dbのツールだけを列挙する **要請充足チェック**。比較不能・該当なし・挨拶・雑談はpass
 - **stage=turn_end**: Bell の最終応答に対し、事実の断定 / 記録すべき新情報 / 既知情報の参照 それぞれに、カタログ上のツール (検証 / 登録 / 照会) を差し込める余地がないか監査する **ツール適用機会の監査**。指摘ゼロは歓迎、`used_tools` 既含は再指摘しない
 
+## 依存の配置規約 (OS依存・ベンダー依存)
+
+「Macを直すとWinが壊れる／Claudeに対応するとCodexが壊れる」を防ぐため、依存は次の場所だけに置く:
+
+- **OS依存 (`process.platform` 分岐) は `src/platform/` が所有する**。プロセス起動
+  (cmd.exe /c wrap・.cmd shim解決・windowsHide強制・process tree終了) は
+  [spawn.mjs](src/platform/spawn.mjs)、socket/pipe面 (path生成・権限・stale socket除去) は
+  [ipc.mjs](src/platform/ipc.mjs)、パス表記正規化とPATH実行体探索は
+  [paths.mjs](src/platform/paths.mjs)。呼び出し側は platform 関数を使い、
+  新しい `process.platform` 分岐を業務ロジックへ書かない。例外は、単一ファイルに
+  閉じたOS×用途固有の実装 (runtime-error-store の権限契約、codex-hook-cmd の
+  hook command生成、install の throughline 探索) だけで、その場合もファイル外へ
+  分岐を漏らさない。
+- **ベンダー依存 (claude / codex) の決定点は `src/host/adapters.mjs` が所有する**。
+  hostごとのtool-db file名とsnapshot builder選択はadapter tableで引き、
+  `if (hostAgent === 'codex')` を業務ロジックへ書かない。ベンダー固有の実装本体は
+  従来どおり `investigate-claude.mjs` / `investigate-codex.mjs`、auditor backend選択は
+  `auditor-backend.mjs` / `codex-sidecar-policy.mjs` という専用moduleに閉じる。
+- 片方のOS・片方のhostを直す変更は、まず platform / adapter 層に該当関数があるかを
+  確認し、あればそこだけを直す。呼び出し側に同種の分岐を複製した時点で回帰源になる
+  (v1.1.5 windowsHide漏れ・v1.2.2 .cmd ENOENT の実被弾はこの複製が原因)。
+
 ## Architecture の核 (実装判断に効く部分)
 
 - **並走デーモン型**: SessionStart で 1 プロセス起動、SessionEnd で shutdown。Bell から呼ぶのではなく、hook 経由で **Bell の意思と独立に** user_input / tool_used / turn_end を受け取る。「Bell が自覚して呼ぶ」設計は **本プロダクトの存在意義を破壊する**ので却下されている。
