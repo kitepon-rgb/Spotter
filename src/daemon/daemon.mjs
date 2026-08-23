@@ -483,7 +483,7 @@ export async function startDaemon({
   } catch (error) {
     await observeFailure('daemon_persistence');
     await new Promise((resolve) => server.close(resolve)).catch(() => {});
-    if (process.platform !== 'win32') await unlink(path).catch(() => {});
+    await removeStaleSocketFile(path).catch(() => {});
     throw error;
   }
 
@@ -538,14 +538,10 @@ async function shutdown(server, sessionId, logFn, evaluationStore = null) {
   } catch (err) {
     logFn(`shutdown: server.close failed: ${err.message}`);
   }
-  if (process.platform !== 'win32') {
-    try {
-      await unlink(socketPath(sessionId));
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
-        logFn(`shutdown: unlink socket failed: ${err.message}`);
-      }
-    }
+  try {
+    await removeStaleSocketFile(socketPath(sessionId));
+  } catch (err) {
+    logFn(`shutdown: unlink socket failed: ${err.message}`);
   }
   try {
     await unlink(pidFilePath(sessionId));

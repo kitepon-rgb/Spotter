@@ -87,25 +87,10 @@ async function readMcpServersFile(path) {
   return (data.mcpServers && typeof data.mcpServers === 'object') ? data.mcpServers : {};
 }
 
-// Normalize a project path for matching against `~/.claude.json` `projects[]` keys.
-// Claude stores absolute paths verbatim, but representation can drift across:
-//   - separator: `\` on Windows vs `/`
-//   - drive-letter case: `C:\` vs `c:\` on Windows
-//   - trailing slash: `/foo/bar` vs `/foo/bar/`
-// On Windows we canonicalize to forward slashes and lower-case (case-insensitive
-// filesystem). On POSIX, `\` is a legal filename character — collapsing it to `/`
-// would conflate genuinely distinct paths (e.g. literal `C:\Users\u\proj` vs the
-// hypothetical POSIX path `C:/Users/u/proj`), and case stays significant. POSIX
-// only normalizes the trailing slash.
-export function normalizeProjectPath(p) {
-  if (typeof p !== 'string' || p.length === 0) return '';
-  let s = p;
-  if (process.platform === 'win32') {
-    s = s.replace(/\\/g, '/').toLowerCase();
-  }
-  s = s.replace(/\/+$/, '');
-  return s;
-}
+// OS依存のパス表記正規化は src/platform/paths.mjs が所有する。
+// `~/.claude.json` `projects[]` キー照合の用途と正規化ルールの根拠はそちらを参照。
+import { normalizeProjectPath } from '../platform/paths.mjs';
+export { normalizeProjectPath };
 
 // Extract user-scope `mcpServers` from a parsed `~/.claude.json` object.
 export function extractUserScopeServers(claudeJson) {
