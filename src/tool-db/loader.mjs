@@ -23,26 +23,16 @@ export class ToolDbSchemaError extends Error {
   }
 }
 
+// host別のDB file名と正規化は src/host/adapters.mjs が所有する。
+import { getHostAdapter } from '../host/adapters.mjs';
+export { normalizeToolDbHostAgent } from '../host/adapters.mjs';
+
 export function globalDbPath(hostAgent = 'claude') {
-  const host = normalizeToolDbHostAgent(hostAgent);
-  const file = host === 'claude' ? 'tool-db.json' : `tool-db.${host}.json`;
-  return join(homedir(), '.spotter', file);
+  return join(homedir(), '.spotter', getHostAdapter(hostAgent).toolDbFileName);
 }
 
 export function localDbPath(projectRoot, hostAgent = 'claude') {
-  const host = normalizeToolDbHostAgent(hostAgent);
-  const file = host === 'claude' ? 'tool-db.json' : `tool-db.${host}.json`;
-  return join(projectRoot, '.spotter', file);
-}
-
-export function normalizeToolDbHostAgent(hostAgent = 'claude') {
-  if (hostAgent === undefined || hostAgent === null || hostAgent === '') {
-    return 'claude';
-  }
-  if (hostAgent === 'claude' || hostAgent === 'codex' || hostAgent === 'automation') {
-    return hostAgent;
-  }
-  throw new TypeError(`tool-db hostAgent must be claude, codex, or automation; got ${hostAgent}`);
+  return join(projectRoot, '.spotter', getHostAdapter(hostAgent).toolDbFileName);
 }
 
 // Load a DB file. Missing file → returns empty db (this is normal, not an error).
