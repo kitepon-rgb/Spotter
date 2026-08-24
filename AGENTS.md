@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.5.14（2026-08-24公開）**: 挙動不変のOS層整理。Windows絶対パス表記の判定を
+> `src/platform/paths.mjs`の`isWindowsAbsolutePath()`へ集約し、tool-db側の独自regexを委譲へ置換。
+> `killWorkerTree`にはterminateProcessTreeと意図的に別物である理由を明記。公開面・挙動不変。
+>
 > **v1.5.13（2026-08-23公開）**: OS依存（win32分岐）を`src/platform/`へ、
 > ベンダー依存（claude / codex分岐）の決定点を`src/host/adapters.mjs`へ集約する内部リファクタ。
 > 公開契約・hook/daemon IPC・CLI表面・test fixtureは変更せず、配置規約を「依存の配置規約」節へ正典化した。
