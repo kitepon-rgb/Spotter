@@ -292,6 +292,8 @@ function runRuntimeWorker(workerPath, args, timeoutMs, signal) {
   });
 }
 
+// platform/spawn.mjs の terminateProcessTree と似るが意図的に別物: こちらは受領記録の
+// best-effort掃除で、絶対にrejectせず（SIGKILL直行・225ms fallback）呼び出し元を止めない。
 function killWorkerTree(child) {
   if (!Number.isSafeInteger(child?.pid) || child.pid <= 0) return Promise.resolve();
   if (process.platform === 'win32') {

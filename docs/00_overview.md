@@ -5,7 +5,7 @@ and Codex hosts to surface missed tool-use opportunities. `AGENTS.md` is the
 canonical agent source for product philosophy, invariants, commands, hook contracts,
 error handling, and release workflow. `CLAUDE.md` is only the `@AGENTS.md` import entry.
 
-Current production release: **v1.5.13**. OS-specific branches (`process.platform`) live only in
+Current production release: **v1.5.14**. OS-specific branches (`process.platform`) live only in
 `src/platform/` (process spawning, hook⇄daemon IPC paths, path normalization and PATH lookup), and
 host-harness decision points (per-host tool-db file names and snapshot builders) live only in
 `src/host/adapters.mjs`; public exports, hook/daemon IPC, CLI surface, and behavior are unchanged.

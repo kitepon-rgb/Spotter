@@ -58,3 +58,8 @@ export function normalizeProjectPath(p) {
   s = s.replace(/\/+$/, '');
   return s;
 }
+
+// Windows絶対パス表記（ドライブレター/UNC）の判定。パス表記のOS差はこのfileが所有する。
+export function isWindowsAbsolutePath(value) {
+  return /^(?:[A-Za-z]:\\|\\\\)/u.test(value);
+}

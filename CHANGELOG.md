@@ -3,6 +3,14 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.5.14 — 2026-08-24
+
+- **挙動不変のOS層整理（harness用語統一campaignの分離規約）。** Windows絶対パス表記
+  （ドライブレター/UNC）の判定を`src/platform/paths.mjs`の`isWindowsAbsolutePath()`へ集約し、
+  tool-db側の独自regexを委譲へ置換。runtime-error-storeの`killWorkerTree`には
+  `terminateProcessTree`と意図的に別物である理由（絶対にrejectしないbest-effort掃除）を明記した。
+  公開面・挙動は不変。
+
 ## 1.5.13 — 2026-08-23
 
 - **OS依存を`src/platform/`へ集約。** 6ファイルへ重複していたWindowsのcmd.exe /c wrap・

@@ -10,6 +10,7 @@
 //   5. ← tools/list result   (response with tools[] each having {name, description})
 
 import { spawn } from 'node:child_process';
+import { isWindowsAbsolutePath } from '../platform/paths.mjs';
 import { execFileWindowsSafe, windowsCompatibleCommand } from '../platform/spawn.mjs';
 import { listToolsHttp } from './investigate-mcp-http.mjs';
 import { readMcpServers, describeServer } from './mcp-config.mjs';
@@ -186,7 +187,7 @@ export function splitCommandLine(s) {
 }
 
 function extractUnquotedWindowsExecutable(s) {
-  if (!/^(?:[A-Za-z]:\\|\\\\)/u.test(s)) return null;
+  if (!isWindowsAbsolutePath(s)) return null;
   const match = s.match(/^(.+?\.(?:exe|cmd|bat))(?:\s+|$)(.*)$/iu);
   if (!match) return null;
   return { command: match[1], rest: match[2].trim() };
