@@ -84,3 +84,16 @@ test('cursorCwd: cwd が無ければ workspace_roots[0] を使う', () => {
   assert.equal(cursorCwd({ workspace_roots: ['/tmp/ws'] }), '/tmp/ws');
   assert.equal(cursorCwd({}), null);
 });
+
+test('cursor-hook install: 既定nodeはPATH上の安定実体であり Cellar 版付きpathを焼かない', async () => {
+  const { resolveCodexHookNodePath } = await import('../src/cli/codex-hook-cmd.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-cursor-node-'));
+  try {
+    const stable = resolveCodexHookNodePath();
+    await installCursorHooks({ cursorHome: dir, spotterBin: '/opt/homebrew/bin/spotter' });
+    const file = JSON.parse(await readFile(join(dir, 'hooks.json'), 'utf8'));
+    assert.equal(file.hooks.sessionStart[0].command.startsWith(stable), true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

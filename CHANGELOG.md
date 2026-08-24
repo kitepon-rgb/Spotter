@@ -3,6 +3,11 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.6.1 — 2026-08-24
+
+- **Cursor hook が Homebrew Cellar の版付き Node を焼かない。** `spotter cursor-hook install` は
+  Codex hook と同じ安定 Node path を使い、版更新で sessionStart が消えるのを防ぐ。
+
 ## 1.6.0 — 2026-08-24
 
 - **Cursor を tool-db host として足した。** `src/host/adapters.mjs` に

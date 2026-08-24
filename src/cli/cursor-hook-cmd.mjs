@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnRefreshDetached } from '../hooks/spawn-daemon.mjs';
+import { resolveCodexHookNodePath } from './codex-hook-cmd.mjs';
 import {
   die,
   findSpotterMarker,
@@ -90,7 +91,7 @@ export function cursorCwd(input) {
 
 export async function installCursorHooks({
   cursorHome = defaultCursorHome(),
-  nodePath = process.execPath,
+  nodePath = resolveCodexHookNodePath(),
   spotterBin = SPOTTER_BIN,
 } = {}) {
   const hooksPath = join(cursorHome, 'hooks.json');

@@ -1,5 +1,8 @@
 # AGENTS.md
 
+> **v1.6.1（2026-08-24公開）**: Cursor hook の Node path を PATH 上の安定実体へ正規化。
+> Cellar の版付き path を hooks.json に焼かない。
+>
 > **v1.6.0（2026-08-24公開）**: Cursor を tool-db host として追加。`tool-db.cursor.json` と
 > `spotter cursor-hook`（sessionStart の catalog refresh）。Claude / Codex の DB と
 > 工場 hook は残す。Cursor envelope を Claude 形へ変換しない。
