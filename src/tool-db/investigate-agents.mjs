@@ -49,7 +49,7 @@ export async function listAgentsAll({ logFn = () => {}, projectRoot } = {}) {
 
 // Scan `<dir>/<name>.md` files. Returns Map<agent-name, description>. Missing directories
 // or malformed agents are skipped silently.
-async function scanAgentsDir(dir, logFn) {
+export async function scanAgentsDir(dir, logFn) {
   const out = new Map();
   let entries;
   try {

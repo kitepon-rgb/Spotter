@@ -24,6 +24,7 @@ import { version as SPOTTER_VERSION } from '../version.mjs';
 import { refresh } from '../tool-db/refresh.mjs';
 import { localDbPath, globalDbPath } from '../tool-db/loader.mjs';
 import { installCodexHooks } from './codex-hook-cmd.mjs';
+import { installCursorHooks, isCursorHomePresent } from './cursor-hook-cmd.mjs';
 import { prepareRuntimeErrorStoreDirectory } from '../core/runtime-error-store.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -57,9 +58,12 @@ export async function runInstall({
   cwd = process.cwd(),
   skipRefresh = false,
   skipCodexHooks = skipRefresh,
+  skipCursorHooks = skipRefresh,
   refreshFn = refresh,
   codexCliPresentFn = isCodexCliPresent,
   installCodexHooksFn = installCodexHooks,
+  cursorHomePresentFn = isCursorHomePresent,
+  installCursorHooksFn = installCursorHooks,
   prepareRuntimeErrorStoreDirectoryFn = prepareRuntimeErrorStoreDirectory,
   auditorContext,
   resolveDefaultAuditorContextFn = resolveDefaultAuditorContext,
@@ -150,6 +154,18 @@ export async function runInstall({
     }
   }
 
+  let cursorHooksRegistered = false;
+  if (target === 'project' && !skipCursorHooks) {
+    if (cursorHomePresentFn()) {
+      const result = await installCursorHooksFn();
+      cursorHooksRegistered = true;
+      console.log('  Cursor hooks registered');
+      console.log(`  Cursor hooks: ${result.hooksPath}`);
+    } else {
+      console.log('  Cursor home not found — Cursor hooks not registered');
+    }
+  }
+
   // Seed the tool-db so the first session has something to audit against.
   // Runs regardless of whether settings.json changed — re-running `spotter install`
   // on an already-installed project is the canonical way to refresh tool-db drift
@@ -170,12 +186,18 @@ export async function runInstall({
         console.log(`  Codex local DB:  ${localDbPath(cwd, 'codex')}`);
         console.log(`  Codex global DB: ${globalDbPath('codex')}`);
       }
+      if (cursorHooksRegistered) {
+        const cursorResolved = await refreshFn({ projectRoot: cwd, hostAgent: 'cursor', logFn: log });
+        console.log(`  ${cursorResolved.size} Cursor tool(s) resolved`);
+        console.log(`  Cursor local DB:  ${localDbPath(cwd, 'cursor')}`);
+        console.log(`  Cursor global DB: ${globalDbPath('cursor')}`);
+      }
     } catch (err) {
       // §0: throw (fallback 禁止). But surface the recovery path so the user isn't
       // left with "hooks registered, tool-db missing" and no clue what to run.
       process.stderr.write(`\nspotter install: tool-db seeding failed.\n`);
       process.stderr.write(`  hooks are registered but tool-db is not ready.\n`);
-      process.stderr.write(`  recover with: spotter db refresh and, for Codex, spotter db refresh --host-agent codex\n`);
+      process.stderr.write(`  recover with: spotter db refresh and, for Codex, spotter db refresh --host-agent codex; for Cursor, spotter db refresh --host-agent cursor\n`);
       throw err;
     }
   }
@@ -186,6 +208,11 @@ export async function runInstall({
     for (const step of codexInstallNextSteps(cwd)) console.log(`  ${step}`);
   } else if (target === 'project' && !skipCodexHooks) {
     console.log('  Codex hooks are not active: rerun `spotter install` where `codex --version` succeeds');
+  }
+  if (cursorHooksRegistered) {
+    console.log('  Cursor catalog refresh is active: new Cursor Agent sessions refresh tool-db.cursor.json');
+  } else if (target === 'project' && !skipCursorHooks) {
+    console.log('  Cursor hooks are not active: rerun `spotter install` where ~/.cursor exists');
   }
 }
 

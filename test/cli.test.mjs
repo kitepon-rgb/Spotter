@@ -27,7 +27,7 @@ test('cli: --help prints public and internal command contract', async () => {
   assert.ok(stdout.includes('spotter codex risk-check --findings FILE'));
   assert.ok(stdout.includes('spotter codex review|explore|opinion --findings FILE'));
   assert.ok(stdout.includes('spotter codex work --findings FILE --approve-work --allowed-path PATH'));
-  assert.ok(stdout.includes('spotter codex-hook install|uninstall|diagnostics'));
+  assert.ok(stdout.includes('spotter cursor-hook install|uninstall|diagnostics'));
   assert.ok(stdout.includes('spotter auditor judge --stage STAGE --input FILE'));
   assert.ok(stdout.includes('spotter auditor matrix --stage STAGE --input FILE'));
   assert.ok(stdout.includes('[--recent-turns 0|1|2|3] [--body-cap CHARS]'));
@@ -77,11 +77,11 @@ test('cli: auditor subcommand help exits successfully', async () => {
   assert.ok(stdout.includes('not proof that Codex native integration is complete'));
 });
 
-test('cli: codex-hook subcommand help exits successfully', async () => {
-  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'codex-hook', '--help'], CLI_OPTIONS);
+test('cli: cursor-hook subcommand help exits successfully', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'cursor-hook', '--help'], CLI_OPTIONS);
   assert.equal(stderr, '');
-  assert.ok(stdout.includes('spotter codex-hook — Codex native hook adapter'));
-  assert.ok(stdout.includes('spotter codex-hook install [--codex-home DIR]'));
+  assert.ok(stdout.includes('spotter cursor-hook — Cursor native hook adapter'));
+  assert.ok(stdout.includes('spotter cursor-hook install [--cursor-home DIR]'));
 });
 
 test('cli: unknown command exits 2 and prints usage', async () => {

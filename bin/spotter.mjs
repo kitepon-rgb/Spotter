@@ -9,6 +9,7 @@ import { runStatus } from '../src/cli/status.mjs';
 import { runDbList, runDbRefresh, runDbRebuild } from '../src/cli/db-cmd.mjs';
 import { runCodexCommand } from '../src/cli/codex-cmd.mjs';
 import { runCodexHookCommand } from '../src/cli/codex-hook-cmd.mjs';
+import { runCursorHookCommand } from '../src/cli/cursor-hook-cmd.mjs';
 import { runAuditorCommand } from '../src/cli/auditor-cmd.mjs';
 import { runDiagnosticsCommand } from '../src/cli/diagnostics-cmd.mjs';
 import { runEvaluationCommand } from '../src/cli/evaluation-cmd.mjs';
@@ -66,6 +67,8 @@ Usage:
                                         run approved codex-sidecar worktree workflow
   spotter codex-hook install|uninstall|diagnostics
                                         (experimental) manage Codex native hooks
+  spotter cursor-hook install|uninstall|diagnostics
+                                        manage Cursor native catalog-refresh hooks
   spotter auditor judge --stage STAGE --input FILE
                                         (experimental) run primary auditor backend once
   spotter auditor matrix --stage STAGE --input FILE
@@ -127,6 +130,9 @@ async function main() {
       return;
     case 'codex-hook':
       await runCodexHookCommand({ argv: rest });
+      return;
+    case 'cursor-hook':
+      await runCursorHookCommand({ argv: rest });
       return;
     case 'auditor':
       await runAuditorCommand({ argv: rest });

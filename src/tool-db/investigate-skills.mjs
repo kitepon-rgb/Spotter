@@ -55,7 +55,7 @@ export async function listSkillsAll({ logFn = () => {}, projectRoot } = {}) {
 
 // Scan `<dir>/<name>/SKILL.md` files. Returns Map<skill-name, description>. Missing
 // directories or malformed skills are skipped silently.
-async function scanSkillsDir(dir, logFn) {
+export async function scanSkillsDir(dir, logFn) {
   const out = new Map();
   let entries;
   try {

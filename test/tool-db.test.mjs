@@ -19,6 +19,11 @@ import {
   parseCodexMcpListOutput,
   parseEnabledCodexPluginIds,
 } from '../src/tool-db/investigate-codex.mjs';
+import {
+  listCursorAgentsAll,
+  listCursorMcpServers,
+  listCursorSkillsAll,
+} from '../src/tool-db/investigate-cursor.mjs';
 import { parseMcpListOutput, bellVisibleName, buildStdioSpawn } from '../src/tool-db/investigate-mcp.mjs';
 import { parseFrontmatter } from '../src/tool-db/frontmatter.mjs';
 import { listSkillsAll } from '../src/tool-db/investigate-skills.mjs';
@@ -87,7 +92,7 @@ test('localDbPath: separates Claude and Codex host-local DBs', () => {
   assert.equal(localDbPath(projectRoot), join(projectRoot, '.spotter', 'tool-db.json'));
   assert.equal(localDbPath(projectRoot, 'claude'), join(projectRoot, '.spotter', 'tool-db.json'));
   assert.equal(localDbPath(projectRoot, 'codex'), join(projectRoot, '.spotter', 'tool-db.codex.json'));
-  assert.equal(localDbPath(projectRoot, 'automation'), join(projectRoot, '.spotter', 'tool-db.automation.json'));
+  assert.equal(localDbPath(projectRoot, 'cursor'), join(projectRoot, '.spotter', 'tool-db.cursor.json'));
   assert.throws(() => normalizeToolDbHostAgent('unknown'), /hostAgent/);
   assert.throws(() => localDbPath(projectRoot, 'other'), /hostAgent/);
 });
@@ -96,7 +101,7 @@ test('globalDbPath: separates Claude and Codex host-global caches', () => {
   assert.ok(globalDbPath().endsWith(join('.spotter', 'tool-db.json')));
   assert.ok(globalDbPath('claude').endsWith(join('.spotter', 'tool-db.json')));
   assert.ok(globalDbPath('codex').endsWith(join('.spotter', 'tool-db.codex.json')));
-  assert.ok(globalDbPath('automation').endsWith(join('.spotter', 'tool-db.automation.json')));
+  assert.ok(globalDbPath('cursor').endsWith(join('.spotter', 'tool-db.cursor.json')));
   assert.throws(() => globalDbPath('other'), /hostAgent/);
 });
 
@@ -1064,4 +1069,42 @@ enabled = true
 [plugins."figma@openai-curated"]
 enabled = false
 `), ['github@openai-curated']);
+});
+
+test('cursor investigate: mcp.json と .cursor/skills・agents だけを読み、skills-cursor は無視する', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'spotter-cursor-investigate-'));
+  try {
+    const cursorHome = join(root, '.cursor');
+    const projectRoot = join(root, 'proj');
+    await mkdir(join(cursorHome, 'skills', 'pack'), { recursive: true });
+    await mkdir(join(cursorHome, 'skills-cursor', 'bundled'), { recursive: true });
+    await mkdir(join(cursorHome, 'agents'), { recursive: true });
+    await mkdir(join(projectRoot, '.cursor', 'skills', 'local'), { recursive: true });
+    await writeFile(join(cursorHome, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        caveat: { command: '/opt/homebrew/bin/caveat', args: ['mcp-server'] },
+      },
+    }));
+    await writeFile(join(cursorHome, 'skills', 'pack', 'SKILL.md'), '---\nname: pack\ndescription: user skill\n---\n');
+    await writeFile(join(cursorHome, 'skills-cursor', 'bundled', 'SKILL.md'), '---\nname: bundled\ndescription: product skill\n---\n');
+    await writeFile(join(cursorHome, 'agents', 'reviewer.md'), '---\nname: reviewer\ndescription: cursor agent\n---\n');
+    await writeFile(join(projectRoot, '.cursor', 'skills', 'local', 'SKILL.md'), '---\nname: local\ndescription: project skill\n---\n');
+
+    const servers = await listCursorMcpServers({ projectRoot, cursorHome });
+    assert.deepEqual(servers, [{
+      name: 'caveat',
+      transport: 'stdio',
+      command: '/opt/homebrew/bin/caveat',
+      args: ['mcp-server'],
+      env: {},
+    }]);
+    const skills = await listCursorSkillsAll({ projectRoot, cursorHome, logFn() {} });
+    assert.equal(skills.get('pack'), 'user skill');
+    assert.equal(skills.get('local'), 'project skill');
+    assert.equal(skills.has('bundled'), false);
+    const agents = await listCursorAgentsAll({ projectRoot, cursorHome, logFn() {} });
+    assert.equal(agents.get('reviewer'), 'cursor agent');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

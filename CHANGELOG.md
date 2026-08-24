@@ -3,6 +3,17 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.6.0 — 2026-08-24
+
+- **Cursor を tool-db host として足した。** `src/host/adapters.mjs` に
+  `hostAgent: 'cursor'` / `tool-db.cursor.json` を追加し、MCP は `~/.cursor/mcp.json` と
+  project `.cursor/mcp.json`、skills / agents は `~/.cursor` と `.cursor` だけを読む。
+  Cursor 製品同梱の `skills-cursor` はカタログに入れない。Claude / Codex の DB は触らない。
+- **`spotter cursor-hook`** は `~/.cursor/hooks.json` の `sessionStart` へ flat
+  `{command, timeout: 5}` を冪等マージする。工場 hook は残し、Cursor envelope を Claude 形へ
+  変換しない。`spotter install` は `~/.cursor` があるときこの hook を配線し、
+  `tool-db.cursor.json` を seed する。
+
 ## 1.5.14 — 2026-08-24
 
 - **挙動不変のOS層整理（harness用語統一campaignの分離規約）。** Windows絶対パス表記

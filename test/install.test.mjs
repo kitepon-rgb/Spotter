@@ -306,8 +306,8 @@ test('install: re-run seeds tool-db even when hooks are unchanged (v1.1.1 regres
       callCount++;
       return new Map();
     };
-    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh, skipCodexHooks: true });
-    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh, skipCodexHooks: true });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh, skipCodexHooks: true, skipCursorHooks: true });
+    await runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: mockRefresh, skipCodexHooks: true, skipCursorHooks: true });
     // Both calls must invoke refresh. The 2nd is the direct regression test for
     // the early-return that v1.1.1 removed — before that fix, the 2nd call
     // short-circuited at "hooks already registered" and never touched refresh.
@@ -327,6 +327,7 @@ test('install: registers Codex hooks when Codex CLI is present', async () => {
       cwd: dir,
       skipRefresh: true,
       skipCodexHooks: false,
+      skipCursorHooks: true,
       codexCliPresentFn: () => true,
       installCodexHooksFn: async () => {
         calls.push('install');
@@ -356,6 +357,7 @@ test('install: seeds Codex tool-db when Codex hooks are registered', async () =>
       cwd: dir,
       refreshFn: mockRefresh,
       skipCodexHooks: false,
+      skipCursorHooks: true,
       codexCliPresentFn: () => true,
       installCodexHooksFn: async () => ({
         hooksPath: '/home/test/.codex/hooks.json',
@@ -382,6 +384,7 @@ test('install: skips Codex tool-db seed when Codex CLI is unavailable', async ()
       cwd: dir,
       refreshFn: mockRefresh,
       skipCodexHooks: false,
+      skipCursorHooks: true,
       codexCliPresentFn: () => false,
       installCodexHooksFn: async () => {
         throw new Error('should not install Codex hooks');
@@ -406,7 +409,7 @@ test('install: refresh failure surfaces recovery hint on stderr', async () => {
       throw new Error('simulated MCP enumeration failure');
     };
     await assert.rejects(
-      runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: failingRefresh, skipCodexHooks: true }),
+      runInstall({ target: 'project', autoYes: true, cwd: dir, refreshFn: failingRefresh, skipCodexHooks: true, skipCursorHooks: true }),
       /simulated MCP/
     );
     const stderrText = captured.join('');
@@ -416,6 +419,59 @@ test('install: refresh failure surfaces recovery hint on stderr', async () => {
     );
   } finally {
     process.stderr.write = origWrite;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install: skips Cursor tool-db seed when Cursor home is unavailable', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-cursor-unavailable-'));
+  const refreshHosts = [];
+  try {
+    const mockRefresh = async ({ hostAgent }) => {
+      refreshHosts.push(hostAgent);
+      return new Map();
+    };
+    await runInstall({
+      target: 'project',
+      autoYes: true,
+      cwd: dir,
+      refreshFn: mockRefresh,
+      skipCodexHooks: true,
+      skipCursorHooks: false,
+      cursorHomePresentFn: () => false,
+      installCursorHooksFn: async () => {
+        throw new Error('should not install Cursor hooks');
+      },
+    });
+    assert.deepEqual(refreshHosts, ['claude']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('install: seeds Cursor tool-db when Cursor home is present', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-install-cursor-seed-'));
+  const refreshHosts = [];
+  try {
+    const mockRefresh = async ({ hostAgent }) => {
+      refreshHosts.push(hostAgent);
+      return new Map();
+    };
+    await runInstall({
+      target: 'project',
+      autoYes: true,
+      cwd: dir,
+      refreshFn: mockRefresh,
+      skipCodexHooks: true,
+      skipCursorHooks: false,
+      cursorHomePresentFn: () => true,
+      installCursorHooksFn: async () => ({
+        hooksPath: '/home/test/.cursor/hooks.json',
+        hooks: { sessionStart: 'added' },
+      }),
+    });
+    assert.deepEqual(refreshHosts, ['claude', 'cursor']);
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

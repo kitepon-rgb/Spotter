@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **v1.6.0（2026-08-24公開）**: Cursor を tool-db host として追加。`tool-db.cursor.json` と
+> `spotter cursor-hook`（sessionStart の catalog refresh）。Claude / Codex の DB と
+> 工場 hook は残す。Cursor envelope を Claude 形へ変換しない。
+>
 > **v1.5.14（2026-08-24公開）**: 挙動不変のOS層整理。Windows絶対パス表記の判定を
 > `src/platform/paths.mjs`の`isWindowsAbsolutePath()`へ集約し、tool-db側の独自regexを委譲へ置換。
 > `killWorkerTree`にはterminateProcessTreeと意図的に別物である理由を明記。公開面・挙動不変。
@@ -509,10 +513,10 @@ refresh の local → global → investigate cache path でも Claude / Codex �
   閉じたOS×用途固有の実装 (runtime-error-store の権限契約、codex-hook-cmd の
   hook command生成、install の throughline 探索) だけで、その場合もファイル外へ
   分岐を漏らさない。
-- **ベンダー依存 (claude / codex) の決定点は `src/host/adapters.mjs` が所有する**。
+- **ベンダー依存 (claude / codex / cursor) の決定点は `src/host/adapters.mjs` が所有する**。
   hostごとのtool-db file名とsnapshot builder選択はadapter tableで引き、
   `if (hostAgent === 'codex')` を業務ロジックへ書かない。ベンダー固有の実装本体は
-  従来どおり `investigate-claude.mjs` / `investigate-codex.mjs`、auditor backend選択は
+  `investigate-claude.mjs` / `investigate-codex.mjs` / `investigate-cursor.mjs`、auditor backend選択は
   `auditor-backend.mjs` / `codex-sidecar-policy.mjs` という専用moduleに閉じる。
 - 片方のOS・片方のhostを直す変更は、まず platform / adapter 層に該当関数があるかを
   確認し、あればそこだけを直す。呼び出し側に同種の分岐を複製した時点で回帰源になる
@@ -523,7 +527,7 @@ refresh の local → global → investigate cache path でも Claude / Codex �
 - **並走デーモン型**: SessionStart で 1 プロセス起動、SessionEnd で shutdown。Bell から呼ぶのではなく、hook 経由で **Bell の意思と独立に** user_input / tool_used / turn_end を受け取る。「Bell が自覚して呼ぶ」設計は **本プロダクトの存在意義を破壊する**ので却下されている。
 - **Claude 呼び出しは session-scoped + preamble-once + 事後回復** (v0.6.0 で更新): `claude -p --session-id <uuid>` で初回セッション確立、以降 `--resume` で再接続。**初回のみ preamble (role + schema + few-shot + catalog) を送り、以降は per-turn delta のみ**送ることで session を肥大化させない (v0.5.x は毎回 full 送信していて resumed が first より遅いという逆の結果が出ていた)。role collapse は `parseHaikuResponse` が `E_HAIKU_SCHEMA` を返した瞬間に `callHaiku.reset()` で session-id を rotate、次回呼び出しで preamble が新 session に自動で再送される。当該ターンは silent pass。**これは §0 の silent fallback 禁止違反ではなく、「想定済み異常 = 記録 + 正常リターン」の適用**。
 - **隔離実行**: Spotter の workdir (`~/.spotter/workdir/`) には **CLAUDE.md を置かない**。プロジェクト文脈に引きずられないことが品質保証の要件。
-- **ツールカタログは host-local tool-db**: Claude daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。Codex native hooks は `<project>/.spotter/tool-db.codex.json` だけを読む。グローバル DB も host 別の description 再利用キャッシュで、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json` を使う。global は audit 入力には混ぜない。Claude refresh は `claude mcp list` と Claude skills / sub-agents、Codex refresh は `codex mcp list/get` と Codex skills を discovery し、片方の refresh がもう片方の local / global DB を prune / overwrite してはいけない。
+- **ツールカタログは host-local tool-db**: Claude daemon が監査に使うのは `<project>/.spotter/tool-db.json` の `{name, description}` だけ。Codex native hooks は `<project>/.spotter/tool-db.codex.json` だけを読む。Cursor は `<project>/.spotter/tool-db.cursor.json` だけを読む。グローバル DB も host 別の description 再利用キャッシュで、Claude は `~/.spotter/tool-db.json`、Codex は `~/.spotter/tool-db.codex.json`、Cursor は `~/.spotter/tool-db.cursor.json` を使う。global は audit 入力には混ぜない。Claude refresh は `claude mcp list` と Claude skills / sub-agents、Codex refresh は `codex mcp list/get` と Codex skills、Cursor refresh は `~/.cursor/mcp.json` と Cursor skills / agents を discovery し、片方の refresh がもう片方の local / global DB を prune / overwrite してはいけない。
 - **Stop hook の介入**: Claude / Codex とも immediate block / continuation / deferred model-context
   delivery を行わない。finding は catalog 照合済みtool IDの構造Hook eventとして記録し、failureは
   allow-list済み固定 `systemMessage`・固定stderr・構造eventへ出す。監査用AIの自由文やprovider出力を

@@ -1,6 +1,6 @@
 {
   "name": "claude-spotter",
-  "version": "1.5.14",
+  "version": "1.6.0",
   "description": "Audit agent running alongside Claude Code that catches missed tool calls — 気づく役と実行する役の分離",
   "type": "module",
   "bin": {

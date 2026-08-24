@@ -3,12 +3,13 @@
 // このtableだけが知る。呼び出し側（loader / refresh / CLI）は adapter を引いて
 // 使うだけで、`if (hostAgent === 'codex')` 分岐を業務ロジックに書かない。
 //
-// ベンダー固有の実装本体は従来どおり investigate-claude.mjs / investigate-codex.mjs
-// が持つ。片方のhostのrefreshがもう片方のDBをprune / overwriteしない契約
-// （AGENTS.md「ツールカタログはhost-local tool-db」）はこの分離が担保する。
+// ベンダー固有の実装本体は investigate-claude.mjs / investigate-codex.mjs /
+// investigate-cursor.mjs が持つ。片方のhostのrefreshがもう片方のDBをprune /
+// overwriteしない契約（AGENTS.md「ツールカタログはhost-local tool-db」）はこの分離が担保する。
 
 import { buildInvestigationSnapshot } from '../tool-db/investigate-claude.mjs';
 import { buildCodexInvestigationSnapshot } from '../tool-db/investigate-codex.mjs';
+import { buildCursorInvestigationSnapshot } from '../tool-db/investigate-cursor.mjs';
 
 const CLAUDE_ADAPTER = Object.freeze({
   hostAgent: 'claude',
@@ -32,10 +33,18 @@ const AUTOMATION_ADAPTER = Object.freeze({
     buildInvestigationSnapshot({ logFn, claudeBin, projectRoot }),
 });
 
+const CURSOR_ADAPTER = Object.freeze({
+  hostAgent: 'cursor',
+  toolDbFileName: 'tool-db.cursor.json',
+  buildSnapshot: ({ logFn, projectRoot }) =>
+    buildCursorInvestigationSnapshot({ logFn, projectRoot }),
+});
+
 const ADAPTERS = Object.freeze({
   claude: CLAUDE_ADAPTER,
   codex: CODEX_ADAPTER,
   automation: AUTOMATION_ADAPTER,
+  cursor: CURSOR_ADAPTER,
 });
 
 export function normalizeToolDbHostAgent(hostAgent = 'claude') {
@@ -45,7 +54,7 @@ export function normalizeToolDbHostAgent(hostAgent = 'claude') {
   if (Object.hasOwn(ADAPTERS, hostAgent)) {
     return hostAgent;
   }
-  throw new TypeError(`tool-db hostAgent must be claude, codex, or automation; got ${hostAgent}`);
+  throw new TypeError(`tool-db hostAgent must be claude, codex, automation, or cursor; got ${hostAgent}`);
 }
 
 export function getHostAdapter(hostAgent = 'claude') {

@@ -33,9 +33,9 @@ Public CLI:
 - `spotter install [-y|--yes] [--user] [--auditor-context disabled|throughline]
   [--throughline-command <absolute>] [--throughline-arg <value>]`
 - `spotter uninstall [-y|--yes] [--user]`
-- `spotter db list [--host-agent claude|codex|automation]`
-- `spotter db refresh [--host-agent claude|codex|automation]`
-- `spotter db rebuild [--host-agent claude|codex|automation]`
+- `spotter db list [--host-agent claude|codex|automation|cursor]`
+- `spotter db refresh [--host-agent claude|codex|automation|cursor]`
+- `spotter db rebuild [--host-agent claude|codex|automation|cursor]`
 - `spotter status`
 - `spotter doctor`
 - `spotter diagnostics logs [--log-dir <dir>] [--project <dir>] [--json]`
