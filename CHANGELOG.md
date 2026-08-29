@@ -3,6 +3,13 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
 
+## 1.6.2 — 2026-08-29
+
+- **Windowsの`spotter install -y`がMCP調査後に終了する。** 調査対象のprocess treeを
+  Windows共通経路で停止し、stdin / stdout / stderrのpipeを停止前後に破棄する。
+  カタログ生成後もstdin pipeがNodeのイベントループを保持し、工場セットアップが
+  完了しなかった問題を修正した。
+
 ## 1.6.1 — 2026-08-24
 
 - **Cursor hook が Homebrew Cellar の版付き Node を焼かない。** `spotter cursor-hook install` は

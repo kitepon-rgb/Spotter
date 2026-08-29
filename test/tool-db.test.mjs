@@ -24,7 +24,12 @@ import {
   listCursorMcpServers,
   listCursorSkillsAll,
 } from '../src/tool-db/investigate-cursor.mjs';
-import { parseMcpListOutput, bellVisibleName, buildStdioSpawn } from '../src/tool-db/investigate-mcp.mjs';
+import {
+  parseMcpListOutput,
+  bellVisibleName,
+  buildStdioSpawn,
+  closeMcpTransport,
+} from '../src/tool-db/investigate-mcp.mjs';
 import { parseFrontmatter } from '../src/tool-db/frontmatter.mjs';
 import { listSkillsAll } from '../src/tool-db/investigate-skills.mjs';
 import { listAgentsAll } from '../src/tool-db/investigate-agents.mjs';
@@ -378,6 +383,25 @@ test('buildStdioSpawn: Windows wraps explicit .cmd / .bat extensions through cmd
     buildStdioSpawn('script.BAT', []),
     { cmd: 'cmd.exe', cmdArgs: ['/c', 'script.BAT'] }
   );
+});
+
+test('closeMcpTransport: process tree終了の前後で3本のpipeを破棄する', async () => {
+  const counts = { stdin: 0, stdout: 0, stderr: 0 };
+  const child = {
+    stdin: { destroy: () => { counts.stdin += 1; } },
+    stdout: { destroy: () => { counts.stdout += 1; } },
+    stderr: { destroy: () => { counts.stderr += 1; } },
+  };
+  let terminated = 0;
+  await closeMcpTransport(child, {
+    terminateChildFn: async (actual) => {
+      assert.equal(actual, child);
+      assert.deepEqual(counts, { stdin: 1, stdout: 1, stderr: 1 });
+      terminated += 1;
+    },
+  });
+  assert.equal(terminated, 1);
+  assert.deepEqual(counts, { stdin: 2, stdout: 2, stderr: 2 });
 });
 
 test('buildStdioSpawn: Windows leaves absolute .exe paths un-wrapped (avoids cmd.exe quoting risk)', () => {

@@ -11,7 +11,11 @@
 
 import { spawn } from 'node:child_process';
 import { isWindowsAbsolutePath } from '../platform/paths.mjs';
-import { execFileWindowsSafe, windowsCompatibleCommand } from '../platform/spawn.mjs';
+import {
+  execFileWindowsSafe,
+  terminateProcessTree,
+  windowsCompatibleCommand,
+} from '../platform/spawn.mjs';
 import { listToolsHttp } from './investigate-mcp-http.mjs';
 import { readMcpServers, describeServer } from './mcp-config.mjs';
 import { version as SPOTTER_VERSION } from '../version.mjs';
@@ -253,6 +257,17 @@ export function buildStdioSpawn(command, args) {
   return { cmd: invocation.command, cmdArgs: invocation.args };
 }
 
+export async function closeMcpTransport(child, { terminateChildFn = terminateProcessTree } = {}) {
+  const destroyStreams = () => {
+    for (const stream of [child.stdin, child.stdout, child.stderr]) {
+      try { stream.destroy(); } catch { /* ignore */ }
+    }
+  };
+  destroyStreams();
+  try { await terminateChildFn(child); } catch { /* direct kill fallback already ran */ }
+  destroyStreams();
+}
+
 async function spawnAndQuery({ command, args, env = {} }, serverName) {
   return new Promise((resolve, reject) => {
     const { cmd, cmdArgs } = buildStdioSpawn(command, args);
@@ -267,16 +282,14 @@ async function spawnAndQuery({ command, args, env = {} }, serverName) {
     let settled = false;
     let initializedSent = false;
 
-    const cleanup = () => {
-      try { child.stdin.end(); } catch { /* ignore */ }
-      try { child.kill(); } catch { /* ignore */ }
-    };
+    const cleanup = () => closeMcpTransport(child);
 
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      cleanup();
-      reject(new McpInvestigationError(`handshake/list timed out after ${HANDSHAKE_TIMEOUT_MS}ms`, serverName));
+      void cleanup().then(() => {
+        reject(new McpInvestigationError(`handshake/list timed out after ${HANDSHAKE_TIMEOUT_MS}ms`, serverName));
+      });
     }, HANDSHAKE_TIMEOUT_MS);
 
     const send = (msg) => {
@@ -347,13 +360,13 @@ async function spawnAndQuery({ command, args, env = {} }, serverName) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        cleanup();
+        await cleanup();
         resolve(tools);
       } catch (err) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        cleanup();
+        await cleanup();
         reject(err);
       }
     })();
