@@ -270,10 +270,14 @@ function runRuntimeWorker(workerPath, args, timeoutMs, signal) {
       signal?.removeEventListener('abort', abort);
       resolve(result);
     };
-    const stop = (kind) => { if (stopping || settled) return; stopping = true; void killWorkerTree(child).then(() => finish({ kind })); };
+    const stop = (kind) => {
+      if (stopping || settled) return;
+      stopping = true;
+      finish({ kind });
+      void killWorkerTree(child);
+    };
     const abort = () => stop('cancelled');
-    const killGraceMs = process.platform === 'win32' ? 250 : 0;
-    const timer = setTimeout(() => stop('timeout'), Math.max(1, timeoutMs - killGraceMs));
+    const timer = setTimeout(() => stop('timeout'), timeoutMs);
     try {
       child = spawn(process.execPath, [workerPath, ...args], {
         stdio: 'ignore',

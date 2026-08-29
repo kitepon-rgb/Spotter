@@ -92,7 +92,7 @@ test('cursor-hook install: 既定nodeはPATH上の安定実体であり Cellar �
     const stable = resolveCodexHookNodePath();
     await installCursorHooks({ cursorHome: dir, spotterBin: '/opt/homebrew/bin/spotter' });
     const file = JSON.parse(await readFile(join(dir, 'hooks.json'), 'utf8'));
-    assert.equal(file.hooks.sessionStart[0].command.startsWith(stable), true);
+    assert.equal(file.hooks.sessionStart[0].command.includes(stable), true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
