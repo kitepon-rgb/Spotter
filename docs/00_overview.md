@@ -9,7 +9,10 @@ Current production release: **v1.6.2**. Cursor is a first-class tool-db host
 (`tool-db.cursor.json` plus `spotter cursor-hook` catalog refresh). OS-specific branches (`process.platform`) live only in
 `src/platform/` (process spawning, hook⇄daemon IPC paths, path normalization and PATH lookup), and
 host-harness decision points (per-host tool-db file names and snapshot builders) live only in
-`src/host/adapters.mjs`; public exports, hook/daemon IPC, CLI surface, and behavior are unchanged.
+`src/host/adapters.mjs`. Those dependency moves preserved public exports, hook/daemon IPC, and the
+CLI surface.
+On Windows, MCP investigation closes its process tree and all three stdio pipes, while isolated
+runtime-error workers return at their absolute deadline and continue process cleanup in parallel.
 Evaluation turns whose Stop was never observed are
 graded at the next prompt from the usage evidence collected so far instead of being discarded as
 `outcome_missing`; only turns marked `usage_status=incomplete` remain unjudged. The A/C ratio is

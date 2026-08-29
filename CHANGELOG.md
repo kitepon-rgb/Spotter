@@ -9,6 +9,10 @@
   Windows共通経路で停止し、stdin / stdout / stderrのpipeを停止前後に破棄する。
   カタログ生成後もstdin pipeがNodeのイベントループを保持し、工場セットアップが
   完了しなかった問題を修正した。
+- **隔離runtime error workerが指定期限内に呼び出し元へ戻る。** timeout時は結果を先に
+  確定し、子process treeのbest-effort掃除を並行して続ける。Windowsで掃除の待機時間が
+  絶対期限へ上乗せされていた問題を修正した。
+- Cursor hookの安定Node path試験を、空白を含むWindows pathの正しい引用形式へ対応させた。
 
 ## 1.6.1 — 2026-08-24
 

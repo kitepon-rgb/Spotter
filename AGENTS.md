@@ -1,7 +1,8 @@
 # AGENTS.md
 
 > **v1.6.2（2026-08-29公開）**: WindowsのMCP調査終了時にprocess treeと3本のpipeを閉じ、
-> `spotter install -y`がカタログ生成後に終了しない問題を修正。
+> `spotter install -y`がカタログ生成後に終了しない問題を修正。隔離runtime error workerは
+> timeout時に結果を先に返し、Windowsのprocess tree掃除が絶対期限へ上乗せされない。
 >
 > **v1.6.1（2026-08-24公開）**: Cursor hook の Node path を PATH 上の安定実体へ正規化。
 > Cellar の版付き path を hooks.json に焼かない。
