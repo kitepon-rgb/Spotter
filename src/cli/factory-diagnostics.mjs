@@ -15,6 +15,12 @@ const SAFE_CODEX_READINESS = new Set([
   'unavailable',
 ]);
 
+const COMPATIBILITY_PRIORITY = Object.freeze({
+  compatible: 0,
+  indeterminate: 1,
+  incompatible: 2,
+});
+
 export async function runFactoryDiagnostics({
   projectRoot = process.cwd(),
   codexHookDiagnosticsFn = codexHookDiagnostics,
@@ -28,10 +34,18 @@ export async function runFactoryDiagnostics({
   const checks = [];
   if (markerResult.status !== 'valid') {
     checks.push(check('project_activation', 'unverified', markerResult.reasonCode));
-    return snapshot({ overallStatus: 'unverified', checks, runtimeErrorStore });
+    return snapshot({
+      overallStatus: 'unverified',
+      compatibilityStatus: markerResult.reasonCode === 'marker_unreadable'
+        ? 'indeterminate'
+        : 'incompatible',
+      checks,
+      runtimeErrorStore,
+    });
   }
 
   const marker = markerResult.value;
+  let compatibilityStatus = 'compatible';
   checks.push(check('project_activation', 'pass'));
 
   const markerVersion = typeof marker.markerVersion === 'string' && KNOWN_MARKER_VERSIONS.has(marker.markerVersion)
@@ -40,10 +54,12 @@ export async function runFactoryDiagnostics({
   checks.push(markerVersion
     ? check('marker_schema', 'pass')
     : check('marker_schema', 'fail', 'unsupported_marker_schema'));
+  if (markerVersion === null) compatibilityStatus = 'incompatible';
 
   const contextMode = safeContextMode(marker.auditorContext);
   if (contextMode === null) {
     checks.push(check('throughline_context', 'fail', 'invalid_context_configuration'));
+    compatibilityStatus = 'incompatible';
   } else if (contextMode === 'disabled') {
     checks.push(check('throughline_context', 'skipped', 'evaluation_evidence_disabled'));
   } else {
@@ -54,16 +70,23 @@ export async function runFactoryDiagnostics({
   }
 
   const catalogs = {};
+  const catalogInspections = [];
   for (const host of ['claude', 'codex']) {
     const result = await inspectCatalog(localDbPath(projectRoot, host));
+    catalogInspections.push(result);
     catalogs[host] = result.publicStatus;
     checks.push(check(`${host}_catalog`, result.checkStatus, result.reasonCode));
+    compatibilityStatus = mergeCompatibilityStatus(compatibilityStatus, result.compatibilityStatus);
   }
-  checks.push(Object.values(catalogs).includes('available')
+  const hasAvailableCatalog = Object.values(catalogs).includes('available');
+  checks.push(hasAvailableCatalog
     ? check('audit_catalog_readiness', 'pass')
     : Object.values(catalogs).includes('invalid')
       ? check('audit_catalog_readiness', 'fail', 'catalog_invalid_schema')
       : check('audit_catalog_readiness', 'unverified', 'no_host_catalog'));
+  if (!hasAvailableCatalog && !catalogInspections.some((result) => result.compatibilityStatus === 'indeterminate')) {
+    compatibilityStatus = 'incompatible';
+  }
 
   let codexReadiness = 'unverified';
   try {
@@ -79,9 +102,15 @@ export async function runFactoryDiagnostics({
       : codexReadiness === 'misconfigured'
         ? check('codex_hooks', 'fail', 'misconfigured')
         : check('codex_hooks', 'unverified', 'diagnostics_unavailable'));
+  if (codexReadiness === 'misconfigured') {
+    compatibilityStatus = 'incompatible';
+  } else if (codexReadiness === 'unavailable' || codexReadiness === 'unverified') {
+    compatibilityStatus = mergeCompatibilityStatus(compatibilityStatus, 'indeterminate');
+  }
 
   return snapshot({
     overallStatus: overallStatus(checks),
+    compatibilityStatus,
     markerSchemaVersion: markerVersion,
     throughlineContext: contextMode ?? 'unverified',
     catalogs,
@@ -94,6 +123,7 @@ export async function runFactoryDiagnostics({
 function inactiveSnapshot(runtimeErrorStore) {
   return snapshot({
     overallStatus: 'not_applicable',
+    compatibilityStatus: 'not_applicable',
     runtimeErrorStore,
     checks: [check('project_activation', 'skipped', 'project_not_activated')],
   });
@@ -101,6 +131,7 @@ function inactiveSnapshot(runtimeErrorStore) {
 
 function snapshot({
   overallStatus,
+  compatibilityStatus,
   markerSchemaVersion = null,
   throughlineContext = 'unverified',
   catalogs = { claude: 'not_applicable', codex: 'not_applicable' },
@@ -109,10 +140,11 @@ function snapshot({
   checks,
 }) {
   return {
-    schema_version: '1.0',
+    schema_version: '1.1',
     product: 'spotter',
     version,
     overall_status: overallStatus,
+    compatibility_status: compatibilityStatus,
     marker_schema_version: markerSchemaVersion,
     throughline_context: throughlineContext,
     catalogs,
@@ -147,14 +179,29 @@ async function inspectCatalog(path) {
     await access(path);
   } catch (error) {
     return error?.code === 'ENOENT'
-      ? { publicStatus: 'missing', checkStatus: 'skipped', reasonCode: 'catalog_missing' }
-      : { publicStatus: 'unverified', checkStatus: 'unverified', reasonCode: 'catalog_unreadable' };
+      ? {
+          publicStatus: 'missing',
+          checkStatus: 'skipped',
+          reasonCode: 'catalog_missing',
+          compatibilityStatus: 'compatible',
+        }
+      : {
+          publicStatus: 'unverified',
+          checkStatus: 'unverified',
+          reasonCode: 'catalog_unreadable',
+          compatibilityStatus: 'indeterminate',
+        };
   }
   try {
     await loadDb(path);
-    return { publicStatus: 'available', checkStatus: 'pass' };
+    return { publicStatus: 'available', checkStatus: 'pass', compatibilityStatus: 'compatible' };
   } catch {
-    return { publicStatus: 'invalid', checkStatus: 'fail', reasonCode: 'catalog_invalid_schema' };
+    return {
+      publicStatus: 'invalid',
+      checkStatus: 'fail',
+      reasonCode: 'catalog_invalid_schema',
+      compatibilityStatus: 'incompatible',
+    };
   }
 }
 
@@ -175,4 +222,15 @@ function overallStatus(checks) {
   if (checks.some((entry) => entry.status === 'fail')) return 'fail';
   if (checks.some((entry) => entry.status === 'unverified')) return 'unverified';
   return 'pass';
+}
+
+function mergeCompatibilityStatus(current, next) {
+  return COMPATIBILITY_PRIORITY[next] > COMPATIBILITY_PRIORITY[current] ? next : current;
+}
+
+export function factoryDiagnosticsExitCode(snapshotValue) {
+  return snapshotValue?.compatibility_status === 'compatible'
+    || snapshotValue?.compatibility_status === 'not_applicable'
+    ? 0
+    : 1;
 }

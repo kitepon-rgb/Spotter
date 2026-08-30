@@ -14,7 +14,10 @@ import { runAuditorCommand } from '../src/cli/auditor-cmd.mjs';
 import { runDiagnosticsCommand } from '../src/cli/diagnostics-cmd.mjs';
 import { runEvaluationCommand } from '../src/cli/evaluation-cmd.mjs';
 import { runDashboardCommand } from '../src/cli/dashboard-cmd.mjs';
-import { runFactoryDiagnostics } from '../src/cli/factory-diagnostics.mjs';
+import {
+  factoryDiagnosticsExitCode,
+  runFactoryDiagnostics,
+} from '../src/cli/factory-diagnostics.mjs';
 import { runDaemonStart } from '../src/cli/daemon-cmd.mjs';
 import { runSessionStart } from '../src/hooks/session-start.mjs';
 import { runUserPrompt } from '../src/hooks/user-prompt.mjs';
@@ -140,7 +143,14 @@ async function main() {
     case 'diagnostics':
       if (rest[0] === 'factory') {
         if (rest.length !== 1) throw invalidFactoryDiagnosticsArgs();
-        process.stdout.write(`${JSON.stringify(await runFactoryDiagnostics())}\n`);
+        let factorySnapshot;
+        try {
+          factorySnapshot = await runFactoryDiagnostics();
+        } catch {
+          throw factoryDiagnosticsUnavailable();
+        }
+        process.stdout.write(`${JSON.stringify(factorySnapshot)}\n`);
+        process.exitCode = factoryDiagnosticsExitCode(factorySnapshot);
         return;
       }
       await runDiagnosticsCommand({ argv: rest });
@@ -236,6 +246,13 @@ function invalidFactoryDiagnosticsArgs() {
   const err = new Error('usage: spotter diagnostics factory');
   err.stack = '';
   err.exitCode = 2;
+  return err;
+}
+
+function factoryDiagnosticsUnavailable() {
+  const err = new Error('factory diagnostics unavailable');
+  err.stack = '';
+  err.exitCode = 1;
   return err;
 }
 

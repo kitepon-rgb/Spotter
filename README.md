@@ -228,7 +228,7 @@ spotter status           # list running daemons
 spotter doctor           # environment check (Node / claude CLI / Codex readiness / tool-db integrity)
 spotter diagnostics logs # summarize daemon logs for pass=false / backend latency / anomaly signals
 spotter diagnostics factory
-                         # emit a fixed-field read-only factory diagnostic as JSON
+                         # emit schema 1.1 factory compatibility and diagnostics as JSON
 spotter diagnostics runtime-errors
                          # print the local allow-listed runtime-error aggregate snapshot (no network)
 spotter evaluation report
@@ -256,6 +256,15 @@ spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.js
                          # experimental reproducible comparison of pinned auditor model profiles
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
 ```
+
+`spotter diagnostics factory` exposes one factory-adapter decision in
+`compatibility_status`: `compatible`, `not_applicable`, `incompatible`, or `indeterminate`.
+Machine consumers use that field without reinterpreting check IDs, catalogs, or reason codes.
+A canonical Codex hook configuration remains `compatible` when only its UI trust cannot be verified
+by a machine. `overall_status` and `checks` remain detailed diagnostic observations and are not the
+compatibility API. The command exits 0 for `compatible` and `not_applicable`, 1 for `incompatible` and
+`indeterminate`, and 2 for invalid arguments. Schema 1.1 preserves every schema 1.0 field and adds only
+`compatibility_status`.
 
 ### Device-routed evaluation dashboard
 

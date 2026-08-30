@@ -82,6 +82,22 @@ Internal CLI:
 Unknown public command, unknown `db` subcommand, unknown `daemon` subcommand, and unknown
 hook event exit with code `2` and print usage / error to stderr.
 
+`spotter diagnostics factory`の公開snapshotはschema `1.1`である。schema `1.0`のfieldを維持したまま、
+factory adapter向けの単一判定`compatibility_status`を追加する。値と終了コードは次だけを使う。
+
+- `compatible`: 少なくとも一つのhost catalogが利用でき、既知の必須設定破損がない。Codex hookが
+  正規形でもtrustだけは機械検証できない状態と、任意のThroughline評価contextが利用できない状態は
+  ここに含む。exit `0`。
+- `not_applicable`: projectにSpotter markerがなく、Spotterが有効化されていない。exit `0`。
+- `incompatible`: marker/schema/catalog、context設定、Codex hookに既知の破損があるか、有効化済みなのに
+  利用可能なhost catalogが一つもない。JSON snapshotを出してexit `1`。
+- `indeterminate`: marker/catalog/diagnosticsを読めず、互換性を確定できない。JSON snapshotを出して
+  exit `1`。
+
+引数違反はexit `2`。snapshot生成自体が失敗した場合は固定stderrだけを出してexit `1`とし、pathや
+例外本文を返さない。`overall_status`と`checks`は人が詳細診断するための情報であり、factory adapterは
+互換判定のためにcheck ID、catalog、reason codeを再集約せず`compatibility_status`だけを読む。
+
 ## Hook Contract
 
 All hooks read one JSON object from stdin unless `isChildCall()` finds a non-empty

@@ -5,6 +5,11 @@
 
 ## 1.6.3 — 2026-08-30
 
+- **factory adapterの互換判定をSpotter自身へ集約する。** `spotter diagnostics factory`の
+  schema 1.1は`compatibility_status`を返し、Codex hookのtrustが機械検証不能な正常状態を
+  `compatible`として扱う。既知の設定破損は`incompatible`、検査不能は`indeterminate`へ分離し、
+  外部consumerが`checks`、catalog、reason codeを再解釈しなくてよい契約にした。互換または対象外は
+  exit 0、非互換または判定不能はexit 1、引数違反はexit 2とする。
 - **Native Linux workstation の factory runtime-error 収集を受理する。** `linux` profileを
   canonical reporter configへ追加し、`server` profileと混同せず明示opt-in収集を有効にする。
 - **工場CIのLinuxを役割別に分離する。** 廃止した`wsl2`と曖昧な`linux-native`を除き、

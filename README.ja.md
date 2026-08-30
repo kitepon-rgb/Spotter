@@ -220,7 +220,7 @@ spotter status           # 稼働中の daemon 一覧
 spotter doctor           # 環境診断 (Node / claude CLI / Codex readiness / tool-db 整合性)
 spotter diagnostics logs # daemon log から pass=false / backend latency / anomaly signal を集計
 spotter diagnostics factory
-                         # factory向けread-only診断snapshotをJSONで出力
+                         # schema 1.1のfactory互換判定と診断をJSONで出力
 spotter diagnostics runtime-errors
                          # opt-in端末内runtime error集計をread-only表示（network送信なし）
 spotter evaluation report
@@ -248,6 +248,14 @@ spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.js
                          # pinned auditor model profile を再現可能に比較する experimental eval
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
 ```
+
+`spotter diagnostics factory`はfactory adapter向けの単一判定を`compatibility_status`へ返します。
+値は`compatible`、`not_applicable`、`incompatible`、`indeterminate`の4つです。機械consumerは
+check ID、catalog、reason codeを再解釈せず、このfieldだけを使います。Codex hookが正規形で、
+UI上のtrustだけを機械検証できない正常状態は`compatible`です。`overall_status`と`checks`は人が読む
+詳細診断であり、互換判定APIではありません。`compatible`と`not_applicable`はexit 0、
+`incompatible`と`indeterminate`はexit 1、引数違反はexit 2です。schema 1.1はschema 1.0の全fieldを
+維持し、`compatibility_status`だけを追加します。
 
 ### 端末別評価dashboard
 

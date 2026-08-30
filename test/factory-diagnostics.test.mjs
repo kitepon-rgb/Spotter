@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
-import { runFactoryDiagnostics } from '../src/cli/factory-diagnostics.mjs';
+import {
+  factoryDiagnosticsExitCode,
+  runFactoryDiagnostics,
+} from '../src/cli/factory-diagnostics.mjs';
 
 const codexConfigured = async () => ({ readiness: 'configured-unverified' });
 const execFileAsync = promisify(execFile);
@@ -13,11 +16,13 @@ const execFileAsync = promisify(execFile);
 test('factory diagnostics: 非activation projectは固定fieldだけで対象外を返す', async () => {
   const root = await temporaryProject();
   const out = await runFactoryDiagnostics({ projectRoot: root });
-  assert.equal(out.schema_version, '1.0');
+  assert.equal(out.schema_version, '1.1');
   assert.equal(out.overall_status, 'not_applicable');
+  assert.equal(out.compatibility_status, 'not_applicable');
+  assert.equal(factoryDiagnosticsExitCode(out), 0);
   assert.equal(out.checks[0].status, 'skipped');
   assert.deepEqual(Object.keys(out).sort(), [
-    'catalogs', 'checks', 'codex_hook_readiness', 'marker_schema_version',
+    'catalogs', 'checks', 'codex_hook_readiness', 'compatibility_status', 'marker_schema_version',
     'overall_status', 'product', 'runtime_error_store', 'schema_version', 'throughline_context', 'version',
   ]);
   assert.equal(out.runtime_error_store.schema, 'spotter.runtime_error_status.v1');
@@ -38,6 +43,8 @@ test('factory diagnostics: 正規marker/catalogを既存validatorで検証する
   assert.deepEqual(out.catalogs, { claude: 'available', codex: 'available' });
   assert.equal(out.codex_hook_readiness, 'configured-unverified');
   assert.equal(out.overall_status, 'unverified');
+  assert.equal(out.compatibility_status, 'compatible');
+  assert.equal(factoryDiagnosticsExitCode(out), 0);
   assertSafe(out);
 });
 
@@ -47,6 +54,8 @@ test('factory diagnostics: 壊れたmarkerを対象外へ丸めず任意値も�
   await writeFile(join(root, '.spotter', 'marker.json'), '{broken');
   const broken = await runFactoryDiagnostics({ projectRoot: root });
   assert.equal(broken.overall_status, 'unverified');
+  assert.equal(broken.compatibility_status, 'incompatible');
+  assert.equal(factoryDiagnosticsExitCode(broken), 1);
   assert.equal(broken.checks[0].reason_code, 'marker_invalid_json');
 
   await activate(root, {
@@ -57,6 +66,7 @@ test('factory diagnostics: 壊れたmarkerを対象外へ丸めず任意値も�
   assert.equal(hostile.marker_schema_version, null);
   assert.equal(hostile.throughline_context, 'unverified');
   assert.equal(hostile.overall_status, 'fail');
+  assert.equal(hostile.compatibility_status, 'incompatible');
   assertSafe(hostile);
 });
 
@@ -72,6 +82,7 @@ test('factory diagnostics: catalogの不在とschema破損を区別する', asyn
   assert.equal(out.catalogs.claude, 'invalid');
   assert.equal(out.catalogs.codex, 'missing');
   assert.equal(out.overall_status, 'fail');
+  assert.equal(out.compatibility_status, 'incompatible');
   assert.equal(findCheck(out, 'claude_catalog').reason_code, 'catalog_invalid_schema');
   assert.equal(findCheck(out, 'codex_catalog').reason_code, 'catalog_missing');
 });
@@ -84,14 +95,46 @@ test('factory diagnostics: host catalogが一つも無ければgreenにしない
     codexHookDiagnosticsFn: async () => ({ readiness: 'not-installed' }),
   });
   assert.equal(out.overall_status, 'unverified');
+  assert.equal(out.compatibility_status, 'incompatible');
   assert.equal(findCheck(out, 'audit_catalog_readiness').reason_code, 'no_host_catalog');
 });
 
-test('factory diagnostics CLI: snapshotはexit 0、余分な引数はexit 2', async () => {
+test('factory diagnostics: optional contextとCodex trust未機械検証は互換性を落とさない', async () => {
+  const root = await temporaryProject();
+  await activate(root, { markerVersion: '2', auditorContext: { mode: 'throughline' } });
+  await writeCatalog(root, 'tool-db.json');
+  const out = await runFactoryDiagnostics({
+    projectRoot: root,
+    codexHookDiagnosticsFn: codexConfigured,
+    inspectAuditorContextFn: async () => ({ ok: false, mode: 'throughline' }),
+  });
+  assert.equal(out.overall_status, 'unverified');
+  assert.equal(out.compatibility_status, 'compatible');
+});
+
+test('factory diagnostics: inspectorが成立しない時はindeterminateを返す', async () => {
+  const root = await temporaryProject();
+  await activate(root, { markerVersion: '2', auditorContext: { mode: 'disabled' } });
+  await writeCatalog(root, 'tool-db.json');
+  const out = await runFactoryDiagnostics({
+    projectRoot: root,
+    codexHookDiagnosticsFn: async () => { throw new Error('fixture only'); },
+  });
+  assert.equal(out.compatibility_status, 'indeterminate');
+  assert.equal(factoryDiagnosticsExitCode(out), 1);
+});
+
+test('factory diagnostics CLI: 対象外はexit 0、非互換はexit 1、引数違反はexit 2', async () => {
   const root = await temporaryProject();
   const cli = join(import.meta.dirname, '..', 'bin', 'spotter.mjs');
   const { stdout } = await execFileAsync(process.execPath, [cli, 'diagnostics', 'factory'], { cwd: root });
-  assert.equal(JSON.parse(stdout).overall_status, 'not_applicable');
+  assert.equal(JSON.parse(stdout).compatibility_status, 'not_applicable');
+  await mkdir(join(root, '.spotter'));
+  await writeFile(join(root, '.spotter', 'marker.json'), '{broken');
+  await assert.rejects(
+    execFileAsync(process.execPath, [cli, 'diagnostics', 'factory'], { cwd: root }),
+    (error) => error.code === 1 && JSON.parse(error.stdout).compatibility_status === 'incompatible',
+  );
   await assert.rejects(
     execFileAsync(process.execPath, [cli, 'diagnostics', 'factory', '--json'], { cwd: root }),
     (error) => error.code === 2 && /usage: spotter diagnostics factory/.test(error.stderr),
