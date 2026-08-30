@@ -35,6 +35,11 @@ test('Markdown-only変更は製品所有の文書gateを必ず実行する', asy
     /if:\s+steps\.changes\.outputs\.product_change == 'false' && inputs\.documentation-command != ''/u,
   );
   assert.match(reusable, /run:\s+\$\{\{ inputs\.documentation-command \}\}/u);
+  assert.match(
+    reusable,
+    /"macos-native","linux-server","linux-workstation","windows-native"/u,
+  );
+  assert.doesNotMatch(`${caller}\n${reusable}`, /linux-native|wsl2/u);
   const packedVerifier = await readFile(
     path.join(repoRoot, 'scripts/verify-packed-markdown.mjs'),
     'utf8',

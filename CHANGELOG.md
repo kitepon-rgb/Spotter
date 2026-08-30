@@ -7,6 +7,8 @@
 
 - **Native Linux workstation の factory runtime-error 収集を受理する。** `linux` profileを
   canonical reporter configへ追加し、`server` profileと混同せず明示opt-in収集を有効にする。
+- **工場CIのLinuxを役割別に分離する。** 廃止した`wsl2`と曖昧な`linux-native`を除き、
+  `linux-server`と`linux-workstation`を独立したself-hosted runner契約として扱う。
 - **文書の寿命と所有境界を製品内で完結させた。** 現行契約、進行中の仕事、履歴、証拠を
   `docs/00_overview.md`で分離し、完了済み計画は`docs/archive/`へ移した。固定参照が残る
   旧pathだけは履歴参照stubとして維持する。
