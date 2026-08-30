@@ -143,6 +143,14 @@ test('runtime error collection: canonical config requires collection.enabled ===
   assert.equal((await observeRuntimeError('daemon_transport', options(enabled))).collected, true);
 });
 
+test('runtime error collection: native Linux workstation profile is canonical', async () => {
+  const box = await sandbox({
+    host: { id: 'rabbit', profile: 'linux' },
+    collection: { enabled: true },
+  });
+  assert.equal((await observeRuntimeError('daemon_transport', options(box))).collected, true);
+});
+
 test('runtime error config: endpoint is accepted only when URL parsing is canonical HTTP(S)', async () => {
   for (const endpoint of ['ftp://example.test/api', 'https://example.test:443/api', 'https://user:pass@example.test/api']) {
     const box = await sandbox({
