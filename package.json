@@ -1,6 +1,6 @@
 {
   "name": "claude-spotter",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "Audit agent running alongside Claude Code that catches missed tool calls — 気づく役と実行する役の分離",
   "type": "module",
   "bin": {
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "test": "node --test",
-    "verify:docs": "node scripts/verify-docs.mjs",
+    "verify:docs": "node scripts/verify-docs.mjs && node scripts/verify-packed-markdown.mjs && node --test test/ci-contract.test.mjs test/markdown-link-targets.test.mjs",
     "verify:release-commit": "node scripts/verify-release-commit.mjs",
     "prepublishOnly": "npm run verify:docs && npm run verify:release-commit && npm test",
     "postinstall": "node scripts/postinstall.mjs",
@@ -33,12 +33,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kitepon-rgb/Spotter.git"
+    "url": "git+https://github.com/kitepon/Spotter.git"
   },
   "bugs": {
-    "url": "https://github.com/kitepon-rgb/Spotter/issues"
+    "url": "https://github.com/kitepon/Spotter/issues"
   },
-  "homepage": "https://github.com/kitepon-rgb/Spotter#readme",
+  "homepage": "https://github.com/kitepon/Spotter#readme",
   "engines": {
     "node": ">=22.13.0"
   },
@@ -54,5 +54,11 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
-  ]
+  ],
+  "devDependencies": {
+    "micromark-util-decode-string": "^2.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
+  }
 }

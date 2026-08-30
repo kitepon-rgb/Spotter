@@ -1,6 +1,6 @@
 # Open Issues
 
-Spotter v1.6.2（2026-08-29公開）時点の未完事項だけを記録する。
+Spotterの現在の未完事項だけを記録する。
 完了済みの実装・過去バージョンの観測・採用しなかった案はCHANGELOGと`docs/archive/`を参照する。
 
 ## 運用ルール
@@ -9,6 +9,17 @@ Spotter v1.6.2（2026-08-29公開）時点の未完事項だけを記録する�
 - 「念のため観測」「機会があれば」だけの項目は置かず、実害が出た時に追加する。
 - 解決した項目は本文へ残さず、CHANGELOGまたは完了計画へ移す。
 - P0は現在のrollout判断、P1は次の運用窓、P2は既知だが未発生のplatform固有リスク。
+
+## P1 — Grok親の正式host対応
+
+GrokのcamelCase hook envelopeは現在、副作用前のunsupported no-opとして扱う。
+dotagentsのGrok親配線は完了したが、Spotter自身のhost対応は未実装である。
+
+### 次の行動
+
+Grok固有のinstall、hook envelope、catalog refresh、diagnosticsの契約をこのrepoで決める。
+focused testと実Grok session受入を通し、Spotterのreleaseと単独installが成立してから、
+dotagentsのhost matrixを`unsupported`から更新する。
 
 ## P1 — v1.5.4以降のPrimary auditor SLO判定
 

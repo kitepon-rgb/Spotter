@@ -51,6 +51,6 @@
 
   <!-- Footer band -->
   <rect x="0" y="580" width="1200" height="50" fill="#000000" opacity="0.3"/>
-  <text x="80" y="613" fill="#94a3b8" font-size="20" font-weight="400">github.com/kitepon-rgb/Spotter  ·  npm i -g claude-spotter</text>
+  <text x="80" y="613" fill="#94a3b8" font-size="20" font-weight="400">github.com/kitepon/Spotter  ·  npm i -g claude-spotter</text>
   <text x="1120" y="613" fill="#94a3b8" font-size="20" font-weight="400" text-anchor="end">MIT</text>
 </svg>

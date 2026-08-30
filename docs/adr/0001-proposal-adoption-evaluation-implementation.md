@@ -40,5 +40,7 @@ focused test。Hは公開・install・実projectでのlive確認だけとし、�
 
 ## Acceptance
 
-受入条件と固定集計fixtureは
-[`docs/09_proposal-adoption-evaluation-plan.md`](../09_proposal-adoption-evaluation-plan.md)を正とする。
+現行契約は[`02_spotter-claude-contract.md`](../02_spotter-claude-contract.md)の
+「Evaluation Contract」、運用上の読み方と率の定義は
+[`04_operational-slo.md`](../04_operational-slo.md)を正とする。実装時の受入計画は
+[`archive/09_proposal-adoption-evaluation-plan.md`](../archive/09_proposal-adoption-evaluation-plan.md)に保管する。

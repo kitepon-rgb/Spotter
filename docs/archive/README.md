@@ -13,6 +13,11 @@
 
 Archived:
 
+- [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md): v1.5.4で撤回したv1.4.20〜v1.4.21の監査hard-gate設計
+- [`08_factory-diagnostics-plan.md`](08_factory-diagnostics-plan.md): v1.4.23で完了したfactory diagnostics実装計画
+- [`BUGHUB_RUNTIME_ERROR_STORE_PLAN.md`](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md): product-local runtime error storeの完了記録
+- [`09_proposal-adoption-evaluation-plan.md`](09_proposal-adoption-evaluation-plan.md): 評価storeと率の実装・受入計画
+- [`10_spotter-dashboard-plan.md`](10_spotter-dashboard-plan.md): device-routed dashboardの実装・公開計画
 - [`BUGHUB_RUNTIME_ERROR_ROLLOUT_FIX_PLAN.md`](BUGHUB_RUNTIME_ERROR_ROLLOUT_FIX_PLAN.md): completed v1.4.24 runtime state permission rollout fix
 - [`03_current-state-recovery-plan.md`](03_current-state-recovery-plan.md): completed recovery, release, and model-evaluation plan
 - [`05_parent-session-safety-plan.md`](05_parent-session-safety-plan.md): completed parent-session output-boundary implementation plan

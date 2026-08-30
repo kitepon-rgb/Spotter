@@ -1,7 +1,19 @@
 # Changelog
 
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
-現行runtime契約は[`docs/00_overview.md`](docs/00_overview.md)から辿る。
+現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
+
+## 1.6.3 — 2026-08-30
+
+- **文書の寿命と所有境界を製品内で完結させた。** 現行契約、進行中の仕事、履歴、証拠を
+  `docs/00_overview.md`で分離し、完了済み計画は`docs/archive/`へ移した。固定参照が残る
+  旧pathだけは履歴参照stubとして維持する。
+- **文書だけの変更も製品CIで検査する。** 全製品Markdownの相対link、現行・archive索引、
+  履歴stub、npm tarball内Markdownの相対link／image閉包を製品所有のgateで検査する。
+- **Windows nativeの製品CIをPowerShell 7へ統一した。** Git Bash依存を撤去し、3つの
+  Windows commandを`pwsh`で実行する。
+- npm tarballに同梱されない文書や画像へのREADME／CHANGELOG／dashboard運用文書の参照を、
+  製品repositoryの正規URLへ揃えた。runtime挙動と公開APIは変更しない。
 
 ## 1.6.2 — 2026-08-29
 
@@ -464,10 +476,10 @@ graceful shutdown ログなしの異常死 → 18:43–19:14 の 5 回 restart �
 - **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `startDaemon` が `assertNoLiveDaemon`
   (no-live 確認) 通過後・`server.listen(path)` 前に `removeStaleSocketFile(path)` を呼ぶ。liveness 確認後
   なので socket は確実に orphan であり安全に消せる。
-- **テスト 3 件追加 [test/transport.test.mjs](test/transport.test.mjs)**: (1) stale socket で `listen` が
+- **テスト 3 件追加 [test/transport.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/transport.test.mjs)**: (1) stale socket で `listen` が
   `EADDRINUSE` で落ちる挙動を実再現 → `removeStaleSocketFile` 後に fresh daemon が bind & round-trip 成功、
   (2) ENOENT は throw せず no-op、(3) Windows Named Pipe path は no-op (CI Windows matrix で実行)。
-- **追記 [docs/open-issues.md](docs/open-issues.md)**: 解決済みテーブルに本バグを記録 + P0「daemon 突然死」
+- **追記 [docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md)**: 解決済みテーブルに本バグを記録 + P0「daemon 突然死」
   節に回復経路修正の相互参照を追加。
 - **付随**: `package-lock.json` の version が 1.4.14 のまま drift していたのを 1.4.16 に同期。
 - `node --test` 348 / 346 pass / 0 fail / 2 skip 緑。
@@ -507,12 +519,12 @@ resurrect で確実に復活する」ことを保証する。これで auto-resu
 - **編集 [src/hooks/pre-tool-use.mjs](src/hooks/pre-tool-use.mjs)**: daemon/transport エラーで
   `die(exit 2 = ツール拒否)` をやめ、`status:"degraded"` 記録 + exit 0 (ツール許可)。記録は best-effort
   telemetry でありツールを止める理由にならない。
-- **更新 [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md)**: `UserPromptSubmit` /
+- **更新 [docs/02_spotter-claude-contract.md](https://github.com/kitepon/Spotter/blob/main/docs/02_spotter-claude-contract.md)**: `UserPromptSubmit` /
   `PreToolUse` / `Stop` の失敗時 exit-code 契約を新挙動に追従。
-- **追記 [docs/open-issues.md](docs/open-issues.md)**: auth-freeze バグの解決を記録。`Stop` 失敗が
+- **追記 [docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md)**: auth-freeze バグの解決を記録。`Stop` 失敗が
   セッション最終ターンだと deferred-delivery の性質上サイレントになる残課題を P2 に追記。
-- **テスト 11 件追加** ([test/hooks.test.mjs](test/hooks.test.mjs) /
-  [test/codex-cli-backend.test.mjs](test/codex-cli-backend.test.mjs)): auth 分類 / `formatSpotterWarning` /
+- **テスト 11 件追加** ([test/hooks.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/hooks.test.mjs) /
+  [test/codex-cli-backend.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/codex-cli-backend.test.mjs)): auth 分類 / `formatSpotterWarning` /
   UserPromptSubmit の loud degrade (auth/汎用/pending merge/resurrect 失敗/非 Error throw) / Stop degrade /
   PreToolUse degrade。`node --test` 344 pass / 1 skip 緑。
 
@@ -535,9 +547,9 @@ resurrect で確実に復活する」ことを保証する。これで auto-resu
 - **編集 [README.md](README.md) / [README.ja.md](README.ja.md)**:
   "Bell" を文脈に応じて `Claude` / `your primary Claude` / `the primary Claude` に置換、
   `(Bell)` 括弧書きは削除。日本語版の `主体 (Bell) に` は `主体に` に整形。
-- **編集 [.github/og.svg](.github/og.svg) と再生成された [.github/og.png](.github/og.png)**:
+- **編集 [.github/og.svg](https://raw.githubusercontent.com/kitepon/Spotter/main/.github/og.svg) と再生成された [.github/og.png](https://raw.githubusercontent.com/kitepon/Spotter/main/.github/og.png)**:
   OG banner の bullet text 2 件を Claude 表記に。`svgexport` で 1280×640 PNG を再レンダリング。
-- **編集 [.github/concept.svg](.github/concept.svg)**:
+- **編集 [.github/concept.svg](https://raw.githubusercontent.com/kitepon/Spotter/main/.github/concept.svg)**:
   内部 HTML コメント `Bell side` を `Primary Claude side` に。
 
 ### 検証
@@ -563,7 +575,7 @@ hook parity は自動的に維持される。
 - **編集 [src/hooks/lib.mjs](src/hooks/lib.mjs)**:
   `formatTransparentContext` / `formatTransparentBlockReason` から末尾の空行 +
   念押し行を削除。コメントを「header 自体が出典明示を担う」旨に書き換え。
-- **編集 [test/hooks.test.mjs](test/hooks.test.mjs)**:
+- **編集 [test/hooks.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/hooks.test.mjs)**:
   逐語アサート 2 件を本体に追従。
 
 ### 検証
@@ -649,9 +661,9 @@ silent retry することはない。codex-sidecar は `spotter codex *` の明�
 - **編集 [src/cli/auditor-cmd.mjs](src/cli/auditor-cmd.mjs)**:
   `parseJudgeArgs` の backend デフォルトを `'auto'` に変更 (旧: `SPOTTER_AUDITOR_BACKEND_POLICY`
   が無いと `'haiku'` 固定だった)。
-- **新規 [test/codex-cli-availability.test.mjs](test/codex-cli-availability.test.mjs)**:
+- **新規 [test/codex-cli-availability.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/codex-cli-availability.test.mjs)**:
   POSIX / Windows / 空 PATH / malformed PATH / `path.posix` vs `path.win32` の 7 件回帰ガード。
-- **編集 [test/auditor-backend.test.mjs](test/auditor-backend.test.mjs)**:
+- **編集 [test/auditor-backend.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/auditor-backend.test.mjs)**:
   旧 `policy_current_*` / `policy_next_*` テストを availability-based テスト
   (`claude_host_codex_cli_detected` / `claude_host_codex_cli_unavailable` / `codex_host`) に置換、
   legacy policy 値の受理 + selection 無効化テスト、`createAuditorBackend` の logger 出力テストを追加。
@@ -675,7 +687,7 @@ hook 機能を `hooks stable true` と表示するが、Spotter の `codex-hook 
   `codexHookDiagnostics` が現行 `hooks` と旧 `codex_hooks` の両方を enabled evidence として扱う。
   `installCodexHooks` は現行 CLI に合わせて `[features].hooks = true` を書く。既に旧
   `codex_hooks = true` がある環境では削除せず、`hooks = true` を追加して現行 CLI で確実に有効化する。
-- **編集 [test/codex-hook-cmd.test.mjs](test/codex-hook-cmd.test.mjs)**:
+- **編集 [test/codex-hook-cmd.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/codex-hook-cmd.test.mjs)**:
   現行 `hooks stable true` と旧 `codex_hooks stable true` の diagnostics 回帰テスト、
   旧 feature key が残る config への install 回帰テストを追加。
 - **編集 docs**:
@@ -790,15 +802,15 @@ v1.4.6 までは `SPOTTER_AUDITOR_BACKEND_POLICY=next` を Claude host で立て
   timeout / schema invalid / non-zero exit の場合、`createCodexCliAuditorBackend` が
   既存通り `AuditorBackendError` を投げ、daemon は Haiku に hidden fallback せず
   structured error として hook に伝搬する。
-- **編集 [test/auditor-backend.test.mjs](test/auditor-backend.test.mjs)**:
+- **編集 [test/auditor-backend.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/auditor-backend.test.mjs)**:
   Phase 1 用の "held for phase5" 固定を Phase 5 後の挙動 (Claude+`next` →
   `policy_next_claude_codex_cli`) に置き換え、`current` policy が両 host で Haiku を維持する
   test、Claude+`next` で `SPOTTER_AUDITOR_BACKEND=haiku` 明示が依然として Haiku を選ぶ
   互換 test、`createAuditorBackend` factory が `auto` + Claude + `next` で Codex CLI backend を
   返す factory-level test を追加。
-- **編集 [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md)** /
-  [docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md](docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md) /
-  [docs/open-issues.md](docs/open-issues.md):
+- **編集 [docs/02_spotter-claude-contract.md](https://github.com/kitepon/Spotter/blob/main/docs/02_spotter-claude-contract.md)** /
+  [docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md](https://github.com/kitepon/Spotter/blob/main/docs/archive/SPOTTER_PRIMARY_BACKEND_TODO.md) /
+  [docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md):
   Claude host の `current` / `next` policy 表と Phase 5 ゲート、Haiku compatibility が
   `current` policy または `SPOTTER_AUDITOR_BACKEND=haiku` 明示時のみであること、hidden
   fallback 不可を明記。
@@ -843,7 +855,7 @@ spawn される。
   `~/.spotter/tool-db.codex.json` を作るようにした。以降の Codex `SessionStart` bg refresh は
   drift 追従用として残す。Codex CLI が見つからなかった場合の next steps も、Codex hooks が
   active ではないことと `codex --version` が通る環境で再実行すべきことを明示する。
-- **編集 [test/install.test.mjs](test/install.test.mjs)**:
+- **編集 [test/install.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/install.test.mjs)**:
   Codex hooks 登録時に Claude / Codex の両 host DB refresh が順に走ること、Codex CLI
   unavailable 時は Codex seed へ進まないことを固定。
 - **編集 README / README.ja / docs**:
@@ -873,7 +885,7 @@ host-global DB も分離した。
 - **編集 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs) / [src/cli/doctor.mjs](src/cli/doctor.mjs)**:
   `spotter db refresh/rebuild --host-agent codex` と `spotter doctor` の表示・消去対象を
   host-global DB に追従。
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**:
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**:
   Claude global cache の同名 entry が Codex refresh に write-through されず、
   Codex 側では Codex global cache / investigate を使う回帰テストを追加。
 - **編集 README / README.ja / CLAUDE.md / docs**:
@@ -897,7 +909,7 @@ host-global DB も分離した。
 - **編集 [src/core/codex-cli-backend.mjs](src/core/codex-cli-backend.mjs)**:
   `SPOTTER_CODEX_CLI_MODEL` 未設定時も `--model gpt-5.4-mini` を渡すようにした。
   `SPOTTER_CODEX_CLI_REASONING_EFFORT` 未設定時の `model_reasoning_effort="low"` は維持。
-- **編集 [test/codex-cli-backend.test.mjs](test/codex-cli-backend.test.mjs)**:
+- **編集 [test/codex-cli-backend.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/codex-cli-backend.test.mjs)**:
   default args が `gpt-5.4-mini` を含むことと、明示的に `model: ""` を渡した場合だけ
   `--model` を省略できることを固定。
 - **編集 README / README.ja / CLAUDE.md / docs**: Codex CLI auditor child の既定を
@@ -928,7 +940,7 @@ host-global DB も分離した。
 ### 変更点
 
 - **編集 [src/cli/install.mjs](src/cli/install.mjs)**: 既存 Spotter hook を見つけた場合も `hook.command` を現在の `SPOTTER_BIN` に更新する。これにより `npm install -g claude-spotter` 後、各プロジェクトで `spotter install` を再実行すれば hook は global npm 版へ揃う
-- **編集 [test/install.test.mjs](test/install.test.mjs)**: 古い `/old/bin/spotter.mjs` hook が `spotter install` で現在の package path に差し替わる回帰テストを追加
+- **編集 [test/install.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/install.test.mjs)**: 古い `/old/bin/spotter.mjs` hook が `spotter install` で現在の package path に差し替わる回帰テストを追加
 
 ### ユーザー側で必要な手順
 
@@ -942,7 +954,7 @@ host-global DB も分離した。
 ### 変更点
 
 - **編集 [src/cli/install.mjs](src/cli/install.mjs)**: project install 時に Codex CLI (`codex --version`) を検出し、存在する場合は `installCodexHooks()` を呼んで `~/.codex/hooks.json` と `[features].codex_hooks = true` を更新する。Codex CLI が無い環境では明示メッセージを出して Codex hooks 登録だけを行わない
-- **編集 [test/install.test.mjs](test/install.test.mjs)**: `spotter install` が Codex CLI presence 時に Codex hooks を登録する回帰テストを追加。既存 refresh 系テストは実ユーザー `~/.codex` を触らないよう DI で固定
+- **編集 [test/install.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/install.test.mjs)**: `spotter install` が Codex CLI presence 時に Codex hooks を登録する回帰テストを追加。既存 refresh 系テストは実ユーザー `~/.codex` を触らないよう DI で固定
 - **編集 README / README.ja / postinstall / CLAUDE.md / open issues**: インストール手順を `npm install -g claude-spotter` → 各プロジェクトで `spotter install` に集約。`spotter codex-hook install` は修復 / 明示登録用 command として残す
 
 ### ユーザー側で必要な手順
@@ -993,7 +1005,7 @@ WSL2 の CPU 使用率が 100% に張り付き、何かがプロセスを「無�
 
 `sanitizeHaikuEnv` (v1.1.6) は `CLAUDE_CONFIG_DIR` を strip して Haiku をデフォルト `~/.claude/` で起動するが、**デフォルト config dir には User scope MCP (`~/.claude.json` 直下 `mcpServers`) と plugin MCP がフルで登録されている**。claude CLI 2.1.x は `--print` モード起動時に config dir 内の全 MCP server を eager に spawn するため、Haiku 1 回呼出ごとに数十個の `npm exec` 子プロセスが立つ。Haiku は `{name, description}` カタログ監査しかしない (= MCP server は不要) のに、起動コストとして user/project の MCP がフル load されていた構造的欠陥。
 
-加えて `daemon-702a677d-...log` で同 sessionId の `tool-db loaded` が 15 分間に 8 回記録 = sudden death + auto-resurrect が高頻度発生していた。WSL2 cgroup OOM kill が daemon プロセスごと巻き込んでいた可能性が高く、[docs/open-issues.md](docs/open-issues.md) P0 「daemon プロセスが shutdown ログなしに死ぬ」 (v0.13.2 から残置) の主因もこれと推定。
+加えて `daemon-702a677d-...log` で同 sessionId の `tool-db loaded` が 15 分間に 8 回記録 = sudden death + auto-resurrect が高頻度発生していた。WSL2 cgroup OOM kill が daemon プロセスごと巻き込んでいた可能性が高く、[docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) P0 「daemon プロセスが shutdown ログなしに死ぬ」 (v0.13.2 から残置) の主因もこれと推定。
 
 ### 変更点
 
@@ -1003,14 +1015,14 @@ WSL2 の CPU 使用率が 100% に張り付き、何かがプロセスを「無�
   - 新 named export `emptyMcpConfigPath()` (テストから参照)
   - `buildSpawnArgs({ ...args, mcpConfigPath })` のシグネチャを拡張、`mcpConfigPath` を必須化 (TypeError on missing/empty)、出力に `--strict-mcp-config --mcp-config <path>` を必ず含める。Windows `cmd.exe /c` 経路でも同様に
   - `createHaikuCaller` 内 `spawn` 直前で `mcpConfigPath: EMPTY_MCP_CONFIG_PATH` を渡す
-- **編集 [test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: 回帰ガード 5 件追加 + 既存 `buildSpawnArgs` 2 件を新シグネチャに追従
+- **編集 [test/haiku-caller.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/haiku-caller.test.mjs)**: 回帰ガード 5 件追加 + 既存 `buildSpawnArgs` 2 件を新シグネチャに追従
   - 新規: first call と resumed call の両方で `--strict-mcp-config` と `--mcp-config <path>` を含む
   - 新規: `mcpConfigPath` 欠落 / 空文字 / null で TypeError
   - 新規: `ensureWorkdir` で `empty-mcp.json` が `{"mcpServers":{}}` で書かれる
   - 新規: `ensureWorkdir` の idempotent 性 (3 連呼出で破綻しない)
 - **編集 [src/cli/install.mjs](src/cli/install.mjs)**: `HOOK_EVENTS` の Stop/UserPromptSubmit timeout を 15s/30s から **60s に統一**。v0.13.1 で daemon 側 Haiku timeout を 30s→45s に緩和したのに settings.json に書く Claude Code 本体側の hook timeout が旧値のままで、Chime 等の preamble が大きい (93 KB / 357 件) 環境で daemon が 24-32s かけて正常応答を返している最中に Claude Code 側 hook が timeout kill されて「チャット入力無反応」を誘発していた既存バグの hot-fix。`docs/open-issues.md` の P0「install.mjs の hook timeout が v0.13.1 緩和を反映していない」項目を closing
 - **package.json**: `1.2.6` → `1.3.0` (公開 API シグネチャ変更 = `buildSpawnArgs` の新引数を伴うため minor bump)
-- **編集 [docs/open-issues.md](docs/open-issues.md)**: 解決済みリストに 2 件追加、P0「daemon が shutdown ログなしに死ぬ」節に v1.3.0 で根因が大半解消した可能性を追記
+- **編集 [docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md)**: 解決済みリストに 2 件追加、P0「daemon が shutdown ログなしに死ぬ」節に v1.3.0 で根因が大半解消した可能性を追記
 
 ### なぜ `--strict-mcp-config --mcp-config <empty>` が正解か
 
@@ -1056,7 +1068,7 @@ claude CLI 2.1.126 は `--print` モードで stdin の最初の read attempt �
 ### 変更点
 
 - **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: 新規 `preparePromptFile(wirePrompt)` を named export として追加。`os.tmpdir()` 配下にユニーク tempfile (`spotter-prompt-<pid>-<uuid>.txt`) を作って prompt を書き込み、read-only fd と `close()` ハンドラ (fd close + unlink、両方 best-effort) を返す。`createHaikuCaller` 内 `callHaiku` の `spawn` を `stdio: ['pipe', 'pipe', 'pipe']` + `child.stdin.end(prompt)` から `stdio: [promptFile.fd, 'pipe', 'pipe']` に切替え (child.stdin が null になるので関連 noop listener も削除)。close / error / timeout の各 settle 経路で `promptFile.close()` を呼んでから resolve/reject する `settleAfterCleanup` ヘルパで cleanup を一元化、tempfile leak を防止
-- **編集 [test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: 回帰ガード 6 件追加 — (1) tempfile が書かれて読める (2) 100 KB (= pipe buffer 超え) でも全 byte 届く (3) `close()` で unlink される (4) `close()` 二重呼び出し可 (timeout-vs-close race の安全性) (5) 非 string 入力で `TypeError` (6) 並列呼び出しで tmpPath が衝突しない (UUID 保証)
+- **編集 [test/haiku-caller.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/haiku-caller.test.mjs)**: 回帰ガード 6 件追加 — (1) tempfile が書かれて読める (2) 100 KB (= pipe buffer 超え) でも全 byte 届く (3) `close()` で unlink される (4) `close()` 二重呼び出し可 (timeout-vs-close race の安全性) (5) 非 string 入力で `TypeError` (6) 並列呼び出しで tmpPath が衝突しない (UUID 保証)
 - **package.json**: `1.2.5` → `1.2.6`
 
 ### なぜ tempfile fd 方式が正解か
@@ -1081,7 +1093,7 @@ claude CLI 2.1.126 は `--print` モードで stdin の最初の read attempt �
 - **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)** (2 段階):
   1. `parseMcpListOutput` の name 区切りを `indexOf(':')` (コロン単体) から `indexOf(': ')` (コロン + スペース) に変更。サーバー名側に literal `": "` (コロン + スペース) は CLI 仕様上現れない (CLI が name と rest の間に固定でこのペアを置くため) ので、空白入り名前 (`claude.ai Google Drive`) もコロン入り名前 (`plugin:everything-claude-code:context7`) も両立する
   2. stdio エントリの `command` / `args` を CLI 出力行 (`<name>: <command> <args...> - <status>`) から直接抽出するよう変更。プラグイン MCP は `claude mcp list` には出るが `claude mcp get <name>` では `No MCP server found` で引けない仕様 (実測で確認) のため、CLI 行を唯一の権威ソースとして扱う必要がある。既存 `listMcpToolsOne` の `hasFullConfig` 分岐がそのまま生かされ、`claude mcp get` 経路を skip して直接 spawn するようになる。tokenisation は既存 `splitArgs` と同じ素朴 (whitespace 区切り、quote 非対応) を踏襲、空白入りパスの制約は変わらず
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 回帰テスト 3 件追加 + 既存 1 件の expectation 拡張 — プラグイン形式 stdio (`plugin:everything-claude-code:context7` を `npx ...` で登録、`command='npx'` / `args=['-y', '@upstash/context7-mcp@2.1.4']` を assert) / プラグイン形式 HTTP (`plugin:everything-claude-code:exa` を `(HTTP)` URL で登録) / 空白入り名前の継続パース (`claude.ai Google Drive` の sse 経路) / 既存 stdio エントリ (`caveat`) も command/args を返すことを assert
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: 回帰テスト 3 件追加 + 既存 1 件の expectation 拡張 — プラグイン形式 stdio (`plugin:everything-claude-code:context7` を `npx ...` で登録、`command='npx'` / `args=['-y', '@upstash/context7-mcp@2.1.4']` を assert) / プラグイン形式 HTTP (`plugin:everything-claude-code:exa` を `(HTTP)` URL で登録) / 空白入り名前の継続パース (`claude.ai Google Drive` の sse 経路) / 既存 stdio エントリ (`caveat`) も command/args を返すことを assert
 
 ### 背景
 
@@ -1091,15 +1103,15 @@ step 1 (name 区切り修正) でフルネームは取れるようになった�
 
 `indexOf(': ')` (コロン + スペース) は CLI が固定で挿入する 2 文字ペアであり、サーバー名内部にこのペアが現れることは構造的に無いので、name 内の任意の `:` (コロン単体) と ` ` (スペース単体) を許容しつつ name と rest を一意に切れる。
 
-[docs/open-issues.md](docs/open-issues.md) P1 「`claude mcp list` text パースの脆弱性」全体は依然として残る (CLI フォーマット変更耐性は本修正でも上がらない、`--json` 出力が来たら全面切り替えしたい) が、コロン入り名前 + プラグイン MCP の具体例はこの版で塞がる。
+[docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) P1 「`claude mcp list` text パースの脆弱性」全体は依然として残る (CLI フォーマット変更耐性は本修正でも上がらない、`--json` 出力が来たら全面切り替えしたい) が、コロン入り名前 + プラグイン MCP の具体例はこの版で塞がる。
 
 ## 1.2.4
 
-**v1.2.3 で `normalizeProjectPath` の挙動を変えた際に、対になる test の expectation 更新を漏らしたため macOS CI で fail していた hot-fix**。`normalizeProjectPath: separator / trailing slash / Windows case` ([test/tool-db.test.mjs:678](test/tool-db.test.mjs#L678)) は「backslash は常に forward slash になる」という旧仕様の expectation を残したまま v1.2.3 commit に取り込まれており、POSIX 上で `'C:\\Users\\u\\proj'` の入力に対して `'C:\\Users\\u\\proj'` (literal 保持) が返るのを `'C:/Users/u/proj'` で assert していた。Linux CI は v1.2.3 で緑化したが、v1.2.3 push 後の matrix 実行で macOS が同じ test で fail。
+**v1.2.3 で `normalizeProjectPath` の挙動を変えた際に、対になる test の expectation 更新を漏らしたため macOS CI で fail していた hot-fix**。`normalizeProjectPath: separator / trailing slash / Windows case` ([test/tool-db.test.mjs:678](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs#L678)) は「backslash は常に forward slash になる」という旧仕様の expectation を残したまま v1.2.3 commit に取り込まれており、POSIX 上で `'C:\\Users\\u\\proj'` の入力に対して `'C:\\Users\\u\\proj'` (literal 保持) が返るのを `'C:/Users/u/proj'` で assert していた。Linux CI は v1.2.3 で緑化したが、v1.2.3 push 後の matrix 実行で macOS が同じ test で fail。
 
 ### 変更点
 
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: `normalizeProjectPath: separator / trailing slash / Windows case` の POSIX 側 expectation を v1.2.3 で確定した「POSIX では backslash を literal に保つ」ルールに合わせ、`'C:\\Users\\u\\proj'` / `'C:/Users\\u/proj'` を変換せず返す挙動を assert。コメントで両 test (`normalizeProjectPath` 単体と `findLocalScopeServers: separator variant matches on Windows only`) の整合理由を明記
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: `normalizeProjectPath: separator / trailing slash / Windows case` の POSIX 側 expectation を v1.2.3 で確定した「POSIX では backslash を literal に保つ」ルールに合わせ、`'C:\\Users\\u\\proj'` / `'C:/Users\\u/proj'` を変換せず返す挙動を assert。コメントで両 test (`normalizeProjectPath` 単体と `findLocalScopeServers: separator variant matches on Windows only`) の整合理由を明記
 
 ソースは v1.2.3 から無変更、test 期待値だけの追従。
 
@@ -1128,7 +1140,7 @@ step 1 (name 区切り修正) でフルネームは取れるようになった�
 ### 変更点
 
 - **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `buildStdioSpawn` の Windows ブランチ条件を `/\.(cmd|bat)$/i` から「絶対 `.exe` パス以外は `cmd.exe /c` で包む」に拡張。`export` を追加してユニットテスト可能に
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 4 件追加 — POSIX パススルー / Windows 裸名の wrap (`claude-mermaid` で v1.2.1 の症状を直接再現) / Windows `.cmd`・`.bat` の wrap / Windows 絶対 `.exe` パスは un-wrap (空白入りパスでの cmd.exe quoting リスク回避)
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: 4 件追加 — POSIX パススルー / Windows 裸名の wrap (`claude-mermaid` で v1.2.1 の症状を直接再現) / Windows `.cmd`・`.bat` の wrap / Windows 絶対 `.exe` パスは un-wrap (空白入りパスでの cmd.exe quoting リスク回避)
 
 ### 背景
 
@@ -1167,7 +1179,7 @@ function buildStdioSpawn(command, args) {
 ### 変更点
 
 - **編集 [src/tool-db/mcp-config.mjs](src/tool-db/mcp-config.mjs)**: `readMcpServers` を 4 ソース merge に拡張 — `legacy < user < project < local` の優先順 (公式仕様 Local > Project > User と整合、legacy `~/.claude/.mcp.json` は最下位の互換扱い)。新規 export: `userClaudeJsonPath`、`legacyUserMcpConfigPath`、`normalizeProjectPath`、`extractUserScopeServers`、`findLocalScopeServers`。`readMcpServers` に `claudeJsonPath` / `legacyUserPath` の DI パラメータを追加 (テスト用、デフォルトは実 homedir)。冒頭コメントを公式仕様 ([https://code.claude.com/docs/en/mcp](https://code.claude.com/docs/en/mcp)) に揃えて書き直し、legacy ソースの位置付けを明記
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 13 件追加 — user/local 単独 / 4 段優先順位 / `~/.claude.json` 不在・malformed・キー欠損 / `extractUserScopeServers` の null 耐性 / `normalizeProjectPath` (separator・trailing slash・Windows case) / `findLocalScopeServers` (exact / 正規化マッチ / 非マッチ時の no-fuzzy / null 入力)
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: 13 件追加 — user/local 単独 / 4 段優先順位 / `~/.claude.json` 不在・malformed・キー欠損 / `extractUserScopeServers` の null 耐性 / `normalizeProjectPath` (separator・trailing slash・Windows case) / `findLocalScopeServers` (exact / 正規化マッチ / 非マッチ時の no-fuzzy / null 入力)
 
 ### 設計判断
 
@@ -1192,7 +1204,7 @@ function buildStdioSpawn(command, args) {
 - **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: tool-db 読み込みを `readLocal` に切り替え、コメントで設計意図を明記
 - **編集 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs)**: `spotter db list` も local DB 限定に変更 (daemon と表示の整合)
 - **編集 [src/index.mjs](src/index.mjs)**: 公開 export を `readMerged` → `readLocal` にリネーム (programmatic API の破壊変更 = minor bump)
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 回帰テスト 3 件追加 — (1) prune 挙動 (snapshot に無いツールは local から消える、global は append-only で残る)、(2) investigate 失敗時の保持 (toolNames に含まれている限り既存値を残す)、(3) `readLocal` 単独動作 (global DB の中身が leak しない)
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: 回帰テスト 3 件追加 — (1) prune 挙動 (snapshot に無いツールは local から消える、global は append-only で残る)、(2) investigate 失敗時の保持 (toolNames に含まれている限り既存値を残す)、(3) `readLocal` 単独動作 (global DB の中身が leak しない)
 
 ### 背景
 
@@ -1225,8 +1237,8 @@ global DB を廃止せず「他プロジェクト用キャッシュ」に格下�
 
 - **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: 純粋関数 `sanitizeHaikuEnv(baseEnv)` を named export として新設、`createHaikuCaller` の spawn env 構築時に `CLAUDE_CONFIG_DIR` を strip。haiku はデフォルト `~/.claude/` で起動する
 - **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `runHaikuJudgment` で `E_HAIKU_TIMEOUT` / `E_INTERNAL` (auth / spawn / exit != 0) 発生時も throw 前に `callHaiku.reset()` で session を rotate。haiku-caller は成功時のみ `isFirstCall=false` を倒す設計なので、失敗が続くと同じ UUID を `--session-id` で再送して claude CLI 側の "already in use" に化ける経路を塞ぐ
-- **編集 [test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `sanitizeHaikuEnv` の回帰テスト 2 件 (strip 動作 / absent 時 no-op + 原本非破壊)
-- **編集 [test/daemon.test.mjs](test/daemon.test.mjs)**: `runHaikuJudgment` が E_INTERNAL / E_HAIKU_TIMEOUT で reset() を呼ぶ回帰テスト 2 件
+- **編集 [test/haiku-caller.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/haiku-caller.test.mjs)**: `sanitizeHaikuEnv` の回帰テスト 2 件 (strip 動作 / absent 時 no-op + 原本非破壊)
+- **編集 [test/daemon.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/daemon.test.mjs)**: `runHaikuJudgment` が E_INTERNAL / E_HAIKU_TIMEOUT で reset() を呼ぶ回帰テスト 2 件
 
 ### 背景
 
@@ -1285,7 +1297,7 @@ SessionStart 毎の `spotter db refresh` で `listMcpServers` が 1 回、stdio 
 - **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `listMcpServers` / `getStdioConfig` が projectRoot を受け取っておきながら `execClaude(claude mcp list / mcp get)` に `cwd` を渡していなかったため、`.mcp.json` 読み込みと claude CLI の walk-up が別プロジェクトを見る可能性があった。`cwd: projectRoot` を付与し、`listMcpToolsOne` を通じて projectRoot を伝搬するシグネチャに変更。通常は `process.cwd() === projectRoot` で表面化しないが、API の意味論を実装に揃える
 - **編集 [src/tool-db/claude-ai-baseline.mjs](src/tool-db/claude-ai-baseline.mjs)**: flat な `listClaudeAiNames` / `getClaudeAiDescription` を削除、server 単位の `getClaudeAiBaselineByServer()` に再編。Gmail / Calendar / Drive を個別集合として保持し、呼び出し側で現実に存在するサーバーのみ注入できるようにした
 - **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `buildInvestigationSnapshot` で `listMcpServers` の結果に基づき baseline を filter。`claude mcp list` に `claude.ai Gmail` / `claude.ai Google Calendar` / `claude.ai Google Drive` が存在しない環境 (隔離 `CLAUDE_CONFIG_DIR`, claude.ai OAuth 未連携, 部分連携) では該当 baseline は投入されない。純粋関数 `filterClaudeAiBaseline` を named export として切り出しテスト可能にした
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: `filterClaudeAiBaseline` の回帰テスト 3 件追加 — 全 3 サーバー存在 / Gmail のみ存在 / 全不在
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: `filterClaudeAiBaseline` の回帰テスト 3 件追加 — 全 3 サーバー存在 / Gmail のみ存在 / 全不在
 
 ### 背景
 
@@ -1316,10 +1328,10 @@ v0.8.0 で claude.ai OAuth 系 MCP (Gmail / Calendar / Drive) を手書き basel
   - コマンド表の `spotter db refresh` コメント更新 (「組込み 遅延ツール」削除、v1.1.0 以降は通常不要な旨追記)、`spotter db rebuild` の挙動を local+global wipe に訂正
   - 設計ドキュメント節を 4 本立て (catalog-design / open-issues / CLAUDE.md §0 / spotter-plan 歴史記録) に再編
   - Haiku timeout 表記を v0.5.0 (30s) → v0.13.1 (45s) に訂正
-- **編集 [docs/01_catalog-design.md](docs/01_catalog-design.md)**:
+- **編集 [docs/01_catalog-design.md](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md)**:
   - 新節「収集タイミング (v1.1.0 以降)」追加 — install 同期 seed / SessionStart bg refresh / db refresh / db rebuild の 4 経路を整理
   - 歴史節に v1.1.x の「収集タイミング自動化」を追記
-- **編集 [docs/archive/spotter-plan.md](docs/archive/spotter-plan.md)**:
+- **編集 [docs/archive/spotter-plan.md](https://github.com/kitepon/Spotter/blob/main/docs/archive/spotter-plan.md)**:
   - 冒頭に「v0.1 時点の設計議事録」である旨のブリッジ追加、現行設計の真実源 (01_catalog-design.md / open-issues.md / CLAUDE.md) へのリンクを明示
 
 ## 1.1.2
@@ -1330,8 +1342,8 @@ v0.8.0 で claude.ai OAuth 系 MCP (Gmail / Calendar / Drive) を手書き basel
 
 - **編集 [src/cli/install.mjs](src/cli/install.mjs)**: `refresh` 呼び出しを try/catch で包み、throw 直前に stderr で復旧経路 (`spotter db refresh`) を露出。§0 の fallback 禁止は守りつつ、「hook 登録済み + tool-db なし」状態に陥ったユーザーに次の一手を示す診断メッセージを追加
 - **編集 [src/cli/install.mjs](src/cli/install.mjs)**: `runInstall` に `refreshFn` パラメータを追加 (default: 実 refresh)。テストから mock を注入できるようにした
-- **編集 [test/install.test.mjs](test/install.test.mjs)**: 新規 2 件追加 — (1) 2 回目 install でも refresh が呼ばれる回帰ガード (v1.1.1 fix の直接検証)、(2) refresh 失敗時に stderr に復旧ヒントが出ることを確認
-- **編集 [docs/open-issues.md](docs/open-issues.md)**: P2 に「tool-db.json の並列書き込み race condition」を追記 (install と SessionStart bg refresh が同時に走ると last-writer-wins、実害観測なしなので放置)
+- **編集 [test/install.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/install.test.mjs)**: 新規 2 件追加 — (1) 2 回目 install でも refresh が呼ばれる回帰ガード (v1.1.1 fix の直接検証)、(2) refresh 失敗時に stderr に復旧ヒントが出ることを確認
+- **編集 [docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md)**: P2 に「tool-db.json の並列書き込み race condition」を追記 (install と SessionStart bg refresh が同時に走ると last-writer-wins、実害観測なしなので放置)
 
 ### 設計判断
 
@@ -1358,7 +1370,7 @@ v1.0.0 以前は `spotter install` が hook 登録だけで tool-db を作らず
 - **編集 [src/cli/install.mjs](src/cli/install.mjs)**: settings.json 書き込み後に project-mode で `refresh({projectRoot})` を同期実行し tool-db を seed。失敗時は §0 準拠で throw (hook だけ登録されて DB が無い中途半端な状態を残さない)。`skipRefresh` オプションを新設 (既存テストが user 環境をスキャンしないように)。"next steps" メッセージから `spotter db refresh` の手動実行指示を削除
 - **編集 [src/hooks/session-start.mjs](src/hooks/session-start.mjs)**: daemon readiness 確立後に `spawnRefreshDetached({projectRoot})` を発火。hook 自体は即 return、refresh は detached child として bg 実行。**現セッションの daemon は起動時の tool-db で固定**のため反映は次セッション以降
 - **編集 [src/hooks/spawn-daemon.mjs](src/hooks/spawn-daemon.mjs)**: `spawnRefreshDetached` を追加 export。`node <spotterBin> db refresh` を `detached: true, stdio: 'ignore', unref()` で起動、hook を遅延させない
-- **テスト更新 [test/install.test.mjs](test/install.test.mjs)**: 全 6 件が `skipRefresh: true` を渡すよう更新
+- **テスト更新 [test/install.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/install.test.mjs)**: 全 6 件が `skipRefresh: true` を渡すよう更新
 
 ### 設計判断
 
@@ -1398,8 +1410,8 @@ Spotter の役割は「Bell にとって**言われないと思い出さない**
 - **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `buildInvestigationSnapshot` から deferred 経路を削除、スキル / サブエージェント経路を追加。MCP live fetch + `claude.ai` baseline (Gmail / Calendar / Drive) は維持
 - **編集 [src/cli/db-cmd.mjs](src/cli/db-cmd.mjs)**: `spotter db rebuild` が local DB に加えて **global DB も wipe** するように仕様変更。旧バージョンから上がってきたユーザーが古い deferred エントリを抱えたままにならないため
 - **編集 [src/index.mjs](src/index.mjs)**: `listSkillsAll` / `listActivePlugins` / `listAgentsAll` の export 追加
-- **リネーム [docs/catalog-design-deferred-mcp.md](docs/01_catalog-design.md) → [docs/01_catalog-design.md](docs/01_catalog-design.md)**: 大幅書き直し。対象範囲・分類軸・収集経路を v1.0.0 仕様で更新
-- **テスト更新 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: deferred baseline テスト 3 件削除、frontmatter テスト 3 件 + skill テスト 2 件 + agent テスト 2 件を追加。計 32 件全通過
+- **リネーム [docs/catalog-design-deferred-mcp.md](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md) → [docs/01_catalog-design.md](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md)**: 大幅書き直し。対象範囲・分類軸・収集経路を v1.0.0 仕様で更新
+- **テスト更新 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: deferred baseline テスト 3 件削除、frontmatter テスト 3 件 + skill テスト 2 件 + agent テスト 2 件を追加。計 32 件全通過
 
 ### 結果
 
@@ -1421,7 +1433,7 @@ preamble 初回送信サイズ推定 15-25K tokens (Haiku 4.5 の 200K コンテ
 ### 残課題
 
 - **初回 Haiku latency の観測**: 268 件 preamble で `duration_ms` が 45s timeout に接近しないか実運用で確認。超えるようなら再緩和か件数絞り込みを再検討
-- **baseline 自動追従機構**: `claude.ai` MCP baseline は手書きのまま。Claude 側で追加があっても検知できない。長期的には監視機構が必要 ([docs/open-issues.md](docs/open-issues.md) P1 継続)
+- **baseline 自動追従機構**: `claude.ai` MCP baseline は手書きのまま。Claude 側で追加があっても検知できない。長期的には監視機構が必要 ([docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) P1 継続)
 - **v0.13.0 新軸の過検出**: turn_end 軸 (ツール適用機会監査) の誤爆パターンは別問題、継続観測
 
 ## 0.13.3
@@ -1443,7 +1455,7 @@ preamble 初回送信サイズ推定 15-25K tokens (Haiku 4.5 の 200K コンテ
 
 ### 残課題
 
-- v0.13.0 新軸の**カタログ内過検出** (Read 乱発 / caveat 誤爆等) は別問題。[docs/open-issues.md](docs/open-issues.md) の P0 観測タスクとして継続
+- v0.13.0 新軸の**カタログ内過検出** (Read 乱発 / caveat 誤爆等) は別問題。[docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) の P0 観測タスクとして継続
 - few-shot 例の `current_time` は現 tool-db に無い名前。Haiku が cargo-cult するリスクを filter で潰したが、例そのものを実在ツールに差し替えるかは要検討 (ただし例の抽象性が失われる tradeoff あり)
 
 ## 0.13.2
@@ -1487,7 +1499,7 @@ preamble 初回送信サイズ推定 15-25K tokens (Haiku 4.5 の 200K コンテ
 
 ### 残課題
 
-Haiku 突然死 (shutdown ログなしで daemon 再起動する事象、v0.12.0 auto-resurrect で救われているが見えない欠落ターンが発生する) は未対処。[docs/open-issues.md](docs/open-issues.md) P0 に残置。
+Haiku 突然死 (shutdown ログなしで daemon 再起動する事象、v0.12.0 auto-resurrect で救われているが見えない欠落ターンが発生する) は未対処。[docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) P0 に残置。
 
 ## 0.13.0
 
@@ -1506,13 +1518,13 @@ Haiku 突然死 (shutdown ログなしで daemon 再起動する事象、v0.12.0
 
 - **編集 [src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `SHARED_HEADER` の stage=turn_end 説明を書き換え、few-shot を 4 件 (検証/登録/照会/pass) に拡張。`buildFinalStagePrompt` から `userInput` 引数を削除、`<user_input>` タグも削除
 - **編集 [src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `handleTurnEnd` の `buildFinalStagePrompt` 呼び出しから `userInput` 引数削除、`savedUserInput` 変数削除。`state.lastUserInput` は `no_user_input` pass 分岐用に保持継続 (コメントで意図明記)
-- **編集 [test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `buildFinalStagePrompt` の 3 テストから `userInput:` 引数削除、`<user_input>` タグ包含アサートを非包含アサートに反転
-- **編集 [test/daemon.test.mjs](test/daemon.test.mjs)**: turn_end の per-turn prompt に `<user_input>` タグも user 発言原文も含まれないことを確認するテストを 1 件追加
-- **編集 [CLAUDE.md](CLAUDE.md)**: Product Concept に「判定軸 (v0.13.0 で 2 軸化)」セクションを追加、user_input=要請充足チェック / turn_end=ツール適用機会の監査 を明記
+- **編集 [test/haiku-caller.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/haiku-caller.test.mjs)**: `buildFinalStagePrompt` の 3 テストから `userInput:` 引数削除、`<user_input>` タグ包含アサートを非包含アサートに反転
+- **編集 [test/daemon.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/daemon.test.mjs)**: turn_end の per-turn prompt に `<user_input>` タグも user 発言原文も含まれないことを確認するテストを 1 件追加
+- **編集 [CLAUDE.md](https://github.com/kitepon/Spotter/blob/main/CLAUDE.md)**: Product Concept に「判定軸 (v0.13.0 で 2 軸化)」セクションを追加、user_input=要請充足チェック / turn_end=ツール適用機会の監査 を明記
 
 ### 非互換
 
-- **判定挙動の意味論変更**: v0.12.x までの「user_input 要請に対応するツール」しか指摘しなかった Stop hook が、v0.13.0 からは user_input 非依存で「応答に対する適用機会」を指摘する。false positive / false negative の方向性も変わるため、過検出率 / pass 率の再計測が必要 ([docs/open-issues.md](docs/open-issues.md) P0 に観測タスクを追加)
+- **判定挙動の意味論変更**: v0.12.x までの「user_input 要請に対応するツール」しか指摘しなかった Stop hook が、v0.13.0 からは user_input 非依存で「応答に対する適用機会」を指摘する。false positive / false negative の方向性も変わるため、過検出率 / pass 率の再計測が必要 ([docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) P0 に観測タスクを追加)
 - **API 変更**: `buildFinalStagePrompt({ userInput, usedTools, finalResponse })` → `buildFinalStagePrompt({ usedTools, finalResponse })`。外部から直接呼ばれる API ではない (daemon 内部) ため影響範囲は Spotter 本体のみ
 
 ## 0.12.0
@@ -1535,7 +1547,7 @@ Haiku 突然死 (shutdown ログなしで daemon 再起動する事象、v0.12.0
 - **編集 [src/hooks/user-prompt.mjs](src/hooks/user-prompt.mjs)**: `sendRequest` が `E_UNREACHABLE` で失敗したら `spawnDaemonAndWaitReady` を呼んで retry (1 回のみ)
 - **削除 [src/hooks/ppid-probe.mjs]**: env dump 用の調査 hook、役目終了
 - **編集 `.claude/settings.json`**: probe hook 登録撤去（端末ローカル設定であり、repository 配布物には含めない）
-- **編集 [test/daemon.test.mjs](test/daemon.test.mjs)**: parent-watch test 2 件を削除、heartbeat timeout / heartbeat reset / heartbeatTimeoutMs validation の 3 件を追加
+- **編集 [test/daemon.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/daemon.test.mjs)**: parent-watch test 2 件を削除、heartbeat timeout / heartbeat reset / heartbeatTimeoutMs validation の 3 件を追加
 
 ### 非互換
 
@@ -1577,7 +1589,7 @@ Haiku 突然死 (shutdown ログなしで daemon 再起動する事象、v0.12.0
 - **編集 [src/tool-db/mcp-config.mjs](src/tool-db/mcp-config.mjs)**: `readMcpServers({projectRoot})` シグネチャへ変更。`projectRoot` が渡されれば user scope に project scope を merge して返す。missing file は空として扱う
 - **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `listMcpServers` / `listMcpToolsAll` が `projectRoot` を受け取って伝搬
 - **編集 [src/tool-db/refresh.mjs](src/tool-db/refresh.mjs)**: `buildInvestigationSnapshot` / `refresh` が `projectRoot` を伝搬 (CLI からは既に渡されている、経路が繋がった)
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: project-scope override + missing-file fallback の 2 ケース追加 (total 99 tests)
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: project-scope override + missing-file fallback の 2 ケース追加 (total 99 tests)
 
 ### 非互換
 
@@ -1601,7 +1613,7 @@ v0.8.0 の `spotter db refresh` 実測で x-api (HTTP MCP) が 401 Unauthorized 
 - **新規 [src/tool-db/mcp-config.mjs](src/tool-db/mcp-config.mjs)**: `~/.claude/.mcp.json` をパース、`describeServer()` で `{command, args, env}` (stdio) または `{url, headers}` (http/sse) のディスクリプタに正規化
 - **編集 [src/tool-db/investigate-mcp.mjs](src/tool-db/investigate-mcp.mjs)**: `listMcpServers` を `claude mcp list` + `.mcp.json` の併用へ。CLI で得た name ごとに `.mcp.json` のエントリを優先使用し、なければ CLI 情報にフォールバック。`spawnAndQuery` が `env` を受け取って `{...process.env, ...env}` で spawn 時に merge
 - **編集 [src/tool-db/investigate-mcp-http.mjs](src/tool-db/investigate-mcp-http.mjs)**: `listToolsHttp` が `headers` パラメータを受け取って fetch の HTTP headers に merge
-- **編集 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: `describeServer` の unit test 5 件追加 (stdio + env、stdio 最小、http + headers、sse 判別、未知エントリ)
+- **編集 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: `describeServer` の unit test 5 件追加 (stdio + env、stdio 最小、http + headers、sse 判別、未知エントリ)
 
 ### 実測
 
@@ -1657,7 +1669,7 @@ v0.7.0 リリース直後、新規セッションで `spotter db refresh` を打
 
 Haiku が「Bell が呼び忘れているツール」を判定するには、Bell が今のセッションで実際に呼べるツールを知っている必要がある。v0.6.x までのカタログは `current_time` / `web_search` / `read_file` のような **抽象的な汎用ツール 5 件** を手書きしていただけで、Caveat や Gmail のような MCP ツール、TodoWrite や WebSearch のような Claude Code 組込みの遅延ツールは Haiku の視野に入っていなかった。結果、ユーザーが「過去に解決したナレッジを残したい」と言っても Spotter は Caveat を推奨できないという的外れな状態だった。
 
-設計思想は現行の [docs/01_catalog-design.md](docs/01_catalog-design.md) に引き継ぎ。要点:
+設計思想は現行の [docs/01_catalog-design.md](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md) に引き継ぎ。要点:
 
 - **Haiku に渡すのは name + description のペアだけ**。schema は不要 — どう呼ぶかは Bell が ToolSearch で解決する責任 (役割分業)
 - **MCP ツールの description は MCP サーバーから直接取得**。Spotter は中継者に徹し、手書きで言い換えない (single source of truth = MCP server)
@@ -1680,7 +1692,7 @@ Haiku が「Bell が呼び忘れているツール」を判定するには、Bel
 - **編集 [src/cli/doctor.mjs](src/cli/doctor.mjs)**: catalog チェック → tool-db (global + local) のチェック
 - **編集 [bin/spotter.mjs](bin/spotter.mjs)**: `spotter catalog edit/lint` を `spotter db list/refresh/rebuild` に置換
 - **削除**: `src/catalog/`, `src/cli/catalog.mjs`, `templates/tools.yaml`, `test/catalog.test.mjs`, `test/loader.test.mjs`
-- **新規 [test/tool-db.test.mjs](test/tool-db.test.mjs)**: 21 件 (loader/lookup/investigate-mcp/deferred-baseline)
+- **新規 [test/tool-db.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/tool-db.test.mjs)**: 21 件 (loader/lookup/investigate-mcp/deferred-baseline)
 
 ### Breaking
 
@@ -1710,7 +1722,7 @@ Haiku が「Bell が呼び忘れているツール」を判定するには、Bel
 - **[src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `startDaemon({ parentPid, parentWatchIntervalMs })` を追加。`parentPid` が指定されると 5 秒間隔 (default) で `process.kill(parentPid, 0)` を ping し、ESRCH を検知したら自身を shutdown。`parentWatchIntervalMs` はテスト用に短縮可能。`parentPid !== null && (!Number.isInteger || <= 0)` は TypeError で reject。
 - **[src/cli/daemon-cmd.mjs](src/cli/daemon-cmd.mjs)**: `--parent-pid <N>` 引数をパースして `startDaemon` に渡す。
 - **[src/hooks/session-start.mjs](src/hooks/session-start.mjs)**: daemon spawn 時に `--parent-pid <process.ppid>` を付与。`process.ppid` は SessionStart hook から見た親 = Claude Code 本体。
-- **[test/daemon.test.mjs](test/daemon.test.mjs)**: 子プロセスを fake parent として spawn → daemon 起動 → 子を SIGKILL → daemon の `server.on('close')` が発火することを検証する E2E テストを追加。`parentPid: 0` / `1.5` が TypeError になることのバリデーションテストも追加。
+- **[test/daemon.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/daemon.test.mjs)**: 子プロセスを fake parent として spawn → daemon 起動 → 子を SIGKILL → daemon の `server.on('close')` が発火することを検証する E2E テストを追加。`parentPid: 0` / `1.5` が TypeError になることのバリデーションテストも追加。
 
 ### 効果
 
@@ -1744,8 +1756,8 @@ v0.5.2 で可視化した duration_ms を数ターン観測したところ、`mo
 
 - **[src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `buildPreamble({ catalog })` を新設。`SHARED_HEADER` に `stage=user_input` / `stage=turn_end` 両方の判定指示と few-shot を集約し、カタログと一緒に初回 1 回だけ送る。`buildFirstStagePrompt` / `buildFinalStagePrompt` はカタログと role を剥がして per-turn payload (stage マーカー + 入力タグ) のみに縮小。`createHaikuCaller({ preamble, ... })` が optional preamble を受け取り、`isFirstCall === true` のときだけ prompt に prepend する。`reset()` は `isFirstCall = true` を復元するので role collapse 回復時は新 session に preamble が再送される。
 - **[src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: startup で `buildPreamble({ catalog })` を 1 回作って `createHaikuCaller` に渡す。`handleUserInput` / `handleTurnEnd` の呼び出し側はカタログを渡さないシンプルな形に戻る (カタログは daemon 内部でのみ保持、preamble に封じ込む)。
-- **[test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `buildPreamble` が role+schema+catalog+few-shot を全て含むこと、per-turn 側のプロンプトが catalog/role を含まないこと、non-string な preamble が TypeError になることを検証。
-- **[test/daemon.test.mjs](test/daemon.test.mjs)**: 既存の「every Haiku invocation receives the full catalog prompt」テストを **逆の主張 (per-turn prompt は catalog を含まない)** に置き換え。
+- **[test/haiku-caller.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/haiku-caller.test.mjs)**: `buildPreamble` が role+schema+catalog+few-shot を全て含むこと、per-turn 側のプロンプトが catalog/role を含まないこと、non-string な preamble が TypeError になることを検証。
+- **[test/daemon.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/daemon.test.mjs)**: 既存の「every Haiku invocation receives the full catalog prompt」テストを **逆の主張 (per-turn prompt は catalog を含まない)** に置き換え。
 
 ### 期待される効果
 
@@ -1769,8 +1781,8 @@ v0.5.1 の hot-fix で session-scoped Haiku がようやく生きた状態で動
 
 - **[src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: `createHaikuCaller` の返り値に `isFirstCall` getter を追加。daemon 側が「次の呼び出しが初回かどうか」をスナップショットできる。
 - **[src/daemon/daemon.mjs](src/daemon/daemon.mjs)**: `callHaikuTracked` が raw 文字列に加えて `{ durationMs, mode }` を返す構造に変更。`runHaikuJudgment` / `handleUserInput` / `handleTurnEnd` の戻り値構造も合わせて `{ parsed, meta }` に統一。ログ出力に `mode=first|resumed, duration_ms=<N>` を追加。role collapse 回復パスも meta を引き継ぐため silent-pass ログにも duration が残る。
-- **[test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `isFirstCall` の初期値と `reset()` 後の挙動を検証するテストを追加。
-- **[test/daemon.test.mjs](test/daemon.test.mjs)**: `user_input` / `turn_end` のログ行に `mode=first` / `mode=resumed` と `duration_ms=<N>` が含まれることを検証するテストを 2 件追加。
+- **[test/haiku-caller.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/haiku-caller.test.mjs)**: `isFirstCall` の初期値と `reset()` 後の挙動を検証するテストを追加。
+- **[test/daemon.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/daemon.test.mjs)**: `user_input` / `turn_end` のログ行に `mode=first` / `mode=resumed` と `duration_ms=<N>` が含まれることを検証するテストを 2 件追加。
 
 ### 観測できるようになったこと
 
@@ -1797,7 +1809,7 @@ v0.5.0 リリース直後の実セッションで、Stop hook の Haiku 判定�
 ### 変更点
 
 - **[src/daemon/haiku-caller.mjs](src/daemon/haiku-caller.mjs)**: resume 時は `--session-id` を外して `--resume <uuid>` のみを渡す形に修正。初回は従来どおり `--session-id <uuid>` で新規セッション確立。
-- **[test/haiku-caller.test.mjs](test/haiku-caller.test.mjs)**: `buildSpawnArgs: subsequent call` のアサーションを「`--session-id` が含まれない / `--resume <uuid>` が正しく渡る」に書き換え。
+- **[test/haiku-caller.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/haiku-caller.test.mjs)**: `buildSpawnArgs: subsequent call` のアサーションを「`--session-id` が含まれない / `--resume <uuid>` が正しく渡る」に書き換え。
 
 ### 残る既知課題
 
@@ -1876,7 +1888,7 @@ v0.4.0 以降「再度 session-scoped を提案しないこと」を絶対制約
 
 - **[src/hooks/transcript-reader.mjs](src/hooks/transcript-reader.mjs) 新設**: transcript JSONL の末尾から assistant の text ブロックだけを抽出する `getLastAssistantText()`。Throughline (MIT, 同作者) から必要最小限を移植。**thinking ブロック / tool_use ブロックは除外**されるので、ユーザーに見えた最終応答テキストだけが Haiku に渡る。
 - **[src/hooks/stop.mjs](src/hooks/stop.mjs) 書き換え**: `input.final_response` (存在しないフィールド) を廃止、`input.transcript_path` (§0 に従い `requireString` で必須化) から `getLastAssistantText()` 経由で最終応答を取得。
-- **[test/transcript-reader.test.mjs](test/transcript-reader.test.mjs) 追加**: 8 ケース。thinking 除外、tool_use スキップ、複数 text ブロックの連結、欠損ファイル、partial JSONL 末尾 (書き込み途中) への耐性等。
+- **[test/transcript-reader.test.mjs](https://github.com/kitepon/Spotter/blob/main/test/transcript-reader.test.mjs) 追加**: 8 ケース。thinking 除外、tool_use スキップ、複数 text ブロックの連結、欠損ファイル、partial JSONL 末尾 (書き込み途中) への耐性等。
 
 ### 効果
 
@@ -2109,4 +2121,4 @@ Initial release.
 
 ### Design
 
-All non-negotiable design decisions — including transparency vs invisibility, JSON I/O, socket abstraction, message envelope, SessionStart readiness — are documented in [docs/archive/spotter-plan.md](docs/archive/spotter-plan.md).
+All non-negotiable design decisions — including transparency vs invisibility, JSON I/O, socket abstraction, message envelope, SessionStart readiness — are documented in [docs/archive/spotter-plan.md](https://github.com/kitepon/Spotter/blob/main/docs/archive/spotter-plan.md).

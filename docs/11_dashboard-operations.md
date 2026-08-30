@@ -1,8 +1,5 @@
 # Spotter評価dashboard運用
 
-現行npm配布版: **v1.6.2**（2026-08-29）。v1.5.13はOS依存・ベンダー依存の内部配置だけを
-変更した挙動同一リファクタで、評価・dashboardのrouting構成は変更していない。
-
 この文書はservice設定の正本であり、各端末に現在installされているnpm versionの台帳ではない。
 端末versionは対象端末で`spotter --version`を実行して確認する。
 
@@ -131,7 +128,7 @@ Invoke-RestMethod http://127.0.0.1:53944/_spotter/health
 ```
 
 v1.5.11のFOX Windows native実測は
-[`evidence/dashboard-windows-hidden-v1.5.11.md`](evidence/dashboard-windows-hidden-v1.5.11.md)に記録する。
+[`evidence/dashboard-windows-hidden-v1.5.11.md`](https://github.com/kitepon/Spotter/blob/main/docs/evidence/dashboard-windows-hidden-v1.5.11.md)に記録する。
 
 ## 公開経路
 

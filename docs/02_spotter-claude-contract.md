@@ -3,8 +3,8 @@
 この文書はPhase 1aのcontract captureを起点に更新している、Claude-first / Codex adapter共通の
 現行実装checklistである。
 
-v1.5.8文書監査で`bin/spotter.mjs`、`src/cli/`、`src/hooks/`、`src/daemon/`、
-`src/core/`、対応testと照合済み。実挙動の権威はそれらの実装である。
+実挙動の権威は`bin/spotter.mjs`、`src/cli/`、`src/hooks/`、`src/daemon/`、
+`src/core/`と対応testである。
 
 正本は `AGENTS.md`。`CLAUDE.md`は`@AGENTS.md`だけを読むimport入口。ここは実装時に参照する
 checklist と test 対応表。
@@ -324,6 +324,25 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
 - `spotter diagnostics runtime-errors` is the read-only allow-listed snapshot. `diagnostics logs` and
   `diagnostics factory` expose only bounded collection/store status and counts. Cursor acknowledgement
   is monotonic; resolve/reopen advance sequence; compaction preserves all unacknowledged records.
+
+## Evaluation Contract
+
+Evaluation is a product-owned, host-local SQLite projection. It performs no network transfer and has no
+background collector, retry queue, or reconciliation service. A successful UserPromptSubmit creates the
+observation; the same parent turn's canonical tool IDs close its item results. A missing Stop is closed at
+the next prompt from the usage evidence already collected, while `usage_status=incomplete` remains
+`outcome_missing` and is excluded from the fit-rate denominator.
+
+The stable readings are:
+
+- proposal rate: turns with one or more projected tool IDs divided by valid UserPromptSubmit judgments;
+- proposal fit rate (upper bound): used proposed items divided by proposed items whose usage result is known.
+
+The second value does not prove Spotter caused the use. An unused item is `not_adopted`, not a semantic
+judgment that the proposal was wrong. Throughline context, when available, is stored separately as bounded
+improvement evidence and never becomes auditor input. The operational interpretation and SLO are
+[`04_operational-slo.md`](04_operational-slo.md); the immutable storage decision is
+[`adr/0001-proposal-adoption-evaluation-implementation.md`](adr/0001-proposal-adoption-evaluation-implementation.md).
 
 ## Primary Backend Vs Second-Pass Workflow
 

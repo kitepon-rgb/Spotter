@@ -1,11 +1,11 @@
 <p align="center">
-  <img src=".github/og.png" alt="Spotter — Audit agent for Claude Code" width="100%">
+  <img src="https://raw.githubusercontent.com/kitepon/Spotter/main/.github/og.png" alt="Spotter — Audit agent for Claude Code" width="100%">
 </p>
 
 # Spotter
 
 [![npm version](https://img.shields.io/npm/v/claude-spotter.svg?style=flat-square)](https://www.npmjs.com/package/claude-spotter)
-[![CI](https://github.com/kitepon-rgb/Spotter/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/Spotter/actions/workflows/ci.yml)
+[![CI](https://github.com/kitepon/Spotter/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon/Spotter/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/node/v/claude-spotter.svg?style=flat-square)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
@@ -21,7 +21,7 @@
 本repositoryはSpotter製品面の全体、すなわち監査挙動、Claude/Codex hook adapter、
 project marker、catalog discoveryとhost-local tool DB、評価store、dashboard server、
 diagnostics、installer、release packagingを所有します。
-[dotagents](https://github.com/kitepon-rgb/dotagents)が所有するのは共有agent指示と、
+[dotagents](https://github.com/kitepon/dotagents)が所有するのは共有agent指示と、
 Spotterの端末内runtime-error集計を有効化する任意のfactory-reporter設定です。
 Spotterのcatalogやhost統合はdotagentsの責務ではありません。MarkItDownは別区分の第三者CLIです。
 
@@ -30,7 +30,7 @@ Claude には「使えるツールがあるのに、使うべきタイミング�
 Spotter はユーザー追加ツールのhost-local catalogを把握した別の監査エージェントで、ユーザー入力と主役 AI の応答を並走監査します。host標準ツールは提案候補に入れず、追加ツールと比較する先行基準としてだけ判断します。自動選択では Claude host は Codex CLI があればそれを、なければ session-scoped Haiku を選び、Codex host は Codex CLI を既定にします。明示 backend override は host より優先しますが、runtime failure で別 backend へ黙って切り替えません。応答前は検証済みtool IDだけを固定・非命令形の助言へ変換でき、応答後のfindingは構造eventに留めて後続turnへ注入しません。監査用AIの自由文が親セッションへ入ることはありません。**主役 AI が自覚して自己監査する**設計は本プロダクトの存在意義を破壊するため、hook 経由でその意思と独立に検出します。
 
 <p align="center">
-  <img src=".github/concept.svg" alt="Claude が答え、Spotter が見ている" width="80%">
+  <img src="https://raw.githubusercontent.com/kitepon/Spotter/main/.github/concept.svg" alt="Claude が答え、Spotter が見ている" width="80%">
 </p>
 
 <p align="center">
@@ -104,9 +104,9 @@ spotter codex-hook install
 ## アーキテクチャ
 
 実際の挙動の権威はコードです。保守対象の現行契約は
-[`docs/00_overview.md`](docs/00_overview.md)、
-[`docs/01_catalog-design.md`](docs/01_catalog-design.md)、
-[`docs/02_spotter-claude-contract.md`](docs/02_spotter-claude-contract.md)です。
+[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)、
+[`docs/01_catalog-design.md`](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md)、
+[`docs/02_spotter-claude-contract.md`](https://github.com/kitepon/Spotter/blob/main/docs/02_spotter-claude-contract.md)です。
 `CHANGELOG.md`、`docs/archive/`、`docs/evidence/`、日付付き`rag/`は時点記録であり、
 現行runtime契約として読んではいけません。
 
@@ -159,7 +159,7 @@ flowchart LR
 
 ## Throughline との関係
 
-[Throughline](https://github.com/kitepon-rgb/Throughline) と Spotter は同じ作者が作った、**哲学を共有する別プロダクト**です。
+[Throughline](https://github.com/kitepon/Throughline) と Spotter は同じ作者が作った、**哲学を共有する別プロダクト**です。
 
 |  | Throughline | Spotter |
 |---|---|---|
@@ -259,7 +259,7 @@ health確認は端末一覧request時だけなので、端末がofflineでもbac
 retry queueを作らず、その端末だけを切り離せる。
 
 4端末のservice、reverse tunnel、Caddy/Cloudflare構成は
-[docs/11_dashboard-operations.md](docs/11_dashboard-operations.md)を参照。
+[docs/11_dashboard-operations.md](https://github.com/kitepon/Spotter/blob/main/docs/11_dashboard-operations.md)を参照。
 Windows同梱のTask Scheduler installerはnpm・SSH用の対話ユーザープロファイルを維持しつつ、
 dashboardの2つのPowerShell actionを非対話・console非表示で起動する。
 
@@ -304,11 +304,11 @@ profile から production へ自動昇格しません。`latest` alias や
 
 ## 設計ドキュメント
 
-- **現行設計 (カタログ / 収集経路 / 分類軸)**: [docs/01_catalog-design.md](docs/01_catalog-design.md) — v1.0.0 以降の真実源
-- **現時点で塞がっていない穴 + 実測未検証の懸念**: [docs/open-issues.md](docs/open-issues.md) — 新規作業に入る前に必読
-- **Runtime contract**: [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku 契約と Codex native hook policy
-- **実装規範と不変条件 (§0)**: [AGENTS.md](AGENTS.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止（`CLAUDE.md`はimport入口のみ）
-- **Archive**: [docs/archive/](docs/archive/) — 完了済み Codex rollout 計画、primary backend smoke log、v0.1 設計議事録
+- **現行設計 (カタログ / 収集経路 / 分類軸)**: [docs/01_catalog-design.md](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md) — v1.0.0 以降の真実源
+- **現時点で塞がっていない穴 + 実測未検証の懸念**: [docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) — 新規作業に入る前に必読
+- **Runtime contract**: [docs/02_spotter-claude-contract.md](https://github.com/kitepon/Spotter/blob/main/docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku 契約と Codex native hook policy
+- **実装規範と不変条件 (§0)**: [AGENTS.md](https://github.com/kitepon/Spotter/blob/main/AGENTS.md) — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止（`CLAUDE.md`はimport入口のみ）
+- **Archive**: [docs/archive/](https://github.com/kitepon/Spotter/tree/main/docs/archive) — 完了済み Codex rollout 計画、primary backend smoke log、v0.1 設計議事録
 
 ## 既知の制約
 
@@ -327,7 +327,7 @@ profile から production へ自動昇格しません。`latest` alias や
 - **手放しでカタログ維持** — `spotter install` が Claude DB を自動 seed、Claude / Codex それぞれの SessionStart が host-local DB を bg refresh する。手書き管理は一切不要
 - **Codex native hooks** — Codex host は primary auditor backend として Codex CLI を使い、`.spotter/tool-db.codex.json` を Claude DB と分離し、backend failure は Haiku fallback ではなく明示 error として扱う
 - **監査対象** — ユーザー追加分 (MCP / スキル / サブエージェント) のみ。Claude Code 本体側のツールは意図的に対象外 (Claude は元から自発率が高いため)
-- **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([AGENTS.md §0](AGENTS.md))
+- **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([AGENTS.md §0](https://github.com/kitepon/Spotter/blob/main/AGENTS.md))
 
 リリース履歴の全文は [CHANGELOG](CHANGELOG.md) を参照。
 

@@ -1,11 +1,11 @@
 <p align="center">
-  <img src=".github/og.png" alt="Spotter — Audit agent for Claude Code" width="100%">
+  <img src="https://raw.githubusercontent.com/kitepon/Spotter/main/.github/og.png" alt="Spotter — Audit agent for Claude Code" width="100%">
 </p>
 
 # Spotter
 
 [![npm version](https://img.shields.io/npm/v/claude-spotter.svg?style=flat-square)](https://www.npmjs.com/package/claude-spotter)
-[![CI](https://github.com/kitepon-rgb/Spotter/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/Spotter/actions/workflows/ci.yml)
+[![CI](https://github.com/kitepon/Spotter/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon/Spotter/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/node/v/claude-spotter.svg?style=flat-square)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
@@ -20,7 +20,7 @@ Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https:/
 This repository owns the complete Spotter product surface: auditor behavior,
 Claude/Codex hook adapters, project markers, catalog discovery and host-local
 tool databases, evaluation storage, dashboard servers, diagnostics, installers,
-and release packaging. [dotagents](https://github.com/kitepon-rgb/dotagents)
+and release packaging. [dotagents](https://github.com/kitepon/dotagents)
 owns shared agent instructions and the optional factory-reporter configuration
 that enables Spotter's local runtime-error aggregate; it does not own Spotter's
 catalog or host integration. MarkItDown is a separate third-party CLI.
@@ -30,7 +30,7 @@ Claude has a structural blind spot: **it can't reach for a tool it doesn't reali
 Spotter runs a separate auditor with the host-local catalog of user-added tools and checks both the user's prompt and the primary agent's reply. Host built-ins are not proposal candidates; the auditor considers them first only as the comparison baseline. Automatic selection uses Codex CLI on a Claude host when available, otherwise the session-scoped Haiku path; on a Codex host it defaults to Codex CLI. An explicit backend override takes precedence, but a runtime failure never silently switches backend. Before the primary reply, validated tool IDs may become fixed, non-directive advice; after the reply, findings remain structured events and are not injected into a later turn. Auditor prose never enters the parent session. **The primary agent is never asked to self-audit** — that would defeat the premise. Detection happens through hooks, independent of the primary agent's intent.
 
 <p align="center">
-  <img src=".github/concept.svg" alt="Claude answers · Spotter watches" width="80%">
+  <img src="https://raw.githubusercontent.com/kitepon/Spotter/main/.github/concept.svg" alt="Claude answers · Spotter watches" width="80%">
 </p>
 
 <p align="center">
@@ -105,9 +105,9 @@ spotter codex-hook install
 ## Architecture
 
 The code is the behavioral authority. The maintained contract documents are
-[`docs/00_overview.md`](docs/00_overview.md),
-[`docs/01_catalog-design.md`](docs/01_catalog-design.md), and
-[`docs/02_spotter-claude-contract.md`](docs/02_spotter-claude-contract.md).
+[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md),
+[`docs/01_catalog-design.md`](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md), and
+[`docs/02_spotter-claude-contract.md`](https://github.com/kitepon/Spotter/blob/main/docs/02_spotter-claude-contract.md).
 `CHANGELOG.md`, `docs/archive/`, `docs/evidence/`, and dated `rag/` entries are
 point-in-time records and must not be used as the current runtime contract.
 
@@ -160,7 +160,7 @@ The audited catalog is host-local: Claude uses `<project>/.spotter/tool-db.json`
 
 ## Spotter and Throughline
 
-[Throughline](https://github.com/kitepon-rgb/Throughline) is a sibling project from the same author. Different mechanism, **shared philosophy**.
+[Throughline](https://github.com/kitepon/Throughline) is a sibling project from the same author. Different mechanism, **shared philosophy**.
 
 |  | Throughline | Spotter |
 |---|---|---|
@@ -269,7 +269,7 @@ when the device list is requested, so an offline terminal is isolated without a 
 or retry queue.
 
 The reference four-terminal service, reverse-tunnel, and Caddy/Cloudflare layout is documented in
-[docs/11_dashboard-operations.md](docs/11_dashboard-operations.md).
+[docs/11_dashboard-operations.md](https://github.com/kitepon/Spotter/blob/main/docs/11_dashboard-operations.md).
 On Windows, the bundled Task Scheduler installer keeps the interactive user's profile for npm and
 SSH while starting both dashboard PowerShell actions non-interactively with hidden console windows.
 
@@ -330,11 +330,11 @@ the production values for controlled experiments; diagnostics mark overrides as 
 
 ## Design docs
 
-- **Current design** (catalog, discovery, classification axes): [docs/01_catalog-design.md](docs/01_catalog-design.md) — source of truth from v1.0.0
-- **Open issues + unverified concerns**: [docs/open-issues.md](docs/open-issues.md) — read this before starting new work
-- **Runtime contract**: [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku contract plus Codex native hook policy
-- **Implementation invariants (§0)**: [AGENTS.md](AGENTS.md) — no fallbacks, no silent failures, no provisional code (`CLAUDE.md` is only its import entry)
-- **Archived plans and history**: [docs/archive/](docs/archive/) — completed Codex rollout plans, primary backend smoke logs, and the frozen v0.1 design discussion
+- **Current design** (catalog, discovery, classification axes): [docs/01_catalog-design.md](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md) — source of truth from v1.0.0
+- **Open issues + unverified concerns**: [docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) — read this before starting new work
+- **Runtime contract**: [docs/02_spotter-claude-contract.md](https://github.com/kitepon/Spotter/blob/main/docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku contract plus Codex native hook policy
+- **Implementation invariants (§0)**: [AGENTS.md](https://github.com/kitepon/Spotter/blob/main/AGENTS.md) — no fallbacks, no silent failures, no provisional code (`CLAUDE.md` is only its import entry)
+- **Archived plans and history**: [docs/archive/](https://github.com/kitepon/Spotter/tree/main/docs/archive) — completed Codex rollout plans, primary backend smoke logs, and the frozen v0.1 design discussion
 
 ## Known limitations
 
@@ -353,7 +353,7 @@ the production values for controlled experiments; diagnostics mark overrides as 
 - **Zero-touch catalog** — `spotter install` seeds the Claude DB automatically; Claude and Codex SessionStart hooks keep their host-local DBs fresh in the background. You never have to maintain the tool list by hand
 - **Codex native hooks** — Codex host uses Codex CLI as the primary auditor backend, keeps a separate `.spotter/tool-db.codex.json`, and surfaces backend failures explicitly instead of falling back to Haiku
 - **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Claude already uses those reliably
-- **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in AGENTS.md](AGENTS.md))
+- **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in AGENTS.md](https://github.com/kitepon/Spotter/blob/main/AGENTS.md))
 
 Full release history: [CHANGELOG](CHANGELOG.md).
 

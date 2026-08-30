@@ -1,7 +1,7 @@
 # カタログ設計思想 — ユーザー追加ツールだけをauditorへ渡す
 
 この文書は現行のClaude / Codex auditor pathが共有するカタログ設計を説明する。
-v1.5.8文書監査で`src/tool-db/`と照合済み。実挙動の権威は同実装と対応testである。
+実挙動の権威は`src/tool-db/`と対応testである。
 `UserPromptSubmit` / `Stop` の primary auditor backend を Codex CLI / `codex-sidecar` に
 移す計画は v1.4.3 で Codex host 側が完了済み。現行 backend policy は
 [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md) を参照し、完了済みの移行ログは

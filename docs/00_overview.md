@@ -1,107 +1,44 @@
-# Spotter Documentation Overview
+# Spotter文書案内
 
-Spotter is a Claude-first, hook-driven audit agent that runs alongside Claude Code
-and Codex hosts to surface missed tool-use opportunities. `AGENTS.md` is the
-canonical agent source for product philosophy, invariants, commands, hook contracts,
-error handling, and release workflow. `CLAUDE.md` is only the `@AGENTS.md` import entry.
+Spotterの文書は、現行契約、進行中の仕事、履歴、証拠を分ける。通常作業では本書と現行契約だけを読み、
+完了済み計画やrelease時点の記録を自動的に文脈へ入れない。
 
-Current production release: **v1.6.2**. Cursor is a first-class tool-db host
-(`tool-db.cursor.json` plus `spotter cursor-hook` catalog refresh). OS-specific branches (`process.platform`) live only in
-`src/platform/` (process spawning, hook⇄daemon IPC paths, path normalization and PATH lookup), and
-host-harness decision points (per-host tool-db file names and snapshot builders) live only in
-`src/host/adapters.mjs`. Those dependency moves preserved public exports, hook/daemon IPC, and the
-CLI surface.
-On Windows, MCP investigation closes its process tree and all three stdio pipes, while isolated
-runtime-error workers return at their absolute deadline and continue process cleanup in parallel.
-Evaluation turns whose Stop was never observed are
-graded at the next prompt from the usage evidence collected so far instead of being discarded as
-`outcome_missing`; only turns marked `usage_status=incomplete` remain unjudged. The A/C ratio is
-displayed as a fit rate (upper bound), not as a Spotter attribution metric. Windows dashboard
-tasks retain their user profile while starting PowerShell non-interactively with hidden console
-windows. Unsupported non-Claude hooks are rejected before evaluation SQLite loads, including on
-Node 24. UserPromptSubmit auditing uses only
-the current request and the host-local tool catalog. Before reading catalog descriptions, the auditor
-establishes a standard-host-tool baseline and reports only directly applicable catalog tools
-that are better suited. Throughline is optional proposal-evaluation evidence and never gates
-or changes auditing.
+実挙動の権威はsourceとtestである。文書と実装が矛盾した場合は実装を確認し、現行文書を修正する。
 
-## Authority And Verification
+## 現行契約
 
-Runtime behavior is defined by the source and tests. `AGENTS.md` defines design and agent
-rules; it does not override contradictory executable behavior. The maintained documents below
-were rechecked against the v1.5.7 source boundary `0977fd7` during the v1.5.8 documentation
-release. If a maintained document and code disagree, treat that as a documentation defect and
-use the code until the document is corrected.
+- [`../README.md`](../README.md)／[`../README.ja.md`](../README.ja.md): 単独導入、利用、診断、更新の入口
+- [`01_catalog-design.md`](01_catalog-design.md): tool-dbとcatalog discovery
+- [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md): CLI、hook、daemon、auditor、
+  runtime error store、evaluationの実装契約
+- [`04_operational-slo.md`](04_operational-slo.md): latency、失敗率、品質、提案観測の運用基準
+- [`11_dashboard-operations.md`](11_dashboard-operations.md): dashboardのservice、routing、公開運用
+- [`adr/`](adr/): 置換されていない不変Decision
 
-| Subject | Maintained document | Executable authority |
-|---|---|---|
-| CLI and install | `README.md`, `README.ja.md`, `02_spotter-claude-contract.md` | `bin/spotter.mjs`, `src/cli/`, `package.json` |
-| Catalog and tool DB | `01_catalog-design.md` | `src/tool-db/` |
-| Hooks, daemon, auditor, projection | `02_spotter-claude-contract.md` | `src/hooks/`, `src/daemon/`, `src/core/` |
-| Evaluation and dashboard | `09_proposal-adoption-evaluation-plan.md`, `10_spotter-dashboard-plan.md`, `11_dashboard-operations.md` | `src/core/evaluation-*`, `src/cli/evaluation-cmd.mjs`, `src/dashboard/`, `ops/dashboard/` |
-| Open work and SLO | `open-issues.md`, `04_operational-slo.md` | recorded observations and release evidence |
+## 進行中の仕事
 
-`CHANGELOG.md` describes each release at its publication time. ADRs record decisions. Files
-under `docs/archive/`, `docs/evidence/`, and dated `rag/` paths are immutable or amended
-point-in-time records; later maintained documents supersede them for current behavior.
+- [`open-issues.md`](open-issues.md): 現在の未完事項と次の行動の唯一の台帳
 
-## Naming Convention
+完了した項目は`open-issues.md`から外し、release差分は`CHANGELOG.md`、完了計画は`archive/`へ移す。
 
-- `00_` is the documentation entry point.
-- Numbered files are ordered canonical designs, operational contracts, or completed
-  implementation records that explicitly state their status.
-- Stable operational ledgers such as `open-issues.md` keep semantic names without numbers.
-- Superseded plans move to `archive/`. A completed plan may remain numbered only while
-  it is also the clearest current design or operations reference.
+## 履歴
 
-## Canonical Documents
+- [`archive/`](archive/): 完了、撤回、置換済みのplan、rollout、release時点の設計記録
+- top-levelの「履歴参照stub」: immutable artifactが参照する旧pathを保つ案内。現行契約ではない
+- [`migration/`](migration/): 旧pathとsource対応を固定したimmutable migration artifact。現行契約ではない
+- [`../CHANGELOG.md`](../CHANGELOG.md): release履歴の正本
 
-- [`01_catalog-design.md`](01_catalog-design.md): tool-db and catalog discovery design.
-- [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md): Claude hook,
-  daemon, backend, and Codex adapter contract.
-- [`04_operational-slo.md`](04_operational-slo.md): latency, failure-rate, quality,
-  and observed proposal/adoption objectives.
-- [`09_proposal-adoption-evaluation-plan.md`](09_proposal-adoption-evaluation-plan.md):
-  completed local proposal/adoption evaluation design and v1.5.4 correction.
-- [`10_spotter-dashboard-plan.md`](10_spotter-dashboard-plan.md): completed
-  device-routed dashboard design.
-- [`11_dashboard-operations.md`](11_dashboard-operations.md): current service contract for
-  the four-terminal reference dashboard; it is not a live online/version ledger.
-- [`adr/0001-hook-driven-parallel-auditor.md`](adr/0001-hook-driven-parallel-auditor.md):
-  root architectural decision.
+archive内の「現行」「TODO」「未実装」は記録時点の語であり、現在の契約へ読み替えない。
 
-## Operational Documents
+## 証拠
 
-- [`open-issues.md`](open-issues.md): current unresolved issues and observation tasks.
-- [`08_factory-diagnostics-plan.md`](08_factory-diagnostics-plan.md): completed
-  factory diagnostics and opt-in local runtime-error store design.
-- [`BUGHUB_RUNTIME_ERROR_STORE_PLAN.md`](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md): completed
-  runtime-error projection implementation record and ownership boundary.
+- [`evidence/`](evidence/): versionと観測時点に束縛された受入・公開smoke
+- [`../rag/INDEX.md`](../rag/INDEX.md): 外部仕様のdated snapshotと評価artifact
 
-## Decision Records
+証拠はDecisionや現在install済みversionの台帳ではない。
 
-- [`adr/0001-hook-driven-parallel-auditor.md`](adr/0001-hook-driven-parallel-auditor.md):
-  the independent hook-driven auditor architecture.
-- [`adr/0001-proposal-adoption-evaluation-implementation.md`](adr/0001-proposal-adoption-evaluation-implementation.md):
-  local proposal/adoption evaluation storage, amended for exact-session evidence.
-- [`adr/0002-device-routed-evaluation-dashboard.md`](adr/0002-device-routed-evaluation-dashboard.md):
-  live device-routed dashboard without cloud replication.
+## 所有境界
 
-## Historical and Archive
-
-- [`07_throughline-auditor-context-plan.md`](07_throughline-auditor-context-plan.md):
-  revoked v1.4.20–v1.4.21 Throughline auditor-context design. Its body is historical,
-  not a current contract.
-
-- [`archive/`](archive/): completed plans, historical design snapshots, rollout logs,
-  and smoke notes. These are reference material rather than current contract.
-- [`archive/03_current-state-recovery-plan.md`](archive/03_current-state-recovery-plan.md):
-  completed recovery, v1.4.17/1.4.18 release, and model-evaluation plan.
-- [`archive/05_parent-session-safety-plan.md`](archive/05_parent-session-safety-plan.md):
-  completed parent-session output-boundary implementation plan.
-- [`archive/06_release-v1.4.19-plan.md`](archive/06_release-v1.4.19-plan.md):
-  completed v1.4.19 release checklist and verification record.
-- [`evidence/`](evidence/): publication and live-smoke evidence tied to the version named
-  in each file, not statements about the current installed state.
-- [`../rag/INDEX.md`](../rag/INDEX.md): dated external-spec snapshots and evaluation
-  artifacts. The date and status in each entry bound its validity.
+Spotterのinstall、設定、state、schema、migration、診断、復旧、更新、releaseはこのrepoが所有する。
+dotagentsは任意の工場統合とhost配線を統括するだけで、Spotterの実行条件や製品状態を所有しない。
+Spotterを工場から切り離しても、READMEと本書から単独運用を完結できる状態を維持する。
